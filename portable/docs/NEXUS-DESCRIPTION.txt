@@ -1,0 +1,23 @@
+Enshrouded VRM — by lightnill
+
+Use your own VRM avatar as a local cosmetic character replacement. This preview
+includes GPU skinning, lit rendering, relaxed hair/clothing motion, menu previews
+and held-item alignment. Finger mappings are preferred, with an approximate wrist
+fallback when optional finger mappings are absent.
+
+Portable Windows x64 ZIP: extract it, open EnshroudedVRM.exe, select the game and
+your own VRM, then launch. No avatars are included. No administrator rights,
+installer, updater or telemetry is needed. Only you see the replacement; this
+preview does not synchronize avatars to other players. Offline play is the tested
+path. The launcher requires the supported Steam build and stops on other versions.
+
+This is an early preview. Very large models, unusual hand shapes, supporting-arm
+constraints and untested equipment/animation combinations can need more work.
+See the included known issues. No universal FPS/compatibility claim is made.
+
+Original source is MIT: reuse is allowed while retaining the lightnill copyright
+notice and license. Third-party notices are included. Game/avatar rights remain
+with their respective owners. Unofficial; not affiliated with or endorsed by Keen.
+
+Development included substantial AI-generated code with direction and testing by
+lightnill. Apply the appropriate Nexus AI tags described in UPLOAD-NOTES.md.

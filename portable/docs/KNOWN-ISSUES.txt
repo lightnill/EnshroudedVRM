@@ -1,0 +1,46 @@
+Preview coverage and limitations
+
+Windows 10/11 x64 and the validated Steam executable only:
+Game resource version 1273043; Steam build 26082781.
+SHA256 d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882
+The launcher stops on a different executable rather than applying stale offsets.
+Extraction folders containing a semicolon (;) are rejected because Vulkan uses it
+as a search-list separator. Move the mod to a different local folder.
+Some Vulkan loaders cannot read non-ASCII layer-folder paths. The launcher uses an
+existing Windows short-path alias when available, after checking that it points
+to the same runtime folder. If Windows has no usable alias, move the mod into a
+writable ASCII-only path. No aliases or volume settings are created or changed.
+Saved avatar selections are absolute paths. After moving a used package with its
+avatar, choose that avatar again with Browse if the saved location no longer exists.
+
+This is a local cosmetic replacement. Other players do not receive or see your
+VRM. Multiplayer synchronization and native armor/helmet fitting are not included.
+
+VRM 0.x/1.x humanoid rigs are supported within the importer's bounds. Very large
+models and textures can cost more memory and FPS. No universal FPS boost, model
+compatibility, perfect contact or release-platform approval is promised.
+
+Normal finger mappings retain precise palm calibration and finger animation.
+With missing mappings, wrist placement is approximate and does not invent finger
+bones or curls. Actual nonstandard hands such as paws/hooves remain unverified.
+
+Sword/shield, two-handed and drawn-bow grips have earlier accepted checks on
+supported rigs. The latest missing-finger fallback has synthetic secondary-contact
+coverage and live sword/shield-at-rest, wand, torch and short movement checks.
+Live blocking/drawn-bow/two-handed fallback needs broader coverage. Supporting-arm
+constraints can disable the secondary solve; the existing rejection is retained.
+
+Menu scenes may omit the world transparency/volume passes. For mixed-material
+avatars, guarded menu previews route BLEND parts through a 0.5 alpha cutoff;
+partly transparent surfaces can look harder or disappear below that threshold.
+Existing MASK cutoffs are retained. World views keep full BLEND rendering, even
+while the Character preview is open. The original model/materials are unchanged.
+Full blended transparency in menu previews is a later improvement.
+
+Main-menu, character-selection, Character-panel and world transitions have been
+tested. New game updates, unusual equipment/poses or different graphics paths may
+need compatibility work. Back up your own saves before testing a preview mod.
+
+The executables are unsigned. A first-download reputation prompt or antivirus
+review is possible. Do not disable protection or add exclusions as a workaround.
+See SECURITY.md and the build's recorded validation results.

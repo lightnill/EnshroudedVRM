@@ -22,3 +22,28 @@ Original code is MIT with attribution to lightnill; dependency notices are inclu
 This is unofficial and not endorsed by Keen Games. Binaries are unsigned; no clean
 antivirus verdict is claimed. Development included substantial AI-generated code
 under lightnill's direction and testing.
+
+## MSVC launcher update - 26 October 2026
+
+The launcher is now built with Microsoft Visual C++ and a static release runtime.
+The executable is the same MSVC build verified in-game by the maintainer.
+The accepted VRM runtime, all 13 shader modules and compatibility files are
+byte-identical to the original preview, including the menu and equipment fixes.
+
+The launcher is 520,704 bytes and remains unsigned. Core checks, four synthetic
+child-process tests and the packaged compatibility/tamper checks passed. No
+additional Visual C++ Redistributable is required by this launcher.
+
+The standalone launcher's VirusTotal scan on 26 October 2026 reported 1/69:
+Trapmine, Malicious.high.ml.score. Microsoft, Bkav Pro and BitDefender reported
+Undetected. This scan covers the launcher alone and is not a clean verdict for
+the complete package. The runtime loads inside the game and uses graphics hooks
+and validated in-process patches; security products may inspect these techniques.
+
+Launcher SHA256:
+86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9
+
+Scan: https://www.virustotal.com/gui/file/86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9/detection
+
+The original v0.1.0-preview tag/downloads are preserved. This update uses the
+v0.1.0-preview-msvc tag; the embedded launcher version remains 0.1.0-preview.

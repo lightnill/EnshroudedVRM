@@ -19,6 +19,32 @@ Vulkan-Headers and Microsoft DXC. The build does not download or run tools autom
 python ./tests/test_portable_package.py
 ```
 
+The launcher can also be built separately with Microsoft Visual C++ x64 and a
+Windows SDK. This does not rebuild the VRM runtime or its shaders. Tested with
+MSVC 19.27.29112 (Visual Studio 2019) and Windows SDK 10.0.19041.0:
+
+```powershell
+./portable/build-msvc.ps1 `
+  -VcToolsDirectory 'C:/Tools/MSVC/14.27.29110' `
+  -WindowsSdkIncludeDirectory 'C:/Tools/WindowsSDK/Include/10.0.19041.0' `
+  -WindowsSdkLibraryDirectory 'C:/Tools/WindowsSDK/Lib/10.0.19041.0' `
+  -ResourceCompiler 'C:/Tools/WindowsSDK/bin/10.0.19041.0/x64/rc.exe' `
+  -OutputDirectory ./build/Launcher-MSVC -Python python -Test
+```
+
+Use the actual paths from your licensed Visual Studio/Build Tools and SDK
+installation. The SDK include directory must contain `ucrt`, `shared` and `um`;
+the library directory must contain `ucrt/x64` and `um/x64`. The script changes
+only its process environment and downloads no dependencies. `-Test` runs the
+core checks and four synthetic child-process tests; it never starts the game.
+Python is needed only for those native process tests.
+
+The MSVC launcher uses the release static CRT (`/MT`, `/DNDEBUG`), ASLR, DEP,
+Control Flow Guard and reproducible linking (`/Brepro`). Core test assertions
+remain enabled. No separate Visual C++ Redistributable is required by this
+launcher; its imports are Windows system DLLs. Keep the Microsoft notices when
+distributing it. The accepted runtime DLL still uses GCC and retains its notices.
+
 The runtime and launcher are normal unpacked PEs with ASLR/DEP and reproducible
 PE timestamps. Release binaries are unsigned. No signing identity is included.
 The launcher is statically linked; end users need no compiler, Python or PowerShell.

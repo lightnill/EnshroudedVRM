@@ -6,6 +6,9 @@ Windows x64 portable preview with GPU skinning, lit rendering, spring bones,
 menu previews and held-item alignment. The replacement is local to your screen.
 No avatars or game executables are bundled.
 
+Current download: [0.1.0 preview with the MSVC launcher](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.0-preview-msvc).
+The launcher update preserves the accepted runtime and all menu/equipment fixes.
+
 ## Install and play
 
 1. Download the portable ZIP from [Releases](https://github.com/lightnill/EnshroudedVRM/releases).

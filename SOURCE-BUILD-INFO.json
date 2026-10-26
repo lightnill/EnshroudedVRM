@@ -4,8 +4,8 @@
   "originalCodeLicense": "MIT",
   "publicationStatus": "preview",
   "runtimeSha256": "17695426ecfbe188db42709b6dd70b7e629b9dfe34b976facaf210cd5a96d045",
-  "launcherSha256": "c178ebf345bd32450adf429a93f23cadac18d4a79202042752db307aceb1ac79",
-  "compiler": "GCC 16.2.0 / w64devkit, normal uncompressed PE; unsigned",
+  "launcherSha256": "86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9",
+  "compiler": "Runtime: unchanged GCC 16.2.0; launcher: MSVC 19.27.29112 x64 /MT; normal unpacked PEs, unsigned",
   "correctedEquipmentBaselineSha256": "62E87EC534B341ABC974BB7D5CA225BE651679961EBD7CEC3A36FA454B8CF669",
   "preservedGripSources": {
     "tool_grip.cpp": "32c3def372b1968eeac57e84d163f1dcad06ec76dfc96975dc4ff0d3460277db",
@@ -488,7 +488,7 @@
     },
     {
       "path": "portable/launcher_core.cpp",
-      "sha256": "4a44433e3c686ec845999256e899c2c91e0459516728ba309f0b893dfa3fc7ee"
+      "sha256": "80787fdf21b7245dc65508aaf1b1539e39320ada529364d2d42c6438112ff7c0"
     },
     {
       "path": "portable/launcher_win.cpp",
@@ -509,6 +509,10 @@
     {
       "path": "vendor/tinygltf/json.hpp",
       "sha256": "8ad65a0a8a9d92b8a07b8fc9b0910f8506357c07a61c1bf403ec8956a59edcfd"
+    },
+    {
+      "path": "portable/build-msvc.ps1",
+      "sha256": "e56def832d09cea69bfdc907f2f12e1eab0d1faf6bcf2d9be6fa24e93ead9732"
     }
   ],
   "acceptedShaderModules": {
@@ -528,12 +532,46 @@
   },
   "automaticBufferExports": false,
   "bundledAvatars": 0,
-  "revision": "public-preview",
+  "revision": "public-preview-msvc-launcher",
   "menuPreviewTransparency": "BLEND uses 0.5 cutout in guarded menu views; world BLEND unchanged",
   "validation": {
     "runtime": "accepted menu-fix1; backend, GPU, loader smoke and user-confirmed live checks",
-    "launcher": "preview manifest and synthetic process checks; see source tests",
-    "antivirus": "No clean verdict; local scanning unavailable",
-    "codeSigning": "unsigned"
-  }
+    "launcher": "Core and four synthetic process tests passed; exact packaged compatibility and tamper checks passed; maintainer confirmed in-game functionality on 2026-10-26",
+    "antivirus": "VirusTotal 2026-10-26: 1/69 Trapmine Malicious.high.ml.score; Microsoft/Bkav Pro/BitDefender Undetected. Not a clean verdict.",
+    "codeSigning": "unsigned",
+    "source": "Matching allowlisted source snapshot; original runtime and shaders unchanged"
+  },
+  "launcherBuild": {
+    "compiler": "Microsoft Visual C++ 19.27.29112 x64",
+    "windowsSdk": "10.0.19041.0",
+    "crt": "release static (/MT)",
+    "releaseAssertions": "NDEBUG for production only",
+    "reproducibility": "two production builds byte-identical",
+    "protections": [
+      "ASLR",
+      "DEP",
+      "High entropy VA",
+      "Control Flow Guard"
+    ]
+  },
+  "launcherTestInputs": [
+    {
+      "path": "tests/portable_launcher.cpp",
+      "sha256": "4a5bd53fbb9df6b23d554dd97f3f2f7b52c9c33316e9d5321d990d2fd9ba3f91"
+    },
+    {
+      "path": "tests/portable_child.cpp",
+      "sha256": "bb22e7c3bd8ae29196a7d297a780a418058c2cfd887aedc2cc303bff9bf71ada"
+    },
+    {
+      "path": "tests/portable_test_wrappers.cpp",
+      "sha256": "308d29b49d179879b954107fabd513afcdf067f0a7af0af3c173dcf5dceacb46"
+    },
+    {
+      "path": "tests/test_portable_native.py",
+      "sha256": "964c7efb7ba4062f476ac50df1a7623447b9899de781be11017bcc9f679361b2"
+    }
+  ],
+  "releaseTag": "v0.1.0-preview-msvc",
+  "sourceSnapshotFiles": 179
 }

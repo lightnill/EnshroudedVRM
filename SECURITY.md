@@ -37,3 +37,15 @@ Report issues at https://github.com/lightnill/EnshroudedVRM/issues .
 Include version, game build and detection name; do not attach private avatars or
 unredacted logs. Local antivirus scanning was unavailable on the build machine;
 there is no claimed clean antivirus verdict.
+
+## MSVC launcher scan record - 26 October 2026
+
+For launcher SHA256
+86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9,
+VirusTotal reported 1/69 (Trapmine: Malicious.high.ml.score). Microsoft, Bkav Pro
+and BitDefender reported Undetected. This is a standalone launcher scan, not a
+complete-package verdict. The specific cause of Trapmine's score is unconfirmed.
+The working runtime and shaders are unchanged. Review the exact file and source
+if a security product flags it; no antivirus exclusions are required or advised.
+
+https://www.virustotal.com/gui/file/86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9/detection

@@ -11,6 +11,13 @@ BOOL WINAPI times(HANDLE p,LPFILETIME a,LPFILETIME b,LPFILETIME c,LPFILETIME d){
 }
 }
 extern "C" {
+#ifdef _MSC_VER
+// Resolve only this synthetic test executable's import pointers locally.
+// The production launcher links the real Windows imports.
+decltype(&MessageBoxW) __imp_MessageBoxW=message;
+decltype(&GetProcessTimes) __imp_GetProcessTimes=times;
+#else
 decltype(&MessageBoxW) __wrap___imp_MessageBoxW=message;
 decltype(&GetProcessTimes) __wrap___imp_GetProcessTimes=times;
+#endif
 }

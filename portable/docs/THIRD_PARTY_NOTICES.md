@@ -37,7 +37,8 @@ Source: https://github.com/KhronosGroup/Vulkan-Headers
 
 ## Statically linked compiler/runtime components
 
-Built with GCC 16.2.0 from w64devkit. GCC's runtime components are under GPLv3
+The accepted VRM runtime DLL is built with GCC 16.2.0 from w64devkit. The original
+launcher also used this toolchain. GCC's runtime components are under GPLv3
 with the GCC Runtime Library Exception 3.1; this eligible GCC compilation permits
 the independent project modules to retain MIT terms. The full GPL and exception
 texts are in notices/GPL-3.0.txt and notices/GCC-RUNTIME-EXCEPTION.txt.
@@ -47,6 +48,13 @@ toolchain in notices/MinGW-w64-runtime.txt; retain all included attributions and
 conditions. notices/LGPL-2.1.txt is included for the Wine header/IDL notice in
 that runtime notice bundle. No compiler binaries, game extraction tool or external
 modding framework binary is included.
+
+The separate MSVC launcher candidate uses Microsoft Visual C++ 19.27.29112 and
+Windows SDK 10.0.19041.0, with the release CRT linked statically (`/MT`). Microsoft
+runtime components retain their own terms; they are not relicensed as project MIT
+code. See notices/Microsoft-Runtime.txt and notices/Microsoft-STL-LICENSE.txt.
+The Microsoft STL headers identify Apache-2.0 WITH LLVM-exception. No Microsoft
+compiler, SDK, raw library or redistributable installer is included.
 
 ## Game and avatar rights
 

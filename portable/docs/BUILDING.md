@@ -1,4 +1,8 @@
-# Building EnshroudedVRM
+# Legacy EXE package build guide
+
+These instructions describe the earlier native launcher packages. The current
+distribution uses CMD/Windows PowerShell. See the repository's
+[current build guide](../../BUILDING.md) for the script launcher and VRM runtime.
 
 Original code is MIT, copyright (c) 2026 lightnill. Keep LICENSE and all third-party
 notices. No avatars, private fixtures, research tools or game executables are included.

@@ -536,13 +536,13 @@
     },
     {
       "path": "tests/portable_child.cpp",
-      "sha256": "4de6bb1489befb80c2245dffa53a71bcd191a0db5cd717bb2cdc965e7482f8ef",
-      "bytes": 1021
+      "sha256": "8758bf8994ccb03f9e355ef944ed643f472b76918ef224fb4c4ded9dce71e88f",
+      "bytes": 1032
     },
     {
       "path": "tests/test_portable_package.py",
-      "sha256": "c8d8f95594a1b26843ddadacb9e2d36fb0ee1f9202685ef51f7f65a78328db5f",
-      "bytes": 4437
+      "sha256": "054880c03ea94c11d1373a66a458279513a2a6e9fb2a057930671b625d534b15",
+      "bytes": 4507
     },
     {
       "path": "tests/test_script_fixture_build.py",
@@ -754,8 +754,8 @@
     },
     {
       "path": "portable/package_portable.py",
-      "sha256": "e4c51e6419e60f59e8488d7831dbb53c1ab850bcbc6e2f8f2b04b4dfbd60453c",
-      "bytes": 3994
+      "sha256": "3163e2fecdb48f513e0c85ae1976759baacd1adf74e4cdc44d9a93b1e316c04f",
+      "bytes": 4068
     },
     {
       "path": "portable/package_script_release.py",
@@ -1364,8 +1364,8 @@
     },
     {
       "path": "tests/portable_child.cpp",
-      "sha256": "4de6bb1489befb80c2245dffa53a71bcd191a0db5cd717bb2cdc965e7482f8ef",
-      "bytes": 1021
+      "sha256": "8758bf8994ccb03f9e355ef944ed643f472b76918ef224fb4c4ded9dce71e88f",
+      "bytes": 1032
     },
     {
       "path": "tests/secondary_hand_contact.cpp",
@@ -1374,8 +1374,8 @@
     },
     {
       "path": "tests/test_portable_package.py",
-      "sha256": "c8d8f95594a1b26843ddadacb9e2d36fb0ee1f9202685ef51f7f65a78328db5f",
-      "bytes": 4437
+      "sha256": "054880c03ea94c11d1373a66a458279513a2a6e9fb2a057930671b625d534b15",
+      "bytes": 4507
     },
     {
       "path": "tests/test_script_fixture_build.py",
@@ -1404,8 +1404,8 @@
     },
     {
       "path": "validation/script-launcher-20261026/final-verification.json",
-      "sha256": "725cfd94f2c8dcfc9316000c6822dcd28df16b1256c9c8454b444a39edb42e39",
-      "bytes": 3384
+      "sha256": "5d3a76ff77d5e987ea574ca2d23fc3c827ffa63478bdb64c438515c00a9bc53c",
+      "bytes": 3478
     },
     {
       "path": "vendor/README.md",

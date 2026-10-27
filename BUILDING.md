@@ -3,7 +3,39 @@
 Original code is MIT, copyright (c) 2026 lightnill. Keep LICENSE and all third-party
 notices. No avatars, private fixtures, research tools or game executables are included.
 
-Install your own Windows x64 GCC toolchain (tested with w64devkit/GCC 16.2.0),
+## Current CMD/PowerShell launcher
+
+The current launcher is readable source in `portable/script`:
+
+- `Launch-EnshroudedVRM.cmd`
+- `Launch-EnshroudedVRM.ps1`
+- `launcher_core.psm1`
+
+No custom launcher EXE is built or distributed in the current package. Windows
+PowerShell 5.1 uses its installed .NET tooling to compile a small read-only path
+helper locally. Existing script policies are respected.
+
+The launcher files belong at the portable package root, beside the required
+Runtime, Compatibility and release-manifest files. A source checkout alone is
+not a complete playable package. Use the published release for the supported
+compatibility data and exact file hashes. See
+[launcher instructions](portable/docs/SCRIPT-LAUNCHER.txt).
+
+Developer regression tests use an existing synthetic child-process fixture:
+
+```powershell
+python ./tests/test_script_launcher.py C:/BuildFixtures/portable_child.exe
+python ./tests/test_portable_package.py
+```
+
+The child fixture is built from `tests/portable_child.cpp` with a Windows x64 C++
+compiler. These tests create synthetic files and child processes, not a game
+session. Python and the fixture compiler are developer tools, not player requirements.
+
+## Native VRM runtime and shaders
+
+The game still requires the native Vulkan layer DLL. Install your own Windows
+x64 GCC toolchain (tested with w64devkit/GCC 16.2.0),
 Vulkan-Headers and Microsoft DXC. The build does not download or run tools automatically.
 
 ```powershell
@@ -13,13 +45,24 @@ Vulkan-Headers and Microsoft DXC. The build does not download or run tools autom
   -ShaderCompiler C:/Tools/dxc/bin/x64/dxc.exe `
   -OutputDirectory ./build/Runtime
 
-./portable/build.ps1 -CompilerDirectory C:/Tools/w64devkit/bin `
-  -OutputDirectory ./build/Launcher -Test
-
 python ./tests/test_portable_package.py
 ```
 
-The launcher can also be built separately with Microsoft Visual C++ x64 and a
+The current script release carries the accepted runtime and shaders unchanged;
+changing the launcher did not require rebuilding them.
+
+## Legacy launcher EXE builders
+
+Earlier native launcher source and build scripts remain for historical
+inspection and reuse under their licenses. They are not the current distribution.
+Previous binaries remain in the release history.
+
+```powershell
+./portable/build.ps1 -CompilerDirectory C:/Tools/w64devkit/bin `
+  -OutputDirectory ./build/Launcher -Test
+```
+
+The legacy launcher can also be built separately with Microsoft Visual C++ x64 and a
 Windows SDK. This does not rebuild the VRM runtime or its shaders. Tested with
 MSVC 19.27.29112 (Visual Studio 2019) and Windows SDK 10.0.19041.0:
 
@@ -52,6 +95,8 @@ The launcher is statically linked; end users need no compiler, Python or PowerSh
 This curated source snapshot builds the Bridge runtime and launcher and includes
 selected synthetic tests. Other development targets may depend on omitted local
 research fixtures. Do not claim all development test targets are self-contained.
+
+## Runtime package integrity
 
 To run a rebuilt runtime, use the supported-build Compatibility files from the
 matching binary release. These are minimal locally researched interface/rig data,

@@ -1,0 +1,40 @@
+{
+  "verifiedAtUtc": "2026-10-27T01:10:49.185241+00:00",
+  "fileCount": 39,
+  "stageMatchesArchive": true,
+  "allFileHashesMatch": true,
+  "archiveSha256": "3b7865eb7b0a67971310eb1db83a4c13f66555be7920e49342f79a4bde4f61bb",
+  "unchangedRuntimeShaderCompatibilityFiles": 17,
+  "preservedFiles": [
+    "Compatibility/catalog.json",
+    "Compatibility/profile.json",
+    "Runtime/enshrouded_vrm_layer.json",
+    "Runtime/enshrouded_vrm_runtime.dll",
+    "Runtime/shaders/avatar.frag.spv",
+    "Runtime/shaders/avatar.vert.spv",
+    "Runtime/shaders/avatar_native.pull.gbuffer.spv",
+    "Runtime/shaders/avatar_native.pull.oit.spv",
+    "Runtime/shaders/avatar_native.pull.vert.spv",
+    "Runtime/shaders/avatar_native.pull.visibility.spv",
+    "Runtime/shaders/avatar_native.shadow.frag.spv",
+    "Runtime/shaders/avatar_native.shadow.vert.spv",
+    "Runtime/shaders/native_menu_prepare.comp.spv",
+    "Runtime/shaders/native_prepare.comp.spv",
+    "Runtime/shaders/native_skinning.comp.spv",
+    "Runtime/shaders/native_skinning.finalize.spv",
+    "Runtime/shaders/native_volume_snapshot.comp.spv"
+  ],
+  "customLauncherExecutables": 0,
+  "avatarFiles": 0,
+  "individualLocalScans": 39,
+  "localIssues": 0,
+  "localSkippedFiles": 0,
+  "individualVirusTotalReports": 39,
+  "virusTotalFilesWithDetections": 0,
+  "virusTotalEngineCountRange": [
+    53,
+    70
+  ],
+  "noGameStartedForTheseChecks": true,
+  "nexusCandidateUploadTested": false
+}

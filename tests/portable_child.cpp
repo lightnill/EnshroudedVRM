@@ -1,7 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cwchar>
-// Synthetic no-window child, used only in native launcher regression tests.
+// Developer-only no-window child for CMD/PowerShell launcher regression tests.
 // No graphics layer is loaded, and no actual game is required.
 int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int){
  wchar_t path[32768]{},value[128]{};const auto n=GetEnvironmentVariableW(L"PORTABLE_TEST_MARKER",path,32768);if(!n||n>=32768)return 7;

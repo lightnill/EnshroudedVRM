@@ -11,8 +11,18 @@ spec.loader.exec_module(package)
 
 class PackageTests(unittest.TestCase):
     def test_explicit_normal_members(self):
-        for name in ['.gitignore','EnshroudedVRM.exe','Runtime/enshrouded_vrm_runtime.dll','Runtime/shaders/native_skinning.comp.spv','Compatibility/profile.json','Avatars/README.txt','LICENSE','vendor/tinygltf/LICENSE','src/tool_grip.cpp','shaders/avatar.hlsl','shaders/native_oit_limits.hlsli']:
+        for name in ['.gitignore','Runtime/enshrouded_vrm_runtime.dll','Runtime/shaders/native_skinning.comp.spv','Compatibility/profile.json','Avatars/README.txt','LICENSE','vendor/tinygltf/LICENSE','src/tool_grip.cpp','shaders/avatar.hlsl','shaders/native_oit_limits.hlsli']:
             self.assertTrue(package.safe_archive_member(name),name)
+
+    def test_all_executable_members_rejected(self):
+        for name in ['EnshroudedVRM.exe','enshroudedvrm.EXE','Runtime/helper.exe','portable_child.exe']:
+            with self.subTest(name=name):
+                self.assertFalse(package.safe_archive_member(name),name)
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);source=root/'fixture.txt';source.write_bytes(b'synthetic')
+            with self.assertRaises(ValueError):
+                package.write_archive(root/'never.zip','Script',{'EnshroudedVRM.exe':source})
+            self.assertFalse((root/'never.zip').exists())
 
     def test_private_diagnostic_and_traversal_rejected(self):
         for name in ['Avatars/Sample.vrm','Avatars/hidden.vrm','Sample-without-finger-mappings.vrm','model.glb','posed.bin','screenshot.png','State/settings.json','State/last-session.json','work/raw.json','.env','.git/config','../outside','a/../../outside','C:/outside','a\\outside','a//b','a/NUL.txt','README.txt:stream','Runtime/unexpected.exe']:

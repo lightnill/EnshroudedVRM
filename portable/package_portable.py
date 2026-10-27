@@ -24,6 +24,7 @@ def safe_archive_member(name):
     if parts[-1].lower() in ('.env','settings.json','last-session.json'):
         return False
     suffix=Path(name).suffix.lower()
+    if suffix=='.cmd':return name in ('Launch-EnshroudedVRM.cmd','portable/script/Launch-EnshroudedVRM.cmd')
     if suffix=='.exe':return name=='EnshroudedVRM.exe'
     if suffix=='.dll':return name=='Runtime/enshrouded_vrm_runtime.dll'
     return parts[-1]=='LICENSE' or name=='.gitignore' or suffix in ('.txt','.md','.json','.spv','.hlsl','.hlsli','.cpp','.hpp','.h','.inl','.py','.ps1','.psm1','.rc','.manifest')

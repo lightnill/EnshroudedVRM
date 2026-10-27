@@ -1,23 +1,43 @@
-Enshrouded VRM — by lightnill
+[size=5][b]EnshroudedVRM[/b][/size]
+By lightnill — 0.1.0 preview
 
-Use your own VRM avatar as a local cosmetic character replacement. This preview
-includes GPU skinning, lit rendering, relaxed hair/clothing motion, menu previews
-and held-item alignment. Finger mappings are preferred, with an approximate wrist
-fallback when optional finger mappings are absent.
+Play Enshrouded as your own VRM avatar. The mod uses your graphics card to help animate the model and reduce CPU load. This is an early preview and still being improved. Right now, only you see your replacement avatar. Multiplayer avatar support is planned, but is not implemented yet.
 
-Portable Windows x64 ZIP: extract it, open EnshroudedVRM.exe, select the game and
-your own VRM, then launch. No avatars are included. No administrator rights,
-installer, updater or telemetry is needed. Only you see the replacement; this
-preview does not synchronize avatars to other players. Offline play is the tested
-path. The launcher requires the supported Steam build and stops on other versions.
+Use your own VRM avatar as a local cosmetic character replacement in Enshrouded. Includes GPU skinning, lit rendering, spring bones, menu previews and held-item alignment. Finger mappings are preferred; missing optional mappings use an approximate wrist fallback.
 
-This is an early preview. Very large models, unusual hand shapes, supporting-arm
-constraints and untested equipment/animation combinations can need more work.
-See the included known issues. No universal FPS/compatibility claim is made.
+[b]Installation[/b]
+1. Download the main CMD package and extract the entire ZIP to a writable local folder outside the game directory.
+2. Start Steam, then open Launch-EnshroudedVRM.cmd.
+3. Choose enshrouded.exe and your own .vrm. Review the selected paths, then type Y to launch.
+4. Offline play is the tested path. Close the game before changing avatars.
 
-Original source is MIT: reuse is allowed while retaining the lightnill copyright
-notice and license. Third-party notices are included. Game/avatar rights remain
-with their respective owners. Unofficial; not affiliated with or endorsed by Keen.
+Launch through the CMD each time you want the replacement. Starting through Steam alone runs the normal game. To uninstall, close the game and remove the extracted mod folder.
 
-Development included substantial AI-generated code with direction and testing by
-lightnill. Apply the appropriate Nexus AI tags described in UPLOAD-NOTES.md.
+[b]Requirements[/b]
+Windows 10/11 x64 with the built-in Windows PowerShell 5.1. Supported Steam executable: build 26082781, game resource version 1273043. Other executable builds are rejected. Existing script policies are respected; restrictive policies may block the launcher. No administrator rights, Python or additional mod framework is required for players.
+
+The package uses readable CMD/PowerShell launchers and a required native VRM runtime DLL. No custom launcher EXE, avatars or game executables are bundled. Bring a VRM you have permission to use.
+
+[b]Features[/b]
+• VRM 0.x/1.x humanoid loading within importer bounds.
+• GPU skinning, lit rendering and relaxed hair/clothing spring motion.
+• Main-menu, character-selection, Character-panel and world previews.
+• Sword/shield, two-handed tool and drawn-bow alignment, with optional wrist fallback for missing finger mappings.
+• Portable settings and bounded text logs in the local State folder.
+
+[b]Limits[/b]
+Only you see the replacement; multiplayer avatar synchronization is not included. Large models/textures can reduce FPS. Unusual hands and equipment/animation combinations need broader coverage. Menu previews approximate blended materials with a 0.5 alpha cutoff; world blending is unchanged. Native armor/helmet fitting is not included. Read KNOWN-ISSUES.txt in the download.
+
+[b]License, source and credits[/b]
+Original code is MIT, Copyright (c) 2026 lightnill. Reuse, modification and redistribution are allowed with the copyright and license notice retained. Preserve all third-party notices. Game and avatar rights remain with their owners. This is unofficial and not affiliated with or endorsed by Keen Games.
+
+[url=https://github.com/lightnill/EnshroudedVRM]Source, issues and build instructions on GitHub[/url]
+[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.0-preview-script]CMD release and checksums[/url]
+[url=https://github.com/lightnill/EnshroudedVRM/blob/main/validation/script-launcher-20261026/PER-FILE-SCAN-RESULTS.csv]Individual file scan results and coverage[/url]
+
+Dependencies and credits: TinyGLTF, nlohmann/json, stb_image, ShroudForge-derived interface contracts, Vulkan-Headers and compiler runtime components. Full provenance and notices are included in THIRD_PARTY_NOTICES.md and notices/. No ValheimVRM source or assets are bundled.
+
+Development included substantial AI-generated code under lightnill's direction and testing.
+
+[b]Support and privacy[/b]
+Include the mod version, game build and a description of the issue. Do not upload private avatars, model-derived geometry/screenshots or unredacted logs. Automatic model exports, graphics-buffer captures, command traces, telemetry and auto-updates are disabled. Nothing is uploaded automatically.

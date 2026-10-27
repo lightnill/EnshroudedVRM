@@ -1,14 +1,40 @@
-# Legacy EXE package build guide
+# Building EnshroudedVRM
 
-These instructions describe the earlier native launcher packages. The current
-distribution uses CMD/Windows PowerShell. See the repository's
-[current build guide](../../BUILDING.md) for the script launcher and VRM runtime.
+Original code is MIT, Copyright (c) 2026 lightnill. Retain LICENSE and the
+third-party notices. Run the following commands from the repository root.
 
-Original code is MIT, copyright (c) 2026 lightnill. Keep LICENSE and all third-party
-notices. No avatars, private fixtures, research tools or game executables are included.
+## CMD/PowerShell launcher
 
-Install your own Windows x64 GCC toolchain (tested with w64devkit/GCC 16.2.0),
-Vulkan-Headers and Microsoft DXC. The build does not download or run tools automatically.
+The current launcher is readable source in `portable/script`: the CMD wrapper,
+PowerShell entry point and `launcher_core.psm1`. No custom launcher EXE is built
+or distributed. Windows PowerShell uses its installed .NET tooling to compile
+a small read-only filesystem helper locally. Existing script policies are respected.
+
+These files belong at the portable package root beside Runtime, Compatibility
+and release-manifest files. A source checkout alone is not a playable package.
+
+## Developer checks
+
+Build the developer-only synthetic child fixture with a Windows x64 GCC compiler:
+
+```powershell
+./tests/build_script_fixture.ps1 -Compiler C:/Tools/w64devkit/bin/g++.exe `
+  -OutputDirectory ./build/script-tests
+python ./tests/test_script_launcher.py ./build/script-tests/portable_child.exe
+python ./tests/test_portable_package.py
+python ./tests/test_script_release.py
+python ./tests/test_script_fixture_build.py
+```
+
+The child fixture is test-only and is never included in player downloads. Tests
+use synthetic data and do not start Enshrouded. Python and a compiler are developer
+tools, not player requirements.
+
+## Native VRM runtime and shaders
+
+The game requires a native Vulkan layer DLL. Use your own Windows x64 GCC toolchain
+(tested with w64devkit/GCC 16.2.0), Vulkan-Headers and Microsoft DXC. No tools are
+downloaded automatically.
 
 ```powershell
 ./build.ps1 -Target Bridge -PortableRelease `
@@ -16,54 +42,30 @@ Vulkan-Headers and Microsoft DXC. The build does not download or run tools autom
   -VulkanIncludeDirectory C:/Tools/Vulkan-Headers/include `
   -ShaderCompiler C:/Tools/dxc/bin/x64/dxc.exe `
   -OutputDirectory ./build/Runtime
-
-./portable/build.ps1 -CompilerDirectory C:/Tools/w64devkit/bin `
-  -OutputDirectory ./build/Launcher -Test
-
-python ./tests/test_portable_package.py
 ```
 
-The launcher can also be built separately with Microsoft Visual C++ x64 and a
-Windows SDK. This does not rebuild the VRM runtime or its shaders. Tested with
-MSVC 19.27.29112 (Visual Studio 2019) and Windows SDK 10.0.19041.0:
+The script release preserves the accepted runtime DLL and shaders unchanged.
+Other development targets may depend on omitted research fixtures; only the
+documented targets and selected synthetic tests are claimed to be self-contained.
+
+## Assemble a release
+
+Use a locally supplied, verified current package as the source for the supported
+Runtime and Compatibility data. Supply its published SHA-256 explicitly:
 
 ```powershell
-./portable/build-msvc.ps1 `
-  -VcToolsDirectory 'C:/Tools/MSVC/14.27.29110' `
-  -WindowsSdkIncludeDirectory 'C:/Tools/WindowsSDK/Include/10.0.19041.0' `
-  -WindowsSdkLibraryDirectory 'C:/Tools/WindowsSDK/Lib/10.0.19041.0' `
-  -ResourceCompiler 'C:/Tools/WindowsSDK/bin/10.0.19041.0/x64/rc.exe' `
-  -OutputDirectory ./build/Launcher-MSVC -Python python -Test
+python ./portable/package_script_release.py `
+  --base-package C:/Releases/accepted.zip `
+  --base-sha256 PUBLISHED_64_CHARACTER_SHA256 `
+  --output ./dist/EnshroudedVRM-0.1.0-preview-script.zip
 ```
 
-Use the actual paths from your licensed Visual Studio/Build Tools and SDK
-installation. The SDK include directory must contain `ucrt`, `shared` and `um`;
-the library directory must contain `ucrt/x64` and `um/x64`. The script changes
-only its process environment and downloads no dependencies. `-Test` runs the
-core checks and four synthetic child-process tests; it never starts the game.
-Python is needed only for those native process tests.
+The builder uses an explicit member map, carries the 17 runtime/compatibility
+files unchanged, and regenerates package metadata, manifest and hashes. It does
+not walk the workspace, include avatars/State, or download anything. Newly built
+bytes need their own scan record; old reports do not validate a rebuilt archive.
 
-The MSVC launcher uses the release static CRT (`/MT`, `/DNDEBUG`), ASLR, DEP,
-Control Flow Guard and reproducible linking (`/Brepro`). Core test assertions
-remain enabled. No separate Visual C++ Redistributable is required by this
-launcher; its imports are Windows system DLLs. Keep the Microsoft notices when
-distributing it. The accepted runtime DLL still uses GCC and retains its notices.
-
-The runtime and launcher are normal unpacked PEs with ASLR/DEP and reproducible
-PE timestamps. Release binaries are unsigned. No signing identity is included.
-The launcher is statically linked; end users need no compiler, Python or PowerShell.
-
-This curated source snapshot builds the Bridge runtime and launcher and includes
-selected synthetic tests. Other development targets may depend on omitted local
-research fixtures. Do not claim all development test targets are self-contained.
-
-To run a rebuilt runtime, use the supported-build Compatibility files from the
-matching binary release. These are minimal locally researched interface/rig data,
-not model geometry. Their original provenance flags are retained. The MIT license
-covers original code, not game content or avatars. Never bypass the executable,
-resource ownership or file-hash checks to make an unsupported build run.
-
-If replacing files in a local development package, regenerate the matching manifest
-hashes deliberately. Published release hashes refer only to the distributed bytes.
-GPU/model buffer captures are disabled by the portable launcher's environment.
-Never submit private models, derived geometry, State or captures to source control.
+Keep the compatibility data's provenance flags. Never bypass game fingerprints,
+resource ownership or package hash checks. Preserve runtime license notices.
+Published source hashes state their text normalization separately from binary
+package hashes. Captures and model exports remain disabled.

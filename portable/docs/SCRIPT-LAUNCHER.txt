@@ -1,54 +1,26 @@
-EnshroudedVRM 0.1.0 preview - current readable script launcher
-by lightnill
+EnshroudedVRM — readable CMD/Windows PowerShell launcher
 
-This package uses readable CMD/PowerShell launchers instead of a custom launcher
-EXE. The VRM runtime is still a native DLL. It is byte-identical to the working
-release, as are all shaders and compatibility files. No avatars are included.
+Run Launch-EnshroudedVRM.cmd for interactive game/model selection. Review the
+paths and type Y before launch. See README.txt for player setup and limitations.
 
-Windows 10/11 x64 with the built-in Windows PowerShell 5.1 is required. PowerShell
-7 is not required. The scripts obey your existing execution policy and do not
-change Windows security settings. Your system policy may block scripts or the
-read-only .NET filesystem helper. Earlier EXE builds remain in release history;
-CMD/PowerShell is the current distribution.
+Launch-EnshroudedVRM.ps1 is the entry point. launcher_core.psm1 contains validation
+and launch logic, including a small read-only C# filesystem helper compiled by
+Windows PowerShell's installed .NET tooling. No custom launcher EXE is distributed.
 
-1. Extract the whole ZIP to a writable local folder outside the game folder.
-2. Start Steam, then double-click Launch-EnshroudedVRM.cmd.
-3. Choose enshrouded.exe if it is not detected, then choose your own .vrm file.
-4. Read the selected paths, then type Y to start the modded game.
-5. Use Offline mode for the preview's tested play path.
+PowerShell 5.1 is required. Existing script policies are respected; the launcher
+does not change Windows security settings. Steam and the game retain their own
+normal behavior. The mod changes only the child-process Vulkan environment.
 
-Launch through this CMD each time you want the mod. It does not install a startup
-task or change Steam launch options. Close the game before changing avatars.
-Settings and text logs remain in the local State folder. GPU/model exports,
-anchor capture and command traces are disabled. Nothing is uploaded by the scripts.
-
-The scripts verify the supported game fingerprint and every manifested package
-file before starting the game. Preserve the complete package. Keep your avatar
-and State private; never attach private models or unredacted logs to reports.
-
-Launch-EnshroudedVRM.ps1 is the entry point. launcher_core.psm1 contains the
-validation and launch code, including a small readable C# helper using read-only
-Windows path APIs. Windows PowerShell compiles that helper locally using its
-installed .NET tooling. No extra helper executable, compiler or installer is
-distributed. The game loads the runtime through its child-process Vulkan settings.
-
-For a check without starting the game, run from PowerShell:
+Explicit command options include -Check, -Launch, -Wait, -NoSprings,
+-EnableSprings and -Report. Use -EnableSprings to turn saved spring motion back on.
+For validation without starting the game:
   .\Launch-EnshroudedVRM.ps1 -Check -Game "D:\Steam\enshrouded.exe" -Model "D:\Avatars\Avatar.vrm"
-Explicit launch options also include -Launch, -Wait, -NoSprings, -EnableSprings
-and -Report. Use -EnableSprings to turn motion back on after saving it off.
 
-The script launcher passed synthetic process/validation tests and a check
-against the supported executable. The author also confirmed a successful game
-launch with the frozen script package.
-Antivirus results are recorded separately for the exact file hashes. Text files
-and a zero-detection scan do not guarantee acceptance by Nexus or every scanner.
+Settings and bounded text logs stay in State. Captures, model exports and command
+traces remain disabled. The launcher refuses unsupported game builds, changed
+package files and an already-running game. It makes no global installation,
+startup or Steam launch-option changes. Nothing is uploaded automatically.
 
-The replacement is visible only on your screen. GPU skinning, lit rendering,
-spring motion, menu previews and equipment alignment are unchanged. See
-KNOWN-ISSUES.txt for the supported rigs, materials and game build.
-
-Original code is MIT, Copyright (c) 2026 lightnill. Retain LICENSE and third-party
-notices. Game and avatar rights remain with their owners. This mod is unofficial
-and not endorsed by Keen Games.
-
-Public runtime source/support: https://github.com/lightnill/EnshroudedVRM
+Original code is MIT, Copyright (c) 2026 lightnill. Preserve LICENSE and the
+applicable dependency notices. The runtime DLL, shaders and compatibility data
+retain their own release hashes and provenance.

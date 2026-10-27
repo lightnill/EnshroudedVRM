@@ -1,42 +1,38 @@
-Enshrouded VRM — 0.1.0 preview
-by lightnill
+EnshroudedVRM 0.1.0 preview — by lightnill
 
-Unofficial portable preview. Windows 10/11 x64; supported Steam build only.
-No avatars are included. Bring a VRM you have permission to use.
+Play as your own VRM avatar in Enshrouded. This is an early preview. The change
+is visible only on your screen; multiplayer avatar support is planned but is
+not implemented. No avatars or game executables are bundled.
 
-1. Extract the whole ZIP into a writable local folder, outside the game folder.
-2. Start Steam, then open EnshroudedVRM.exe.
-3. Check the game location, choose your own .vrm, and click Launch game.
-   You can also put one .vrm in Avatars for automatic selection.
-4. Use Offline mode for this preview's tested play path.
+1. Extract the whole ZIP to a writable local folder outside the game directory.
+2. Start Steam, then double-click Launch-EnshroudedVRM.cmd.
+3. Choose enshrouded.exe and your own .vrm file.
+4. Review the selected paths, then type Y to start the modded game.
+5. Use Offline mode for the preview's tested play path.
 
-No avatars are included. Private models, diagnostic variants and game executables
-are excluded. Keep the runtime, compatibility files and shaders with the launcher.
-No PowerShell, Python, administrator rights or installation is needed to use it.
+Close the game before changing avatars. Run the CMD each time you want the mod;
+starting through Steam alone runs the normal game. To uninstall, close the game
+and remove the extracted folder. No global installation is required.
 
-The replacement is visible only on your screen. GPU skinning, lit rendering,
-relaxed spring motion, menu previews and held-item alignment are enabled. Fingers
-are preferred for grips; missing mappings use an approximate wrist reference.
-See KNOWN-ISSUES.txt for the limits of current testing.
+Requires Windows 10/11 x64 and built-in Windows PowerShell 5.1. The scripts obey
+existing execution policies; restrictive policies may block them. Security
+settings are not changed. No administrator rights, Python or extra mod framework
+is required for players.
 
-Menu previews display blended materials with a 0.5 alpha cutoff, so transparent
-hair/clothing can appear with harder edges there. The world keeps full blended
-transparency. This preview choice does not modify your VRM file.
+The three launcher files are readable text. A native runtime DLL is required
+for rendering. GPU skinning, lit rendering, spring motion, menu previews and
+held-item alignment are included. Large models can reduce FPS. Read KNOWN-ISSUES.txt.
 
-Settings and bounded text logs stay in State beside the launcher. GPU/model buffer
-exports and command traces are off. Open logs from the launcher if needed; check
-logs for personal/model information before sharing them yourself.
+The launcher checks the supported game fingerprint and package file hashes
+before launch. Keep the package complete. Settings and bounded text logs stay in
+State. Automatic model exports, graphics-buffer captures, anchor capture, command
+traces, telemetry and auto-updates are disabled. Nothing is uploaded automatically.
 
-To play normally, close the game and start it through Steam. To remove the mod,
-delete its extracted folder when no modded game is running. It does not install
-files in the game's directory or change global Vulkan/Windows settings.
+Keep avatars and State private. Never share private models, derived geometry,
+screenshots of private models or unredacted logs in public reports.
 
-Original project code: MIT, Copyright (c) 2026 lightnill.
-Retain LICENSE and the third-party notices when reusing or redistributing code.
-The MIT license does not grant rights to Keen's content or anyone else's avatars.
+Original code is MIT, Copyright (c) 2026 lightnill. Keep LICENSE and all third-party
+notices. Game and avatar rights remain with their owners. This is unofficial
+and not endorsed by Keen Games.
 
-Start through EnshroudedVRM.exe each time you want the mod. Starting through
-Steam alone runs the normal game. Close the game before changing avatars.
-
-Source and support: https://github.com/lightnill/EnshroudedVRM
-Unofficial; not affiliated with or endorsed by Keen Games.
+Source, support and build instructions: https://github.com/lightnill/EnshroudedVRM

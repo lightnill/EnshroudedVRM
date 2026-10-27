@@ -1,49 +1,28 @@
 # EnshroudedVRM 0.1.0 preview
 
-By lightnill. First portable preview for Windows x64 and the supported Steam build.
+By lightnill. The player download uses a readable CMD/Windows PowerShell launcher
+and the required native VRM runtime DLL. No custom launcher EXE or avatars are bundled.
 
-- Load your own VRM 0.x/1.x humanoid avatar locally.
-- GPU skinning, lit rendering and spring-bone support.
-- World, main menu, character selection and Character-panel previews.
-- Held-item alignment for sword, shield, two-handed tools and bow draw; optional
-  finger mappings with approximate wrist fallback when mappings are missing.
-- Guarded compatibility checks; portable launcher with no global installation.
+- VRM 0.x/1.x humanoid loading within importer bounds.
+- GPU skinning, lit rendering and relaxed hair/clothing spring motion.
+- World, main-menu, character-selection and Character-panel previews.
+- Sword/shield, two-handed tool and drawn-bow alignment, with approximate wrist
+  fallback when optional finger mappings are missing.
+- Build-specific compatibility checks and portable local settings/logs.
 
-Menu previews approximate blended materials with alpha cutout. World transparency
-is unchanged. Large models can reduce FPS; unusual rigs/equipment need broader
-coverage. Other players do not see the VRM. See KNOWN-ISSUES.txt for details.
+Extract the complete ZIP, start Steam, run Launch-EnshroudedVRM.cmd, choose the
+game and avatar, then review the paths and type Y. Windows PowerShell 5.1 is built
+into supported Windows versions; existing script policies are respected.
 
-No avatars or game executables are included. Bring your own permitted VRM.
-Extract the portable ZIP, start Steam, open EnshroudedVRM.exe, select the game and
-avatar, and Launch game. Offline play is the tested path. Launch through the mod
-each time; launching through Steam alone runs the normal game.
+This is an early preview. Only you see the replacement. Multiplayer avatar support
+is planned but is not implemented. Large models may reduce FPS; unusual rigs and
+equipment combinations need broader testing. Menu previews approximate blended
+materials with alpha cutout; world blending is unchanged. See KNOWN-ISSUES.txt.
 
-Original code is MIT with attribution to lightnill; dependency notices are included.
-This is unofficial and not endorsed by Keen Games. Binaries are unsigned; no clean
-antivirus verdict is claimed. Development included substantial AI-generated code
-under lightnill's direction and testing.
+Runtime DLL, shaders, compatibility data and launcher logic are preserved from
+the tested script build. Release source excludes retired launcher-only code and
+build targets. License notices required by the runtime remain included.
 
-## MSVC launcher update - 26 October 2026
-
-The launcher is now built with Microsoft Visual C++ and a static release runtime.
-The executable is the same MSVC build verified in-game by the maintainer.
-The accepted VRM runtime, all 13 shader modules and compatibility files are
-byte-identical to the original preview, including the menu and equipment fixes.
-
-The launcher is 520,704 bytes and remains unsigned. Core checks, four synthetic
-child-process tests and the packaged compatibility/tamper checks passed. No
-additional Visual C++ Redistributable is required by this launcher.
-
-The standalone launcher's VirusTotal scan on 26 October 2026 reported 1/69:
-Trapmine, Malicious.high.ml.score. Microsoft, Bkav Pro and BitDefender reported
-Undetected. This scan covers the launcher alone and is not a clean verdict for
-the complete package. The runtime loads inside the game and uses graphics hooks
-and validated in-process patches; security products may inspect these techniques.
-
-Launcher SHA256:
-86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9
-
-Scan: https://www.virustotal.com/gui/file/86e0b708c90cdb54b503e9d2857b078520e421f9494ac285b88029cf5cec9cb9/detection
-
-The original v0.1.0-preview tag/downloads are preserved. This update uses the
-v0.1.0-preview-msvc tag; the embedded launcher version remains 0.1.0-preview.
+Verification is recorded for the exact published package. Individual scan reports
+are supplied separately; a ZIP-level verdict does not establish member coverage.
+Original code is MIT, Copyright (c) 2026 lightnill. Retain dependency notices.

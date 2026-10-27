@@ -18,6 +18,12 @@ class PackageTests(unittest.TestCase):
         for name in ['Avatars/Sample.vrm','Avatars/hidden.vrm','Sample-without-finger-mappings.vrm','model.glb','posed.bin','screenshot.png','State/settings.json','State/last-session.json','work/raw.json','.env','.git/config','../outside','a/../../outside','C:/outside','a\\outside','a//b','a/NUL.txt','README.txt:stream','Runtime/unexpected.exe']:
             self.assertFalse(package.safe_archive_member(name),name)
 
+    def test_only_named_script_entry_points_allowed(self):
+        for name in ['Launch-EnshroudedVRM.cmd','portable/script/Launch-EnshroudedVRM.cmd']:
+            self.assertTrue(package.safe_archive_member(name),name)
+        for name in ['Other.cmd','Avatars/Launch-EnshroudedVRM.cmd','Runtime/Launch-EnshroudedVRM.cmd']:
+            self.assertFalse(package.safe_archive_member(name),name)
+
     def test_private_identifiers_rejected_in_both_encodings(self):
         for data in [b'path C:\\Users\\PrivateTester\\avatar',b'test PrivateTester name','PrivateTester'.encode('utf-16le')]:
             with self.assertRaises(ValueError):

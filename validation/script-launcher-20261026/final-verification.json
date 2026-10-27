@@ -1,13 +1,14 @@
 {
-  "verifiedAtUtc": "2026-10-27T01:10:49.185241+00:00",
+  "archiveSha256": "b1c829abe00c503ed1631ed33bdd7f9b36e605f5f42887e638c7c0b0decd3bfc",
   "fileCount": 39,
-  "stageMatchesArchive": true,
-  "allFileHashesMatch": true,
-  "archiveSha256": "3b7865eb7b0a67971310eb1db83a4c13f66555be7920e49342f79a4bde4f61bb",
-  "unchangedRuntimeShaderCompatibilityFiles": 17,
-  "preservedFiles": [
+  "unchangedFiles": [
+    "Avatars/README.txt",
     "Compatibility/catalog.json",
     "Compatibility/profile.json",
+    "KNOWN-ISSUES.txt",
+    "LICENSE",
+    "Launch-EnshroudedVRM.cmd",
+    "Launch-EnshroudedVRM.ps1",
     "Runtime/enshrouded_vrm_layer.json",
     "Runtime/enshrouded_vrm_runtime.dll",
     "Runtime/shaders/avatar.frag.spv",
@@ -22,19 +23,72 @@
     "Runtime/shaders/native_prepare.comp.spv",
     "Runtime/shaders/native_skinning.comp.spv",
     "Runtime/shaders/native_skinning.finalize.spv",
-    "Runtime/shaders/native_volume_snapshot.comp.spv"
+    "Runtime/shaders/native_volume_snapshot.comp.spv",
+    "launcher_core.psm1",
+    "notices/GCC-RUNTIME-EXCEPTION.txt",
+    "notices/GPL-3.0.txt",
+    "notices/LGPL-2.1.txt",
+    "notices/MinGW-w64-runtime.txt",
+    "notices/ShroudForge-MIT.txt",
+    "notices/TinyGLTF-MIT.txt",
+    "notices/Vulkan-Headers-MIT.txt",
+    "notices/nlohmann-json-MIT.txt",
+    "notices/stb-image-MIT.txt"
   ],
+  "changedFiles": [
+    "BUILD-INFO.json",
+    "README.txt",
+    "RELEASE-NOTES.md",
+    "SECURITY.md",
+    "SHA256SUMS.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "release-manifest.json"
+  ],
+  "runtimeCompatibilityAndLauncherCodeUnchanged": true,
+  "gameStarted": false,
+  "stateCreated": false,
+  "check": {
+    "ok": true,
+    "version": "0.1.0-preview",
+    "publicationStatus": "preview",
+    "runtimeSha256": "17695426ecfbe188db42709b6dd70b7e629b9dfe34b976facaf210cd5a96d045",
+    "captureFiles": false,
+    "gameStarted": false,
+    "launcherKind": "script"
+  },
+  "verifiedAtUtc": "2026-10-27T03:17:39.053232+00:00",
+  "stageMatchesArchive": true,
+  "allFileHashesMatch": true,
   "customLauncherExecutables": 0,
   "avatarFiles": 0,
   "individualLocalScans": 39,
   "localIssues": 0,
   "localSkippedFiles": 0,
-  "individualVirusTotalReports": 39,
+  "localSignatureVersion": "7.101742",
+  "individualVirusTotalReports": 32,
   "virusTotalFilesWithDetections": 0,
   "virusTotalEngineCountRange": [
     53,
     70
   ],
-  "noGameStartedForTheseChecks": true,
-  "nexusCandidateUploadTested": false
+  "virusTotalNotVerifiedForChangedTextOrMetadata": [
+    "BUILD-INFO.json",
+    "README.txt",
+    "RELEASE-NOTES.md",
+    "SECURITY.md",
+    "SHA256SUMS.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "release-manifest.json"
+  ],
+  "scanCoverageNote": "All 39 final files individually scanned locally. Existing VirusTotal reports reused only for 32 exact unchanged hashes. Seven changed documentation/metadata hashes have no verified VirusTotal verdict.",
+  "nativeRuntimeSha256": "17695426ecfbe188db42709b6dd70b7e629b9dfe34b976facaf210cd5a96d045",
+  "authorLiveValidation": "Author confirmed the earlier CMD package works in-game. This documentation cleanup preserves all runtime, shaders, compatibility data and launcher script bytes.",
+  "automatedValidation": {
+    "scriptLauncherCasesPassed": 20,
+    "scriptReleaseCasesPassed": 12,
+    "fixtureBuildCasesPassed": 2,
+    "portablePackageCasesPassed": 7,
+    "portablePackageCasesSkipped": 1,
+    "skipReason": "Windows symlink permission unavailable"
+  }
 }

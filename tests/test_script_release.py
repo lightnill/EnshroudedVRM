@@ -105,9 +105,75 @@ class ScriptReleaseTests(unittest.TestCase):
                 '--source-root', str(self.source), '--output', str(output or self.output),
                 '--root-name', 'Script-release']
 
-    def run_cli(self, output=None, base_hash=None):
-        return subprocess.run(self.command(output, base_hash), capture_output=True,
+    def run_cli(self, output=None, base_hash=None, extra=()):
+        return subprocess.run(self.command(output, base_hash) + list(extra), capture_output=True,
                               text=True, encoding='utf-8', timeout=20)
+
+    def rebuilt_inputs(self):
+        runtime = self.folder / 'rebuilt.dll'
+        runtime.write_bytes(b'new synthetic native runtime')
+        source = self.source / 'src/runtime_bridge.cpp'
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b'new synthetic runtime source\n')
+        resource = self.source / 'portable/runtime.rc'
+        resource.write_bytes(b'new synthetic version resource\n')
+        return runtime, ['--runtime-dll', str(runtime), '--runtime-sha256', sha(runtime.read_bytes()),
+                         '--version', '0.1.1-preview']
+
+    def test_rebuilt_runtime_uses_fresh_hashes_version_and_source_pins(self):
+        runtime, extra = self.rebuilt_inputs()
+        result = self.run_cli(extra=extra)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertEqual(archive.read('Script-release/Runtime/enshrouded_vrm_runtime.dll'), runtime.read_bytes())
+            info = json.loads(archive.read('Script-release/BUILD-INFO.json'))
+            manifest = json.loads(archive.read('Script-release/release-manifest.json'))
+            self.assertEqual(info['version'], '0.1.1-preview')
+            self.assertEqual(manifest['version'], '0.1.1-preview')
+            self.assertTrue(info['runtimeRebuilt'])
+            self.assertEqual(info['runtimeSha256'], sha(runtime.read_bytes()))
+            self.assertEqual(info['scanStatus'], 'not-scanned')
+            pins = {entry['path']: entry['sha256'] for entry in info['sourceInputs']}
+            self.assertEqual(pins['src/runtime_bridge.cpp'], sha(b'new synthetic runtime source\n'))
+            self.assertEqual(pins['portable/runtime.rc'], sha(b'new synthetic version resource\n'))
+            for name, data in self.preserved.items():
+                if not name.endswith('.dll'):
+                    self.assertEqual(archive.read('Script-release/' + name), data)
+        receipt = json.loads(self.output.with_suffix('.receipt.json').read_bytes())
+        self.assertTrue(receipt['runtimeRebuilt'])
+        self.assertNotIn('Runtime/enshrouded_vrm_runtime.dll', receipt['preservedMembers'])
+        self.assertEqual(len(receipt['preservedMembers']), 16)
+
+    def test_rebuilt_runtime_requires_matching_digest(self):
+        _, extra = self.rebuilt_inputs()
+        extra[3] = '0' * 64
+        result = self.run_cli(extra=extra)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Runtime SHA-256', result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rebuilt_runtime_requires_both_file_and_digest(self):
+        runtime, _ = self.rebuilt_inputs()
+        for extra in (['--runtime-dll', str(runtime)], ['--runtime-sha256', 'a' * 64]):
+            with self.subTest(extra=extra):
+                result = self.run_cli(extra=extra)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('together', result.stderr)
+                self.assertFalse(self.output.exists())
+
+    def test_rebuilt_runtime_rejects_unsafe_source_pin(self):
+        _, extra = self.rebuilt_inputs()
+        self.write_base(metadata={'sourceInputs': [{'path': '../private.txt', 'sha256': 'b' * 64}]})
+        result = self.run_cli(extra=extra)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('source pin', result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_new_version_rejects_path_characters(self):
+        result = self.run_cli(extra=['--version', '../private'])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('version', result.stderr)
+        self.assertFalse(self.output.exists())
 
     def assert_rejected(self, fragment, base_hash=None):
         result = self.run_cli(base_hash=base_hash)

@@ -1,0 +1,76 @@
+{
+  "version": "0.1.1-preview",
+  "releaseTag": "v0.1.1-preview",
+  "verifiedAtUtc": "2026-10-28T03:13:02.045202+00:00",
+  "sourceBaseCommit": "fce3b2f8dec40e29d3df7ad32df22f8c3c91b848",
+  "package": {
+    "file": "EnshroudedVRM-0.1.1-preview.zip",
+    "sha256": "29da1c468dc5f8c3b6df4b659ccb2be4e9d1067d8eb67769b3235bf62d2a9967",
+    "files": 39
+  },
+  "runtimeSha256": "abd28b10bd9c331c8b750f1e4dc1b17335a86051004263aa4c4f597823f2af26",
+  "runtimeSourcePinsVerified": 117,
+  "unchangedShaders": 13,
+  "unchangedRuntimeShaderCompatibilityMembers": 16,
+  "tests": {
+    "launcher": {
+      "run": 62,
+      "failures": 0
+    },
+    "package": {
+      "run": 8,
+      "failures": 0,
+      "skipped": 1,
+      "skipReason": "Symbolic-link privilege unavailable"
+    },
+    "releaseBuilder": {
+      "run": 17,
+      "failures": 0
+    },
+    "fixtureBuilder": {
+      "run": 2,
+      "failures": 0
+    },
+    "materialImport": {
+      "syntheticChecks": 84,
+      "originalAvatarChecks": 3,
+      "failures": 0
+    }
+  },
+  "liveValidation": {
+    "runtimeVersion": "0.1.1-preview",
+    "originalAvatarUnchanged": true,
+    "userConfirmedNormalEyebrowsMovementAndHeldItems": true,
+    "generatedPlayScript": true,
+    "startedThroughWindowsPowerShell51": true,
+    "startupObservation": "running-after-startup-check",
+    "gameClosedNormallyAfterVerification": true
+  },
+  "finalPackageCheck": {
+    "passed": true,
+    "gameStarted": false,
+    "stateCreated": false
+  },
+  "scan": {
+    "scanner": "Bitdefender Endpoint Security Tools",
+    "individualFiles": 39,
+    "remainingIssues": 0,
+    "resolvedIssues": 0,
+    "unscannedObjects": 0,
+    "allHashesUnchanged": true,
+    "globalSecuritySettingsChanged": false,
+    "virusTotalVerdictForChangedBytes": "not claimed"
+  },
+  "privacy": {
+    "bundledAvatars": 0,
+    "savesIncluded": false,
+    "playerSettingsIncluded": false,
+    "rawGameplayLogsIncluded": false,
+    "modelCapturesIncluded": false
+  },
+  "review": "Fresh whole-change review completed; setup-recovery and documentation findings resolved.",
+  "limits": [
+    "Targeted unfaded standard VRoid MToon FaceBrow cutout rule; full MToon is not implemented.",
+    "Initial loader checks were separate single-player scenarios; combined-loader and multiplayer support remain untested."
+  ]
+}

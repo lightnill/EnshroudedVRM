@@ -1,0 +1,123 @@
+{
+  "testDateLocal": "2026-10-27",
+  "checkedUtc": "2026-10-28T01:04:24.600146+00:00",
+  "scope": "initial Windows loader coexistence; no gameplay-changing third-party mod",
+  "game": {
+    "steamBuild": "26082781",
+    "resourceVersion": "1273043",
+    "exeSha256": "d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882"
+  },
+  "vrm": {
+    "candidate": "one-click-r3",
+    "runtimeSha256": "17695426ecfbe188db42709b6dd70b7e629b9dfe34b976facaf210cd5a96d045",
+    "productionCodeChangedForCompatibility": false
+  },
+  "eml": {
+    "tag": "v0.2.0",
+    "commit": "16708594d686b030d909f2d835b199d879ea9ad8",
+    "proxySha256": "038b7a1787026007a68c82a6adeb8e79c2e644f936d4cd00f8b0db206a2349fa"
+  },
+  "shroudforge": {
+    "tag": "v1.7.5-build.39957852083",
+    "commit": "46b59da1b3642f91fee3808c513efb996ec33f23",
+    "zipSha256": "cc00580a99fa521e44936e27ab1ea95be3293853545f9e6ea6d51b06f5bfc907"
+  },
+  "cases": [
+    {
+      "case": "eml-alone",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": false,
+      "avatarObserved": false,
+      "runtimeProbeActive": false,
+      "runtimeReadyInWorld": null,
+      "userMovementAndHeldItemCheck": null
+    },
+    {
+      "case": "eml-vrm",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": false,
+      "avatarObserved": true,
+      "runtimeProbeActive": false,
+      "runtimeReadyInWorld": null,
+      "userMovementAndHeldItemCheck": null
+    },
+    {
+      "case": "eml-world-vrm",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": true,
+      "avatarObserved": true,
+      "runtimeProbeActive": false,
+      "runtimeReadyInWorld": null,
+      "userMovementAndHeldItemCheck": "walking, jumping, weapon swings and held items behaved normally compared with VRM alone"
+    },
+    {
+      "case": "shroudforge-alone",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": false,
+      "avatarObserved": false,
+      "runtimeProbeActive": false,
+      "runtimeReadyInWorld": null,
+      "userMovementAndHeldItemCheck": null
+    },
+    {
+      "case": "shroudforge-vrm",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": true,
+      "avatarObserved": true,
+      "runtimeProbeActive": false,
+      "runtimeReadyInWorld": null,
+      "userMovementAndHeldItemCheck": "walking, jumping, weapon swings and held items behaved normally compared with VRM alone"
+    },
+    {
+      "case": "shroudforge-probe-alone",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": true,
+      "avatarObserved": false,
+      "runtimeProbeActive": true,
+      "runtimeReadyInWorld": true,
+      "userMovementAndHeldItemCheck": null
+    },
+    {
+      "case": "shroudforge-probe-vrm",
+      "startup35Seconds": true,
+      "menuObserved": true,
+      "worldObserved": true,
+      "avatarObserved": true,
+      "runtimeProbeActive": true,
+      "runtimeReadyInWorld": true,
+      "userMovementAndHeldItemCheck": null
+    }
+  ],
+  "invalidFixtureAttemptsExcluded": 2,
+  "deferred": [
+    "Hands-Free Lantern (Nexus 235)",
+    "EML and ShroudForge simultaneously",
+    "gameplay-mod effects and overlapping native hooks",
+    "multiplayer",
+    "alternate Vulkan-layer ordering and graphics tools"
+  ],
+  "cleanup": {
+    "completedUtc": "2026-10-28T01:03:15.3758475Z",
+    "activeLoaderFiles": [],
+    "gameIndexRestored": true,
+    "resourceFileRestored": true,
+    "resourceRestoreMethod": "Removed verified empty appended chunk; preserved original 58-chunk resource prefix. Independent pretest resource hash was not captured.",
+    "emptyTestArchivesDisabled": 9,
+    "gameExeUnchanged": true,
+    "gameLocalConfigUnchanged": true,
+    "runningGameProcesses": 0,
+    "disabledTestSetupsRetained": [
+      ".evrm-compat-eml-20261027",
+      ".evrm-compat-shroudforge-20261027"
+    ],
+    "savesRestored": false,
+    "saveBackupRetained": true
+  },
+  "initialTestPassComplete": true
+}

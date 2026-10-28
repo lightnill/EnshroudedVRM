@@ -508,6 +508,28 @@ void build_materials(tinygltf::Model& model, const Json& doc, Avatar& avatar) {
         material.unlit = source.extensions.count("KHR_materials_unlit") != 0;
         if (source.extensions.count("VRMC_materials_mtoon"))
             material.mtoon_json = doc.at("materials").at(i).at("extensions").at("VRMC_materials_mtoon").dump();
+        bool mtoon = source.extensions.count("VRMC_materials_mtoon") != 0;
+        if (!mtoon && doc.contains("extensions") && doc.at("extensions").contains("VRM")) {
+            const auto& legacy = doc.at("extensions").at("VRM");
+            if (legacy.is_object() && legacy.contains("materialProperties")) {
+                const auto& properties = legacy.at("materialProperties");
+                if (properties.is_array() && i < properties.size()) {
+                    const auto& property = properties.at(i);
+                    mtoon = property.is_object() && property.contains("shader") && property.contains("name") &&
+                        property.at("shader") == "VRM/MToon" && property.at("name") == source.name;
+                }
+            }
+        }
+        // VRoid combines the brow and its painted face overlay in one BLEND
+        // material. Its nearly opaque brow otherwise takes the world's simpler
+        // OIT lighting instead of the face's native lighting. Match the tested
+        // menu cutout path only for this standard, unfaded MToon material.
+        if (mtoon && material.alpha == AlphaMode::Blend && material.base_color[3] == 1.f &&
+            material.name.find("_FaceBrow_") != std::string::npos) {
+            material.alpha = AlphaMode::Mask;
+            material.alpha_cutoff = .5f;
+            avatar.warnings.push_back("VRoid FaceBrow overlay uses alpha cutout for consistent native face lighting.");
+        }
         avatar.materials.push_back(std::move(material));
     }
 }

@@ -178,7 +178,8 @@ def read_base(path, expected_hash):
     return selected, accepted, manifest
 
 
-def build_release(base_package, base_sha256, source_root, output, root_name=None):
+def build_release(base_package, base_sha256, source_root, output, root_name=None,
+                  runtime_dll=None, runtime_sha256=None, version=None):
     if not isinstance(base_sha256, str) or not re.fullmatch('[0-9a-fA-F]{64}', base_sha256):
         raise ValueError('A complete base SHA-256 digest is required')
     base_sha256 = base_sha256.lower()
@@ -190,7 +191,42 @@ def build_release(base_package, base_sha256, source_root, output, root_name=None
     receipt_path = output.with_suffix('.receipt.json')
     if output.exists() or receipt_path.exists():
         raise ValueError('Output archive or receipt already exists; choose a new output path')
+    if (runtime_dll is None) != (runtime_sha256 is None):
+        raise ValueError('Supply runtime DLL and runtime SHA-256 together')
+    if version is not None and (not isinstance(version, str) or
+                               not re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,63}', version)):
+        raise ValueError('Release version is invalid')
     payload, accepted, original_manifest = read_base(base_package, base_sha256)
+    rebuilt = runtime_dll is not None
+    preserved = set(PRESERVED_MEMBERS)
+    source_inputs = accepted['sourceInputs']
+    if rebuilt:
+        if not isinstance(runtime_sha256, str) or not re.fullmatch('[0-9a-fA-F]{64}', runtime_sha256):
+            raise ValueError('Runtime SHA-256 is invalid')
+        runtime_dll = local_path(runtime_dll, 'Runtime DLL')
+        regular_file(runtime_dll, 'Runtime DLL', 128 * 1024 * 1024)
+        runtime_bytes = runtime_dll.read_bytes()
+        if sha(runtime_bytes) != runtime_sha256.lower():
+            raise ValueError('Runtime SHA-256 does not match the supplied DLL')
+        if not isinstance(source_inputs, list) or not 1 <= len(source_inputs) <= 4096:
+            raise ValueError('Runtime source pins must be a bounded list')
+        names = set()
+        for entry in source_inputs:
+            name = entry.get('path') if isinstance(entry, dict) else None
+            if (not isinstance(name, str) or not safe_archive_member(name) or
+                    name.casefold() in names):
+                raise ValueError('Runtime source pin path is unsafe or duplicated')
+            names.add(name.casefold())
+        paths = [entry['path'] for entry in source_inputs]
+        if 'portable/runtime.rc' not in names:
+            paths.append('portable/runtime.rc')
+        source_inputs = []
+        for name in sorted(paths):
+            source = source_root / name
+            regular_file(source, 'Runtime source pin', 8 * 1024 * 1024)
+            source_inputs.append({'path': name, 'sha256': sha(source.read_bytes())})
+        payload['Runtime/enshrouded_vrm_runtime.dll'] = runtime_bytes
+        preserved.remove('Runtime/enshrouded_vrm_runtime.dll')
     local_inputs = []
     for member, relative in LOCAL_MEMBERS.items():
         source = source_root / relative
@@ -200,26 +236,33 @@ def build_release(base_package, base_sha256, source_root, output, root_name=None
         local_inputs.append({'path': relative, 'archivePath': member, 'sha256': sha(data)})
     info = {field: accepted[field] for field in BASE_BUILD_FIELDS}
     info.update({
+        'version': version or accepted['version'],
         'publicationStatus': original_manifest['publication_status'],
         'revision': 'script-release-source-build',
         'launcherKind': 'readable CMD/Windows PowerShell 5.1',
         'basePackageSha256': base_sha256,
-        'runtimeRebuilt': False,
+        'runtimeRebuilt': rebuilt,
+        'runtimeSha256': sha(payload['Runtime/enshrouded_vrm_runtime.dll']),
+        'sourceInputs': source_inputs,
         'scanStatus': 'not-scanned',
         'scriptSourceInputs': [{'path': 'portable/script/' + name, 'sha256': sha(payload[name])} for name in SCRIPT_NAMES],
         'releaseSourceInputs': sorted(local_inputs, key=lambda entry: entry['path']),
         'validation': {
-            'runtime': 'The 17 base Runtime/Compatibility members were preserved and their release hashes verified; no rebuild',
+            'runtime': ('A separately rebuilt DLL was supplied and its explicit SHA-256 verified; '
+                        '16 base shader/compatibility members preserved. Source pins describe the supplied checkout; '
+                        'this builder does not compile or test the DLL') if rebuilt else
+                       'The 17 base Runtime/Compatibility members were preserved and their release hashes verified; no rebuild',
             'launcher': 'No launcher execution or game session is performed by this release builder',
             'antivirus': 'Not scanned by this build; previous scan records apply only to their exact file and archive hashes',
         },
     })
     payload['BUILD-INFO.json'] = json_bytes(info)
     manifest = {field: original_manifest[field] for field in ('schema', 'version', 'publication_status', 'game_sha256')}
+    manifest['version'] = info['version']
     manifest['files'] = [{'path': name, 'sha256': sha(data)} for name, data in sorted(payload.items())]
     payload['release-manifest.json'] = json_bytes(manifest)
     payload['SHA256SUMS.txt'] = ''.join(sha(data) + '  ' + name + '\n' for name, data in sorted(payload.items())).encode('utf-8')
-    root_name = root_name or 'EnshroudedVRM-' + accepted['version'] + '-script'
+    root_name = root_name or 'EnshroudedVRM-' + info['version'] + '-script'
     with tempfile.TemporaryDirectory(prefix='enshrouded-vrm-script-release-') as folder:
         stage = Path(folder)
         members = {}
@@ -231,14 +274,14 @@ def build_release(base_package, base_sha256, source_root, output, root_name=None
         files = write_archive(output, root_name, members)
     receipt = {
         'archiveSha256': sha(output.read_bytes()), 'basePackageSha256': base_sha256,
-        'files': files, 'preservedMembers': sorted(PRESERVED_MEMBERS),
-        'runtimeRebuilt': False, 'customLauncherExeIncluded': False,
+        'files': files, 'preservedMembers': sorted(preserved),
+        'runtimeRebuilt': rebuilt, 'customLauncherExeIncluded': False,
         'privateAssetsIncluded': False, 'scanStatus': 'not-scanned', 'published': False,
     }
     receipt_path.write_bytes(json_bytes(receipt))
     return {'archiveSha256': receipt['archiveSha256'], 'files': len(files),
-            'preservedRuntimeCompatibilityFiles': len(PRESERVED_MEMBERS),
-            'runtimeRebuilt': False, 'scanStatus': 'not-scanned', 'published': False}
+            'preservedRuntimeCompatibilityFiles': len(preserved),
+            'runtimeRebuilt': rebuilt, 'scanStatus': 'not-scanned', 'published': False}
 
 
 def main():
@@ -248,9 +291,13 @@ def main():
     parser.add_argument('--source-root', default=Path(__file__).resolve().parents[1], help='Source checkout containing the fixed local member paths')
     parser.add_argument('--output', required=True, help='New .zip output; an adjacent .receipt.json is also written')
     parser.add_argument('--root-name', help='Single root folder inside the ZIP; defaults to EnshroudedVRM-<version>-script')
+    parser.add_argument('--runtime-dll', help='Optional separately rebuilt local DLL; requires --runtime-sha256')
+    parser.add_argument('--runtime-sha256', help='Required digest of the separately rebuilt DLL')
+    parser.add_argument('--version', help='Optional new release version')
     args = parser.parse_args()
     try:
-        result = build_release(args.base_package, args.base_sha256, args.source_root, args.output, args.root_name)
+        result = build_release(args.base_package, args.base_sha256, args.source_root, args.output, args.root_name,
+                               args.runtime_dll, args.runtime_sha256, args.version)
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
         print('Script release failed: ' + str(error), file=sys.stderr)
         return 1

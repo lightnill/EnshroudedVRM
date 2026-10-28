@@ -6,12 +6,42 @@ SHA256 d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882
 The launcher stops on a different executable rather than applying stale offsets.
 Extraction folders containing a semicolon (;) are rejected because Vulkan uses it
 as a search-list separator. Move the mod to a different local folder.
+Package folders containing percent (%) signs are also rejected: Windows may
+expand paired percent signs before a CMD file starts. This affects the initial
+setup CMD as well as Play, so use a package path without ; or %. Game/avatar
+paths can contain percent signs; those values are read from saved settings.
 Some Vulkan loaders cannot read non-ASCII layer-folder paths. The launcher uses an
 existing Windows short-path alias when available, after checking that it points
 to the same runtime folder. If Windows has no usable alias, move the mod into a
 writable ASCII-only path. No aliases or volume settings are created or changed.
 Saved avatar selections are absolute paths. After moving a used package with its
-avatar, choose that avatar again with Browse if the saved location no longer exists.
+avatar, run Launch-EnshroudedVRM.cmd and choose the avatar again if its saved
+location no longer exists. The same applies to a moved game installation.
+Play-EnshroudedVRM.cmd requires complete saved settings and keeps all build/package
+checks. Missing/invalid settings produce a setup error with no automatic fallback.
+Keep Play beside the rest of the launcher. If generating it fails after the game
+starts, the game remains running and the launcher reports a warning. An existing
+file with different contents or a directory/link named Play-EnshroudedVRM.cmd is
+never replaced; rename that item before running setup again.
+
+Initial single-player coexistence checks passed with EML 0.2.0 and ShroudForge
+1.7.5, each tested separately alongside VRM. The basic Hands-Free Lantern 0.11.1
+scenario was also tested with ShroudForge and VRM. These checks do not establish
+all-mod compatibility, combined EML/ShroudForge support, or multiplayer behavior.
+No direct loader integration or graphics-layer discovery changes are included.
+
+Startup diagnostics cover the first 30 seconds after launching the process.
+Surviving that window does not confirm game/menu/rendering readiness. An early
+exit records the actual exit code, including zero; it does not establish a cause.
+The launcher does not automatically retry or terminate the game.
+
+Only five recognized session groups are retained in State/Logs. Each game-log
+tail is capped at 256 KB; completed retained native logs are trimmed to 1 MB on
+the next validated launch, while active logs retain their 10,000-line runtime
+limit. Cleanup never recurses or follows links, and leaves unknown files alone.
+Locked/unwritable files can delay cleanup; a diagnostic warning does not imply
+that an already-started game failed. Unchanged old game logs are not assigned to
+a new attempt. Failed validation and -Check do not create or clean this history.
 
 This is a local cosmetic replacement. Other players do not receive or see your
 VRM. Multiplayer synchronization and native armor/helmet fitting are not included.
@@ -33,7 +63,7 @@ constraints can disable the secondary solve; the existing rejection is retained.
 Menu scenes may omit the world transparency/volume passes. For mixed-material
 avatars, guarded menu previews route BLEND parts through a 0.5 alpha cutoff;
 partly transparent surfaces can look harder or disappear below that threshold.
-Existing MASK cutoffs are retained. World views keep full BLEND rendering, even
+Existing MASK cutoffs are retained. Other world BLEND materials keep full blending, even
 while the Character preview is open. The original model/materials are unchanged.
 Full blended transparency in menu previews is a later improvement.
 
@@ -44,3 +74,10 @@ need compatibility work. Back up your own saves before testing a preview mod.
 The executables are unsigned. A first-download reputation prompt or antivirus
 review is possible. Do not disable protection or add exclusions as a workaround.
 See SECURITY.md and the build's recorded validation results.
+
+Standard unfaded MToon materials containing the VRoid `_FaceBrow_` name token
+use alpha cutout at 0.5 in the world as well as previews. This corrects the tested
+eyebrow color/shading mismatch without changing the source VRM. Cutout edges are
+harder than true blending. Custom material names, non-MToon materials and faded
+brows retain their authored alpha mode. Full MToon/general shaded transparency
+is not implemented. Eyes, glasses and other materials are not remapped by this rule.

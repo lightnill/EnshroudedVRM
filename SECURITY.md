@@ -5,6 +5,23 @@ The game loads the required native Vulkan layer through its child-process
 environment. The launcher does not attach to another running game process.
 Close an existing game before launching.
 
+After a successful launch the launcher writes Play-EnshroudedVRM.cmd beside
+itself. This readable local script starts the same PowerShell entry point in
+saved-settings mode; it contains no avatar/game paths and makes no additional
+downloads or installations. Existing unrelated files with that name are retained.
+Play keeps the same game and package checks as setup.
+
+The same launcher process observes up to 30 seconds of startup. It records
+process-start failures, early exits and actual exit codes, and copies only a
+bounded text tail from the chosen game's enshrouded.log into private State/Logs.
+There is no resident helper, upload, game restart or process termination.
+Five recognized session groups are retained. Game-log copies are capped at
+262144 bytes; completed native logs are trimmed to 1048576 bytes on the next
+launch. Attempt JSON is capped at 16384 bytes. Cleanup is flat and constrained
+to regular owned files in the real State/Logs folder; links and unknown files
+are left alone. Locked files can prevent immediate cleanup. The game log itself
+is never edited. -Check never creates or prunes this history.
+
 PowerShell compiles a small read-only Windows filesystem helper locally using
 installed .NET tooling. The scripts respect existing execution policies and do
 not change security settings. A restrictive policy may prevent them from running.
@@ -28,6 +45,10 @@ Release checksums identify exact bytes; they are not a signature or proof of saf
 The native runtime is unsigned. Individual-file reports and coverage are recorded
 outside the package so publishing scan evidence does not change the scanned bytes.
 Unsupported engines, failures and timeouts are coverage gaps, not clean verdicts.
+Version 0.1.1 rebuilds the runtime and changes launcher/document/archive bytes.
+Previous scan records identify only their original exact bytes. Use the new
+release's verification record for current coverage; do not infer a clean verdict
+for changed files from an earlier release's reports.
 
 Report exact versions, file hashes and detection names at
 https://github.com/lightnill/EnshroudedVRM/issues . Do not attach private avatars,

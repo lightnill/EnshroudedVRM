@@ -1,0 +1,102 @@
+{
+  "testDateLocal": "2026-10-27",
+  "checkedUtc": "2026-10-28T01:50:07.250744+00:00",
+  "result": "Initial basic-Lantern single-player coexistence checks passed",
+  "game": {
+    "steamBuild": "26082781",
+    "resourceVersion": "1273043",
+    "exeSha256": "d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882"
+  },
+  "shroudforge": {
+    "version": "1.7.5-build.39957852083",
+    "nativeCoreUnchanged": true
+  },
+  "lantern": {
+    "version": "0.11.1",
+    "nexusFileId": 1339,
+    "source": "https://www.nexusmods.com/enshrouded/mods/235?tab=files&file_id=1339",
+    "archiveSha256": "2d1da0be8189f1637e8dad146182d7a7e4db38c7075fdc44837a93aeed00ac26",
+    "dllSha256": "4ba751d71a5fb48386653285eaa52aa93d3e901e5652e79ad673c128ccdc3a81"
+  },
+  "vrm": {
+    "candidate": "one-click-r3",
+    "runtimeSha256": "17695426ecfbe188db42709b6dd70b7e629b9dfe34b976facaf210cd5a96d045",
+    "specialBuildRequired": false
+  },
+  "cases": [
+    {
+      "case": "hfl-alone",
+      "startup35Seconds": true,
+      "worldLoaded": true,
+      "nativePluginLoaded": true,
+      "contentPresent": true,
+      "runtimeReadyInWorld": true,
+      "readinessEvidence": "captured in-world readiness event; baseline subsequently closed",
+      "runtimeErrors": 0,
+      "userConfirmed": [
+        "basic Lantern crafted at Workbench",
+        "Lantern equipped in added slot",
+        "belt lantern visible",
+        "K toggles illumination"
+      ],
+      "savedLanternRestored": false
+    },
+    {
+      "case": "hfl-vrm",
+      "startup35Seconds": true,
+      "worldLoaded": true,
+      "nativePluginLoaded": true,
+      "contentPresent": true,
+      "runtimeReadyInWorld": true,
+      "readinessEvidence": "live runtime snapshot",
+      "runtimeErrors": 0,
+      "userConfirmed": [
+        "belt lantern visible on VRM avatar",
+        "K toggles illumination",
+        "lantern follows walking and jumping",
+        "weapon swings work normally",
+        "no new clipping or floating compared with baseline"
+      ],
+      "savedLanternRestored": true
+    }
+  ],
+  "firstInstallation": "ShroudForge displayed a restart-required asset status; a normal restart was performed before baseline functionality was verified.",
+  "backups": {
+    "createdBeforeFirstLanternLaunch": true,
+    "saveFiles": 51,
+    "characterAndWorldIncluded": true,
+    "hashMismatches": 0,
+    "originalIndexAndResourceFileBackedUp": true
+  },
+  "finalSetup": {
+    "shroudforgeAndLanternRemainEnabled": false,
+    "playScriptRetained": true,
+    "pretestSavesRetained": true,
+    "pretestSavesRestored": true,
+    "gameAssetsRestored": true
+  },
+  "notTested": [
+    "Traveler and Wisp lanterns",
+    "optional dim cycle",
+    "controller toggle",
+    "other avatars and armor combinations",
+    "other gameplay mods",
+    "multiplayer",
+    "long-duration play",
+    "uninstalling while mod items remain in a save"
+  ],
+  "postTestRevert": {
+    "restoredUtc": "2026-10-28T01:59:23.0157043Z",
+    "saveBackupFiles": 51,
+    "restoredSaveFiles": 51,
+    "saveHashMismatches": 0,
+    "originalGameAssetsMatch": true,
+    "activeTestLoaders": [],
+    "extraGameRootFiles": [],
+    "vrmLauncherAndSettingsUnchanged": true,
+    "runningGameProcesses": 0,
+    "pretestBackupRetained": true,
+    "testStateRetainedForRecovery": true,
+    "characterAndWorldRestored": true
+  }
+}

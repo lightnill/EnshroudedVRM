@@ -23,6 +23,24 @@ namespace EvrmScript {
             StringBuilder buffer, uint size, uint flags);
         [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
         private static extern uint GetShortPathNameW(string path, StringBuilder buffer, uint size);
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FileInformation {
+            public uint Attributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+            public uint VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
+        }
+        [DllImport("kernel32.dll", SetLastError=true)]
+        private static extern bool GetFileInformationByHandle(SafeFileHandle file, out FileInformation information);
+        public static bool IsSingleLink(string path) {
+            using (SafeFileHandle file = CreateFileW(path, 0x80, 7, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero)) {
+                FileInformation information;
+                if (file.IsInvalid || !GetFileInformationByHandle(file, out information))
+                    throw new IOException("A diagnostic file's link count could not be checked.");
+                return information.NumberOfLinks == 1;
+            }
+        }
         public static string Resolve(string path) {
             using (SafeFileHandle file = CreateFileW(path, 0x80, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
                 if (file.IsInvalid) throw new IOException("A selected file or folder is missing or unreadable.", new Win32Exception(Marshal.GetLastWin32Error()));
@@ -238,12 +256,51 @@ function Get-EvrmDefaults([string]$Root) {
     return [pscustomobject]$result
 }
 
+function Get-EvrmSetupSelections([string]$Game, [string]$Root='') {
+    $found = $false
+    if ($Game) {
+        try {
+            $path = Resolve-EvrmLocalPath $Game
+            $found = [IO.Path]::GetFileName($path) -ieq 'enshrouded.exe' -and [IO.File]::Exists($path)
+            if ($found -and $Root) {
+                $package = Resolve-EvrmLocalPath $Root
+                $manifest = (Read-EvrmText ([IO.Path]::Combine($package, 'release-manifest.json')) 2MB) | ConvertFrom-Json
+                $expected = Get-EvrmProperty $manifest 'game_sha256'
+                Assert-Evrm ($expected -is [string] -and $expected -cmatch '^[0-9a-f]{64}$') 'The package has an invalid game fingerprint.'
+                $found = (Get-EvrmSha256 $path) -ceq $expected
+            }
+        } catch { # Missing, unsupported or unreadable paths need a fresh selection.
+            $found = $false
+        }
+    }
+    if (-not $found) { 'Game' }
+    'Model'
+}
+
+function Get-EvrmSavedSettings([string]$Root) {
+    $settings = [IO.Path]::Combine($Root, 'State\settings.json')
+    Assert-Evrm ([IO.File]::Exists($settings)) 'No saved setup was found.'
+    try { $saved = (Read-EvrmText $settings 32768) | ConvertFrom-Json }
+    catch { throw 'The saved setup could not be read.' }
+    Assert-Evrm ($saved -is [pscustomobject]) 'The saved setup is invalid.'
+    $game = Get-EvrmProperty $saved 'game'
+    $model = Get-EvrmProperty $saved 'model'
+    $springs = Get-EvrmProperty $saved 'springs'
+    # IsPathRooted also accepts C:relative and \root-relative paths on .NET
+    # Framework. Saved launches must not depend on the caller's directory/drive.
+    Assert-Evrm ($game -is [string] -and $game -match '^[A-Za-z]:[\\/]') 'The saved game path is invalid.'
+    Assert-Evrm ($model -is [string] -and $model -match '^[A-Za-z]:[\\/]') 'The saved avatar path is invalid.'
+    Assert-Evrm ($springs -is [bool]) 'The saved spring setting is invalid.'
+    return [pscustomobject]@{Game=$game; Model=$model; Springs=$springs}
+}
+
 function Get-EvrmLaunchPlan([string]$Root, [string]$Game, [string]$Model, [bool]$Springs=$true) {
     $rootPath = Resolve-EvrmLocalPath $Root
     $gamePath = Resolve-EvrmLocalPath $Game
     $modelPath = Resolve-EvrmLocalPath $Model
     Assert-Evrm ([IO.Directory]::Exists($rootPath)) 'The package folder is not a directory.'
     Assert-Evrm (-not $rootPath.Contains(';')) 'Move the portable mod into a folder without a semicolon (;). Vulkan treats it as a folder-list separator.'
+    Assert-Evrm (-not $rootPath.Contains('%')) 'Move the portable mod into a folder without percent (%) signs. Windows can expand them before a CMD launcher starts.'
     $manifest = (Read-EvrmText ([IO.Path]::Combine($rootPath, 'release-manifest.json')) 2MB) | ConvertFrom-Json
     Assert-Evrm ((Get-EvrmProperty $manifest 'schema') -ceq 'enshrouded-vrm-portable-v1') 'This package has an unsupported manifest.'
     $status = Get-EvrmProperty $manifest 'publication_status'
@@ -321,6 +378,214 @@ function Write-EvrmJson([string]$Path, $Value) {
     [IO.File]::WriteAllText($Path, $json + "`n", [Text.UTF8Encoding]::new($false))
 }
 
+function Write-EvrmPlayScript([string]$Root) {
+    $rootPath = Resolve-EvrmLocalPath $Root
+    $path = [IO.Path]::Combine($rootPath, 'Play-EnshroudedVRM.cmd')
+    # No game/avatar paths are embedded. Invoke PowerShell directly so CALL's
+    # second expansion cannot reinterpret percent signs in a moved package path.
+    $text = @'
+@echo off
+setlocal DisableDelayedExpansion
+rem Copyright (c) 2026 lightnill. MIT; see LICENSE.
+rem Generated by EnshroudedVRM. Run Launch-EnshroudedVRM.cmd to change settings.
+set "EVRM_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if exist "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe" set "EVRM_POWERSHELL=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+"%EVRM_POWERSHELL%" -NoLogo -NoProfile -STA -File "%~dp0Launch-EnshroudedVRM.ps1" -Play %*
+set "EVRM_EXIT=%ERRORLEVEL%"
+if not "%EVRM_EXIT%"=="0" if "%~1"=="" pause
+exit /b %EVRM_EXIT%
+'@
+    $text = ($text -replace "\r?\n", "`r`n") + "`r`n"
+    if ([IO.File]::Exists($path) -or [IO.Directory]::Exists($path)) {
+        $attributes = [IO.File]::GetAttributes($path)
+        Assert-Evrm (($attributes -band ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Directory)) -eq 0) 'Play-EnshroudedVRM.cmd already exists as a directory or link; it was left unchanged.'
+        Assert-Evrm ([string]::Equals((Read-EvrmText $path 4096), $text, [StringComparison]::Ordinal)) 'Play-EnshroudedVRM.cmd already has different contents; it was left unchanged. Rename it and run setup again.'
+        return $path
+    }
+    # Publish a complete new file without replacing an existing target, including
+    # one created between the existence check and the move.
+    $temporary = [IO.Path]::Combine($rootPath, '.evrm-play-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        $bytes = [Text.Encoding]::ASCII.GetBytes($text)
+        $stream = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
+        finally { $stream.Dispose() }
+        [IO.File]::Move($temporary, $path)
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
+    return $path
+}
+
+function Get-EvrmLogFolder([string]$Root) {
+    $folder = Resolve-EvrmLocalPath $Root
+    foreach ($part in @('State', 'Logs')) {
+        $folder = [IO.Path]::Combine($folder, $part)
+        if ([IO.File]::Exists($folder) -or [IO.Directory]::Exists($folder)) {
+            $attributes = [IO.File]::GetAttributes($folder)
+            Assert-Evrm (($attributes -band [IO.FileAttributes]::Directory) -ne 0 -and ($attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) 'The diagnostic folder must be a real local directory, not a link.'
+        } else { [void][IO.Directory]::CreateDirectory($folder) }
+        Assert-Evrm ([string]::Equals((Resolve-EvrmLocalPath $folder), $folder, [StringComparison]::OrdinalIgnoreCase)) 'The diagnostic folder resolves outside its expected location.'
+    }
+    return $folder
+}
+
+function Get-EvrmDiagnosticFile($Plan, [string]$Suffix) {
+    $session = [IO.Path]::GetFileNameWithoutExtension($Plan.Log)
+    Assert-Evrm ($session -cmatch '^\d{8}-\d{6}-\d{1,10}-[0-9a-f]{8}$') 'Invalid diagnostic session name.'
+    Assert-Evrm ($Suffix -cin @('.log', '.game.log', '.attempt.json')) 'Invalid diagnostic file type.'
+    $folder = Get-EvrmLogFolder $Plan.Root
+    $path = [IO.Path]::Combine($folder, $session + $Suffix)
+    if ([IO.File]::Exists($path) -or [IO.Directory]::Exists($path)) {
+        Assert-Evrm (([IO.File]::GetAttributes($path) -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)) -eq 0) 'A diagnostic file is a directory or link and was left unchanged.'
+        Assert-Evrm ([EvrmScript.Paths]::IsSingleLink($path)) 'A diagnostic file has multiple hard links and was left unchanged.'
+    }
+    return $path
+}
+
+function Write-EvrmDiagnosticBytes([string]$Path, [byte[]]$Bytes) {
+    if ([IO.File]::Exists($Path) -or [IO.Directory]::Exists($Path)) {
+        Assert-Evrm (([IO.File]::GetAttributes($Path) -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)) -eq 0) 'A diagnostic file is a directory or link and was left unchanged.'
+        Assert-Evrm ([EvrmScript.Paths]::IsSingleLink($Path)) 'A diagnostic file has multiple hard links and was left unchanged.'
+        $mode = [IO.FileMode]::Open
+    } else { $mode = [IO.FileMode]::CreateNew }
+    $stream = [IO.File]::Open($Path, $mode, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+    try { $stream.SetLength(0); $stream.Write($Bytes, 0, $Bytes.Length) }
+    finally { $stream.Dispose() }
+}
+
+function Write-EvrmLaunchAttempt($Plan, $Attempt) {
+    $path = Get-EvrmDiagnosticFile $Plan '.attempt.json'
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $Attempt -Depth 4 -Compress) + [Environment]::NewLine)
+    Assert-Evrm ($bytes.Length -le 16384) 'The launch-attempt record is too large.'
+    Write-EvrmDiagnosticBytes $path $bytes
+}
+
+function New-EvrmLaunchAttempt($Plan) {
+    $record = [ordered]@{
+        session=[IO.Path]::GetFileNameWithoutExtension($Plan.Log); startedUtc=[DateTime]::UtcNow.ToString('o')
+        status='launching'; gameStarted=$false; processId=$null; earlyExit=$null; exitCode=$null
+        gameLogCaptured=$false; gameLogTruncated=$false; startupWindowSeconds=30
+    }
+    try { Write-EvrmLaunchAttempt $Plan $record }
+    catch { $record['diagnosticWarning']=$_.Exception.Message.Substring(0,[Math]::Min(512,$_.Exception.Message.Length)) }
+    return $record
+}
+
+function Copy-EvrmLogTail([string]$Source, [string]$Destination, [int]$Limit) {
+    Assert-Evrm (([IO.File]::GetAttributes($Source) -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)) -eq 0) 'The source log is not a regular file.'
+    Assert-Evrm ([EvrmScript.Paths]::IsSingleLink($Source)) 'The source log has multiple hard links and was left unchanged.'
+    $stream = [IO.File]::Open($Source, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try {
+        $length = $stream.Length
+        $count = [int][Math]::Min($length, $Limit)
+        $bytes = New-Object byte[] $count
+        [void]$stream.Seek([Math]::Max(0, $length - $count), [IO.SeekOrigin]::Begin)
+        $offset = 0
+        while ($offset -lt $count) {
+            $read = $stream.Read($bytes, $offset, $count - $offset)
+            Assert-Evrm ($read -gt 0) 'The game log changed while reading it.'
+            $offset += $read
+        }
+    } finally { $stream.Dispose() }
+    Write-EvrmDiagnosticBytes $Destination $bytes
+    return [pscustomobject]@{sourceBytes=$length; keptBytes=$count; truncated=($length -gt $count)}
+}
+
+function Get-EvrmGameLogStamp($Plan) {
+    $path = [IO.Path]::Combine([IO.Path]::GetDirectoryName($Plan.Game), 'enshrouded.log')
+    if (-not [IO.File]::Exists($path)) { return $null }
+    Assert-Evrm (([IO.File]::GetAttributes($path) -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)) -eq 0) 'The game log is a directory or link.'
+    Assert-Evrm ([EvrmScript.Paths]::IsSingleLink($path)) 'The game log has multiple hard links and was left unchanged.'
+    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try {
+        $head = New-Object byte[] ([int][Math]::Min(256, $stream.Length))
+        $read = $stream.Read($head, 0, $head.Length)
+        $digest = [BitConverter]::ToString($hash.ComputeHash($head, 0, $read))
+        return [pscustomobject]@{path=$path; length=$stream.Length; writeTicks=[IO.File]::GetLastWriteTimeUtc($path).Ticks; head=$digest}
+    } finally { $hash.Dispose(); $stream.Dispose() }
+}
+
+function Save-EvrmStartupLog($Plan, $Attempt, $Baseline) {
+    if ($null -ne $Baseline -and $null -ne $Baseline.PSObject.Properties['unavailable'] -and $Baseline.unavailable) {
+        $warning='Game-log snapshot skipped because the previous log could not be checked: '+$Baseline.reason
+        $Attempt['diagnosticWarning']=$warning.Substring(0,[Math]::Min(512,$warning.Length))
+        return
+    }
+    $stamp = Get-EvrmGameLogStamp $Plan
+    if ($null -eq $stamp -or $stamp.length -eq 0) { return }
+    if ($null -ne $Baseline -and $stamp.length -eq $Baseline.length -and $stamp.writeTicks -eq $Baseline.writeTicks -and $stamp.head -ceq $Baseline.head) { return }
+    $copy = Copy-EvrmLogTail $stamp.path (Get-EvrmDiagnosticFile $Plan '.game.log') 262144
+    $Attempt['gameLogCaptured'] = $true
+    $Attempt['gameLogTruncated'] = $copy.truncated
+    $Attempt['gameLogSourceBytes'] = $copy.sourceBytes
+    $Attempt['gameLogSavedBytes'] = $copy.keptBytes
+}
+
+function Remove-EvrmOldLogs($Plan) {
+    $folder = Get-EvrmLogFolder $Plan.Root
+    $owned = @(
+        foreach ($path in [IO.Directory]::EnumerateFiles($folder)) {
+            $name = [IO.Path]::GetFileName($path)
+            if ($name -cnotmatch '^(?<session>\d{8}-\d{6}-\d{1,10}-[0-9a-f]{8})(?<suffix>\.attempt\.json|\.game\.log|\.log)$') { continue }
+            $session=$Matches.session; $suffix=$Matches.suffix
+            if (([IO.File]::GetAttributes($path) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+            if (-not [EvrmScript.Paths]::IsSingleLink($path)) { continue }
+            [pscustomobject]@{session=$session; suffix=$suffix; path=$path; created=[IO.File]::GetCreationTimeUtc($path)}
+        }
+    )
+    $groups = @($owned | Group-Object session | ForEach-Object {
+        [pscustomobject]@{name=$_.Name; files=@($_.Group); created=($_.Group | Sort-Object created | Select-Object -First 1).created}
+    } | Sort-Object @{Expression='created'; Descending=$true}, @{Expression='name'; Descending=$true})
+    $current = [IO.Path]::GetFileNameWithoutExtension($Plan.Log)
+    $keep = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    [void]$keep.Add($current)
+    foreach ($group in $groups) {
+        if ($keep.Count -ge 5) { break }
+        [void]$keep.Add($group.name)
+    }
+    foreach ($group in $groups) {
+        foreach ($file in $group.files) {
+            # Validate each absolute target again immediately before mutation.
+            $memberPlan = [pscustomobject]@{Root=$Plan.Root; Log=$file.path}
+            # GetFileNameWithoutExtension needs the native .log form for a group.
+            $memberPlan.Log = [IO.Path]::Combine($folder, $group.name + '.log')
+            $target = Get-EvrmDiagnosticFile $memberPlan $file.suffix
+            Assert-Evrm ([string]::Equals([IO.Path]::GetDirectoryName((Resolve-EvrmLocalPath $target)), $folder, [StringComparison]::OrdinalIgnoreCase)) 'A diagnostic cleanup target resolves outside State/Logs.'
+            if (-not $keep.Contains($group.name)) { [IO.File]::Delete($target) }
+            elseif ($group.name -cne $current -and $file.suffix -ceq '.log' -and ([IO.FileInfo]::new($target)).Length -gt 1048576) {
+                [void](Copy-EvrmLogTail $target $target 1048576)
+            }
+        }
+    }
+}
+
+function Watch-EvrmStartup($Plan, $Process, $Attempt, $Baseline, [double]$Seconds=30) {
+    Assert-Evrm ($Seconds -gt 0 -and $Seconds -le 30) 'Invalid startup observation window.'
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $exited = $false
+    do {
+        try { Save-EvrmStartupLog $Plan $Attempt $Baseline }
+        catch { $Attempt['diagnosticWarning'] = $_.Exception.Message.Substring(0, [Math]::Min(512, $_.Exception.Message.Length)) }
+        $remaining = [int][Math]::Ceiling(($Seconds - $timer.Elapsed.TotalSeconds) * 1000)
+        if ($remaining -le 0) { break }
+        if ($Process.WaitForExit([Math]::Min(1000, $remaining))) { $exited=$true; break }
+    } while ($timer.Elapsed.TotalSeconds -lt $Seconds)
+    if ($Process.HasExited) { $exited=$true }
+    try { Save-EvrmStartupLog $Plan $Attempt $Baseline }
+    catch { $Attempt['diagnosticWarning'] = $_.Exception.Message.Substring(0, [Math]::Min(512, $_.Exception.Message.Length)) }
+    $Attempt['gameStarted']=$true
+    $Attempt['status']=$(if ($exited) { 'exited-during-startup' } else { 'running-after-startup-check' })
+    $Attempt['earlyExit']=$exited
+    if ($exited) { $Attempt['exitCode']=$Process.ExitCode }
+    $Attempt['observedSeconds']=[Math]::Round($timer.Elapsed.TotalSeconds, 3)
+    $Attempt['finishedUtc']=[DateTime]::UtcNow.ToString('o')
+    try { Write-EvrmLaunchAttempt $Plan $Attempt }
+    catch { $Attempt['diagnosticWarning'] = $_.Exception.Message.Substring(0, [Math]::Min(512, $_.Exception.Message.Length)) }
+    return $Attempt
+}
+
 function Invoke-EvrmLaunch($Plan, [switch]$Wait) {
     $running = @([Diagnostics.Process]::GetProcessesByName('enshrouded'))
     $alreadyRunning = $running.Count -gt 0
@@ -329,6 +594,14 @@ function Invoke-EvrmLaunch($Plan, [switch]$Wait) {
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Plan.Log))
     [void][IO.Directory]::CreateDirectory($Plan.Cache)
     Write-EvrmJson ([IO.Path]::Combine($Plan.Root, 'State\settings.json')) ([ordered]@{game=$Plan.Game; model=$Plan.Model; springs=$Plan.Springs})
+    $attempt=$null; $baseline=$null; $diagnosticWarning=''
+    try { $baseline=Get-EvrmGameLogStamp $Plan }
+    catch {
+        $diagnosticWarning=$_.Exception.Message.Substring(0,[Math]::Min(512,$_.Exception.Message.Length))
+        $baseline=[pscustomobject]@{unavailable=$true; reason=$diagnosticWarning}
+    }
+    try { $attempt=New-EvrmLaunchAttempt $Plan; Remove-EvrmOldLogs $Plan }
+    catch { $diagnosticWarning=$_.Exception.Message }
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = $Plan.Game
     $start.WorkingDirectory = [IO.Path]::GetDirectoryName($Plan.Game)
@@ -339,21 +612,49 @@ function Invoke-EvrmLaunch($Plan, [switch]$Wait) {
     $child.StartInfo = $start
     try {
         Assert-Evrm ($child.Start()) 'Windows could not start Enshrouded.'
-    } catch { $child.Dispose(); throw }
+    } catch {
+        if ($null -ne $attempt) {
+            $attempt['status']='launch-failed'; $attempt['finishedUtc']=[DateTime]::UtcNow.ToString('o')
+            $attempt['error']=$_.Exception.Message.Substring(0,[Math]::Min(512,$_.Exception.Message.Length))
+            try { Write-EvrmLaunchAttempt $Plan $attempt } catch {}
+        }
+        $child.Dispose(); throw
+    }
     # From this point the child is owned by the user. Reporting failures are
     # warnings; never retry the launch or terminate a successfully started game.
     $result = [ordered]@{gameStarted=$true; processId=$child.Id; executable=$Plan.Game; model=$Plan.Model; logPath=$Plan.Log; runtimeSha256=$Plan.RuntimeHash; captureFiles=$false; gpuSkinning=$true; publicationStatus=$Plan.PublicationStatus; launcherKind='script'}
     try {
+        if ($diagnosticWarning) { $result['diagnosticWarning']=$diagnosticWarning }
+        if ($null -ne $attempt) {
+            $attempt['gameStarted']=$true; $attempt['processId']=$child.Id; $attempt['status']='checking-startup'
+            if ($diagnosticWarning) { $attempt['diagnosticWarning']=$diagnosticWarning.Substring(0,[Math]::Min(512,$diagnosticWarning.Length)) }
+            try {
+                Write-EvrmLaunchAttempt $Plan $attempt
+                $result['attemptReportPath']=Get-EvrmDiagnosticFile $Plan '.attempt.json'
+            } catch { $result['diagnosticWarning']='Game started; its launch-attempt record could not be saved: '+$_.Exception.Message }
+        }
+        try { $result['playScriptPath'] = Write-EvrmPlayScript $Plan.Root }
+        catch { $result['playScriptWarning'] = 'Game started; Play-EnshroudedVRM.cmd could not be created: ' + $_.Exception.Message }
         try { $result['startFileTimeUtc'] = $child.StartTime.ToFileTimeUtc() }
         catch { $result['identityWarning'] = 'Game started; its creation time could not be collected.' }
         try { Write-EvrmJson ([IO.Path]::Combine($Plan.Root, 'State\last-session.json')) $result }
         catch { $result['settingsWarning'] = 'Game started; its local session report could not be saved.' }
+        if ($null -ne $attempt) {
+            try {
+                $attempt=Watch-EvrmStartup $Plan $child $attempt $baseline
+                $result['startupStatus']=$attempt['status']; $result['earlyExit']=$attempt['earlyExit']
+                if ($null -ne $attempt['exitCode']) { $result['exitCode']=$attempt['exitCode'] }
+                if ($attempt.Contains('diagnosticWarning')) { $result['diagnosticWarning']=$attempt['diagnosticWarning'] }
+            } catch { $result['diagnosticWarning']='Game started; startup diagnostics could not be completed: '+$_.Exception.Message }
+        }
         if ($Wait) {
             try { $child.WaitForExit(); $result['exitCode'] = $child.ExitCode }
             catch { $result['waitWarning'] = 'Game started; its exit status could not be collected.' }
         }
+        try { Write-EvrmJson ([IO.Path]::Combine($Plan.Root, 'State\last-session.json')) $result }
+        catch { $result['settingsWarning'] = 'Game started; its local session report could not be saved.' }
     } finally { $child.Dispose() }
     return $result
 }
 
-Export-ModuleMember -Function Get-EvrmDefaults, Get-EvrmSteamLibraries, Get-EvrmLaunchPlan, Invoke-EvrmLaunch, Write-EvrmJson
+Export-ModuleMember -Function Get-EvrmDefaults, Get-EvrmSetupSelections, Get-EvrmSavedSettings, Get-EvrmSteamLibraries, Get-EvrmLaunchPlan, Invoke-EvrmLaunch, Write-EvrmJson, Write-EvrmPlayScript

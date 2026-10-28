@@ -144,6 +144,7 @@ struct AvatarRenderer::Impl {
     SecondaryContactActivation secondary_activation;
     struct ViewMotion {
         std::unique_ptr<vrm::SpringBones> springs;
+        std::unique_ptr<vrm::Retargeter> retargeter;
         SecondaryContactActivation contact;
         std::array<std::uint32_t,3> origin{};
         bool origin_known=false;
@@ -152,6 +153,15 @@ struct AvatarRenderer::Impl {
     ViewMotion& motion(std::uint64_t source){
         if(!view_motion.count(source)&&view_motion.size()>=4)view_motion.clear();
         return view_motion[source];
+    }
+    vrm::RetargetResult retarget_pose(const vrm::SourcePose& source,const vrm::RetargetOptions& options,std::uint64_t view=0){
+        const auto found=view_motion.find(view);
+        if(found!=view_motion.end()&&found->second.retargeter)return found->second.retargeter->update(source,options);
+        // Rejected sources must not evict accepted spring/contact histories.
+        auto prepared=std::make_unique<vrm::Retargeter>(avatar);
+        auto result=prepared->update(source,options);
+        if(result)motion(view).retargeter=std::move(prepared);
+        return result;
     }
     double contact_ms=0,contact_residual=0;
     unsigned contact_samples=0,contact_two_hand=0,contact_bow=0,contact_clamped=0;
@@ -226,7 +236,7 @@ struct AvatarRenderer::Impl {
     void apply_springs(vrm::RetargetResult& pose,const PlayerFrame& frame,std::uint64_t captured_ms,std::uint64_t epoch,float height_scale,std::uint64_t source=0) {
         if(!springs||!springs->joint_count())return;
         auto& state=motion(source);
-        if(!state.springs)state.springs=vrm::make_optional_springs(avatar,vrm::SpringMotion::Relaxed);
+        if(!state.springs)state.springs=vrm::make_optional_springs(avatar,vrm::SpringMotion::Inertial);
         if(!state.springs||!state.springs->ready())return;
         auto& springs=state.springs;
         auto& spring_origin=state.origin;auto& spring_origin_known=state.origin_known;
@@ -255,8 +265,8 @@ struct AvatarRenderer::Impl {
         vrm::RetargetOptions options;options.align_rest_directions=true;
         if(avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
         options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=avatar.nodes[avatar.humanoid.at("head")].world[13];
-        auto pose=vrm::retarget(avatar,frame.source_pose,options);if(!pose)throw std::runtime_error("Retarget: "+pose.error);
         const auto source=snapshot.buffers.at("instances").binding.buffer;
+        auto pose=retarget_pose(frame.source_pose,options,reinterpret_cast<std::uintptr_t>(source));if(!pose)throw std::runtime_error("Retarget: "+pose.error);
         apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height,reinterpret_cast<std::uintptr_t>(source));
         const auto posed=std::chrono::steady_clock::now();
         auto publication=std::make_shared<NativeAvatarPublication>();publication->asset=native_asset;
@@ -589,10 +599,10 @@ AvatarRenderer::AvatarRenderer(VkInstance instance,VkPhysicalDevice physical,VkD
     uint32_t queue_count=0;get_queues(physical,&queue_count,nullptr);impl->queue_properties.resize(queue_count);get_queues(physical,&queue_count,impl->queue_properties.data());impl->queue_properties.resize(queue_count);
     auto loaded=vrm::load_vrm(std::filesystem::path(path));if(!loaded)throw std::runtime_error("Avatar import: "+loaded.error);impl->avatar=std::move(loaded.avatar);
     if(env(L"ENSHROUDED_VRM_SPRING_BONES")!=L"0"&&!impl->avatar.spring_joints.empty()) {
-        impl->springs=vrm::make_optional_springs(impl->avatar,vrm::SpringMotion::Relaxed);
+        impl->springs=vrm::make_optional_springs(impl->avatar,vrm::SpringMotion::Inertial);
         if(!impl->springs)log_event("avatar.spring-disabled allocation failure");
         else if(!impl->springs->ready()){log_event_lazy([&]{return "avatar.spring-disabled "+impl->springs->error();});impl->springs.reset();}
-        else log_event_lazy([&]{return "avatar.spring-ready motion=relaxed joints="+std::to_string(impl->springs->joint_count())+" colliders="+std::to_string(impl->avatar.spring_colliders.size());});
+        else log_event_lazy([&]{return "avatar.spring-ready motion=inertial-world joints="+std::to_string(impl->springs->joint_count())+" colliders="+std::to_string(impl->avatar.spring_colliders.size());});
     }
     impl->bridge=std::make_unique<EnshroudedBridge>(std::filesystem::path(env(L"ENSHROUDED_VRM_PROFILE")),std::filesystem::path(env(L"ENSHROUDED_VRM_CATALOG")),narrow(env(L"ENSHROUDED_VRM_VERIFIED_BUILD")));
     if(!impl->bridge->ready())throw std::runtime_error("Game pose profile: "+impl->bridge->error());
@@ -708,7 +718,7 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
         vrm::RetargetOptions options;options.align_rest_directions=true;
         if(impl->avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
         options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=impl->avatar.nodes[impl->avatar.humanoid.at("head")].world[13];
-        auto pose=vrm::retarget(impl->avatar,frame.source_pose,options);if(!pose){impl->report("Retarget: "+pose.error);return false;}
+        auto pose=impl->retarget_pose(frame.source_pose,options);if(!pose){impl->report("Retarget: "+pose.error);return false;}
         impl->apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height);
         const auto posed=std::chrono::steady_clock::now();
 

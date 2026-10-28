@@ -4,7 +4,7 @@
 
 namespace vrm {
 // Runtime preference only; imported/authored VRM settings stay immutable.
-enum class SpringMotion { Authored, Relaxed };
+enum class SpringMotion { Authored, Relaxed, Airflow, Inertial };
 struct SpringFrame {
     std::uint64_t timestamp_ms=0,source_epoch=0,actor_id=0;
     Matrix model_to_world{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};

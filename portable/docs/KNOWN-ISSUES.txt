@@ -81,3 +81,11 @@ eyebrow color/shading mismatch without changing the source VRM. Cutout edges are
 harder than true blending. Custom material names, non-MToon materials and faded
 brows retain their authored alpha mode. Full MToon/general shaded transparency
 is not implemented. Eyes, glasses and other materials are not remapped by this rule.
+
+The inertial hair profile permits arm overlap to avoid catching while retaining
+the model's torso/head contacts. Shoulder contacts follow authored references. Models without suitable colliders can
+still clip. Mild section cohesion reduces gaps but does not merge hair meshes.
+Short head strands can still jitter under combined running/blocking. The 0.1.2
+optimization preserves the approved hair pose outputs; it does not eliminate
+these remaining model-dependent limitations. CPU/driver benchmark savings do not
+establish a fixed FPS gain for every scene or PC.

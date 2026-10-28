@@ -20,17 +20,31 @@ struct SkinContext {
 };
 struct SkinBuffer {
     std::shared_ptr<SkinContext> context;VkBuffer handle{};VkDeviceMemory memory{};void* mapped=nullptr;VkDeviceSize bytes=0,reserved=0;
+    VkBufferUsageFlags usage=0;bool local=false;
     VkDescriptorBufferInfo binding()const{return {handle,0,bytes};}
     ~SkinBuffer(){if(context->uncertain())return;auto& c=*context;if(mapped)c.fn<PFN_vkUnmapMemory>("vkUnmapMemory")(c.device,memory);if(handle)c.fn<PFN_vkDestroyBuffer>("vkDestroyBuffer")(c.device,handle,nullptr);if(memory)c.fn<PFN_vkFreeMemory>("vkFreeMemory")(c.device,memory,nullptr);c.allocated-=reserved;}
 };
-std::shared_ptr<SkinBuffer> buffer(const std::shared_ptr<SkinContext>& c,VkDeviceSize bytes,bool local,VkBufferUsageFlags usage){
+using SkinBufferCache=std::vector<std::shared_ptr<SkinBuffer>>;
+// Caller serialization and the existing command/frame leases establish reuse:
+// the cache's sole reference means no frame or history geometry can use it.
+bool evict_idle(SkinBufferCache& cache){
+    const auto idle=std::find_if(cache.begin(),cache.end(),[](const auto& b){return b.use_count()==1;});
+    if(idle==cache.end())return false;
+    cache.erase(idle);return true;
+}
+std::shared_ptr<SkinBuffer> buffer(const std::shared_ptr<SkinContext>& c,VkDeviceSize bytes,bool local,VkBufferUsageFlags usage,SkinBufferCache* cache=nullptr,bool reusable=true){
     require(!c->uncertain()&&bytes>0,"Skin buffer ownership/size");
     if(usage&VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)require(bytes<=c->limits.maxStorageBufferRange,"Skin descriptor range exceeds device limit");
-    auto b=std::make_shared<SkinBuffer>();b->context=c;b->bytes=bytes;
+    if(cache&&reusable)for(const auto& b:*cache)if(b.use_count()==1&&b->bytes==bytes&&b->local==local&&b->usage==usage){
+        if(b->mapped)std::memset(b->mapped,0,static_cast<std::size_t>(bytes));
+        return b;
+    }
+    auto b=std::make_shared<SkinBuffer>();b->context=c;b->bytes=bytes;b->local=local;b->usage=usage;
     auto bi=info<VkBufferCreateInfo>(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);bi.size=bytes;bi.usage=usage;bi.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
     checked(c->fn<PFN_vkCreateBuffer>("vkCreateBuffer")(c->device,&bi,nullptr,&b->handle),"Skin buffer");
     VkMemoryRequirements req{};c->fn<PFN_vkGetBufferMemoryRequirements>("vkGetBufferMemoryRequirements")(c->device,b->handle,&req);
     constexpr VkDeviceSize budget=512ull*1024*1024;
+    while(cache&&(c->allocated>budget||req.size>budget-c->allocated)&&evict_idle(*cache)){}
     require(c->allocated<=budget&&req.size<=budget-c->allocated,"Skin buffer aggregate budget");
     const VkMemoryPropertyFlags flags=local?VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT:(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     unsigned type=c->memory.memoryTypeCount;
@@ -40,7 +54,29 @@ std::shared_ptr<SkinBuffer> buffer(const std::shared_ptr<SkinContext>& c,VkDevic
     checked(c->fn<PFN_vkAllocateMemory>("vkAllocateMemory")(c->device,&ai,nullptr,&b->memory),"Skin memory");c->allocated+=req.size;b->reserved=req.size;
     checked(c->fn<PFN_vkBindBufferMemory>("vkBindBufferMemory")(c->device,b->handle,b->memory,0),"Skin memory bind");
     if(!local){checked(c->fn<PFN_vkMapMemory>("vkMapMemory")(c->device,b->memory,0,bytes,0,&b->mapped),"Skin staging map");std::memset(b->mapped,0,static_cast<std::size_t>(bytes));}
+    constexpr VkDeviceSize cache_budget=128ull*1024*1024;
+    if(cache&&reusable&&b->reserved<=cache_budget){
+        const auto cached_bytes=[&]{VkDeviceSize total=0;for(const auto& entry:*cache)total+=entry->reserved;return total;};
+        while((cache->size()>=128||cached_bytes()>cache_budget-b->reserved)&&evict_idle(*cache)){}
+        // Busy entries remain leased; an uncached allocation still serves this
+        // frame within the aggregate budget. Cache metadata is optional.
+        if(cache->size()<128&&cached_bytes()<=cache_budget-b->reserved)try{cache->push_back(b);}catch(...){}
+    }
     return b;
+}
+struct SkinDescriptors {
+    std::shared_ptr<SkinContext> c;VkDescriptorPool pool{};VkDescriptorSet set{};
+    ~SkinDescriptors(){if(pool&&!c->uncertain())c->fn<PFN_vkDestroyDescriptorPool>("vkDestroyDescriptorPool")(c->device,pool,nullptr);}
+};
+using SkinDescriptorCache=std::vector<std::shared_ptr<SkinDescriptors>>;
+std::shared_ptr<SkinDescriptors> descriptors(const std::shared_ptr<SkinContext>& c,VkDescriptorSetLayout layout,SkinDescriptorCache& cache){
+    require(!c->uncertain(),"Skin descriptor ownership");
+    for(const auto& entry:cache)if(entry.use_count()==1)return entry;
+    auto out=std::make_shared<SkinDescriptors>();out->c=c;
+    const std::array<VkDescriptorPoolSize,2> sizes{{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,7},{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1}}};auto pi=info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);pi.maxSets=1;pi.poolSizeCount=sizes.size();pi.pPoolSizes=sizes.data();checked(c->fn<PFN_vkCreateDescriptorPool>("vkCreateDescriptorPool")(c->device,&pi,nullptr,&out->pool),"Skin pool");
+    auto ai=info<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);ai.descriptorPool=out->pool;ai.descriptorSetCount=1;ai.pSetLayouts=&layout;checked(c->fn<PFN_vkAllocateDescriptorSets>("vkAllocateDescriptorSets")(c->device,&ai,&out->set),"Skin set");
+    if(cache.size()<32)try{cache.push_back(out);}catch(...){}
+    return out;
 }
 VkShaderModule shader(const std::shared_ptr<SkinContext>& c,const std::filesystem::path& path){
     std::ifstream f(path,std::ios::binary|std::ios::ate);require(bool(f),"Missing skin shader");auto bytes=f.tellg();require(bytes>=20&&bytes<=1024*1024&&bytes%4==0,"Invalid skin shader size");
@@ -54,7 +90,9 @@ void barrier(const std::shared_ptr<SkinContext>& c,VkCommandBuffer command,VkPip
 struct NativeSkinningGpu::Impl {
     std::shared_ptr<SkinContext> c;VkDescriptorSetLayout set{};VkPipelineLayout layout{};
     std::array<VkShaderModule,2> modules{};std::array<VkPipeline,2> pipelines{};
-    ~Impl(){if(!c||c->uncertain())return;for(auto p:pipelines)if(p)c->fn<PFN_vkDestroyPipeline>("vkDestroyPipeline")(c->device,p,nullptr);for(auto s:modules)if(s)c->fn<PFN_vkDestroyShaderModule>("vkDestroyShaderModule")(c->device,s,nullptr);if(layout)c->fn<PFN_vkDestroyPipelineLayout>("vkDestroyPipelineLayout")(c->device,layout,nullptr);if(set)c->fn<PFN_vkDestroyDescriptorSetLayout>("vkDestroyDescriptorSetLayout")(c->device,set,nullptr);}
+    // Raw resources retain only SkinContext, never this pipeline owner.
+    SkinBufferCache buffers;SkinDescriptorCache descriptor_packs;
+    ~Impl(){descriptor_packs.clear();buffers.clear();if(!c||c->uncertain())return;for(auto p:pipelines)if(p)c->fn<PFN_vkDestroyPipeline>("vkDestroyPipeline")(c->device,p,nullptr);for(auto s:modules)if(s)c->fn<PFN_vkDestroyShaderModule>("vkDestroyShaderModule")(c->device,s,nullptr);if(layout)c->fn<PFN_vkDestroyPipelineLayout>("vkDestroyPipelineLayout")(c->device,layout,nullptr);if(set)c->fn<PFN_vkDestroyDescriptorSetLayout>("vkDestroyDescriptorSetLayout")(c->device,set,nullptr);}
 };
 // Each lease retains the pipelines' lifetime through an erased shared owner.
 // Geometry contains no predecessor and no frame/descriptors, avoiding chains.
@@ -69,8 +107,8 @@ struct NativeSkinGpuFrame::Impl {
     std::shared_ptr<void> owner;std::shared_ptr<SkinContext> c;std::shared_ptr<NativeSkinGpuAsset> asset;
     std::shared_ptr<SkinBuffer> palettes,batches,palette_staging,batch_staging,status,uniform;
     std::shared_ptr<const NativeSkinGpuGeometry> geometry,previous;
-    VkDescriptorPool pool{};VkDescriptorSet set{};std::array<std::uint32_t,4> control{};bool recorded=false;
-    ~Impl(){if(pool&&!c->uncertain())c->fn<PFN_vkDestroyDescriptorPool>("vkDestroyDescriptorPool")(c->device,pool,nullptr);}
+    std::shared_ptr<SkinDescriptors> descriptors;
+    VkDescriptorSet set{};std::array<std::uint32_t,4> control{};bool recorded=false;
 };
 NativeSkinGpuAsset::NativeSkinGpuAsset(std::shared_ptr<Impl> p):impl(std::move(p)){}
 NativeSkinGpuAsset::~NativeSkinGpuAsset()=default;
@@ -95,9 +133,11 @@ NativeSkinningGpu::NativeSkinningGpu(VkDevice device,PFN_vkGetDeviceProcAddr get
 NativeSkinningGpu::~NativeSkinningGpu()=default;
 std::shared_ptr<NativeSkinGpuAsset> NativeSkinningGpu::asset(std::shared_ptr<const NativeSkinAsset> source){
     require(source&&bool(*source),"Invalid skin GPU asset");auto a=std::make_shared<NativeSkinGpuAsset::Impl>();a->owner=impl;a->c=impl->c;a->source=std::move(source);
-    a->vertices=buffer(a->c,a->source->vertices.size()*64,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    a->indices=buffer(a->c,a->source->layout->indices.size()*4,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    a->vertex_staging=buffer(a->c,a->vertices->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT);a->index_staging=buffer(a->c,a->indices->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    // Immutable uploads are not cached, but may reclaim retired frame memory
+    // before enforcing the same aggregate allocation budget.
+    a->vertices=buffer(a->c,a->source->vertices.size()*64,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,&impl->buffers,false);
+    a->indices=buffer(a->c,a->source->layout->indices.size()*4,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,&impl->buffers,false);
+    a->vertex_staging=buffer(a->c,a->vertices->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,&impl->buffers,false);a->index_staging=buffer(a->c,a->indices->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,&impl->buffers,false);
     std::memcpy(a->vertex_staging->mapped,a->source->vertices.data(),static_cast<std::size_t>(a->vertices->bytes));std::memcpy(a->index_staging->mapped,a->source->layout->indices.data(),static_cast<std::size_t>(a->indices->bytes));
     return std::shared_ptr<NativeSkinGpuAsset>(new NativeSkinGpuAsset(std::move(a)));
 }
@@ -115,17 +155,17 @@ std::shared_ptr<NativeSkinGpuFrame> NativeSkinningGpu::frame(const std::shared_p
     const auto count=pose.asset->vertices.size();require(count>0&&count<=2000000&&pose.batches.size()==pose.asset->nodes.size()&&pose.batches.size()<=2048&&pose.matrices.size()<=1048576&&(count+63)/64<=c->limits.maxComputeWorkGroupCount[0],"Skin frame dispatch limits");
     auto f=std::make_shared<NativeSkinGpuFrame::Impl>();f->owner=impl;f->c=c;f->asset=asset;
     const auto storage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    f->palettes=buffer(c,std::max<std::size_t>(64,pose.matrices.size()*64),true,storage);f->batches=buffer(c,pose.batches.size()*80,true,storage);
-    f->palette_staging=buffer(c,f->palettes->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT);f->batch_staging=buffer(c,f->batches->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    auto* cache=&impl->buffers;
+    f->palettes=buffer(c,std::max<std::size_t>(64,pose.matrices.size()*64),true,storage,cache);f->batches=buffer(c,pose.batches.size()*80,true,storage,cache);
+    f->palette_staging=buffer(c,f->palettes->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,cache);f->batch_staging=buffer(c,f->batches->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,cache);
     if(!pose.matrices.empty())std::memcpy(f->palette_staging->mapped,pose.matrices.data(),pose.matrices.size()*64);
-    std::memcpy(f->batch_staging->mapped,pose.batches.data(),pose.batches.size()*80);f->status=buffer(c,4,false,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    auto g=std::make_shared<NativeSkinGpuGeometry::Impl>();g->owner=impl;g->source=pose.asset;g->output=buffer(c,count*44,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    std::memcpy(f->batch_staging->mapped,pose.batches.data(),pose.batches.size()*80);f->status=buffer(c,4,false,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,cache);
+    auto g=std::make_shared<NativeSkinGpuGeometry::Impl>();g->owner=impl;g->source=pose.asset;g->output=buffer(c,count*44,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,cache);
     f->geometry=std::shared_ptr<NativeSkinGpuGeometry>(new NativeSkinGpuGeometry(std::move(g)));
     if(previous&&previous->impl->owner==impl&&previous->impl->source==pose.asset&&previous->binding().range==count*44)f->previous=std::move(previous);
     f->control={static_cast<std::uint32_t>(count),static_cast<std::uint32_t>(pose.batches.size()),static_cast<std::uint32_t>(pose.matrices.size()),f->previous?1u:0u};
-    f->uniform=buffer(c,16,false,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);std::memcpy(f->uniform->mapped,f->control.data(),16);
-    const std::array<VkDescriptorPoolSize,2> sizes{{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,7},{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1}}};auto pi=info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);pi.maxSets=1;pi.poolSizeCount=sizes.size();pi.pPoolSizes=sizes.data();checked(c->fn<PFN_vkCreateDescriptorPool>("vkCreateDescriptorPool")(c->device,&pi,nullptr,&f->pool),"Skin pool");
-    auto ai=info<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);ai.descriptorPool=f->pool;ai.descriptorSetCount=1;ai.pSetLayouts=&impl->set;checked(c->fn<PFN_vkAllocateDescriptorSets>("vkAllocateDescriptorSets")(c->device,&ai,&f->set),"Skin set");
+    f->uniform=buffer(c,16,false,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,cache);std::memcpy(f->uniform->mapped,f->control.data(),16);
+    f->descriptors=descriptors(c,impl->set,impl->descriptor_packs);f->set=f->descriptors->set;
     const std::array<VkDescriptorBufferInfo,8> buffers{asset->impl->vertices->binding(),f->palettes->binding(),f->batches->binding(),f->previous?f->previous->binding():f->geometry->binding(),f->geometry->binding(),f->status->binding(),prepared,f->uniform->binding()};
     std::array<VkWriteDescriptorSet,8> writes{};for(unsigned i=0;i<8;++i){auto& w=writes[i];w=info<VkWriteDescriptorSet>(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);w.dstSet=f->set;w.dstBinding=i;w.descriptorType=i==7?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;w.descriptorCount=1;w.pBufferInfo=&buffers[i];}c->fn<PFN_vkUpdateDescriptorSets>("vkUpdateDescriptorSets")(c->device,writes.size(),writes.data(),0,nullptr);
     return std::shared_ptr<NativeSkinGpuFrame>(new NativeSkinGpuFrame(std::move(f)));

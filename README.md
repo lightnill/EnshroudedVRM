@@ -9,7 +9,7 @@ are bundled.
 
 ## Install and play
 
-1. Download the CMD package from the [current release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.1-preview).
+1. Download the CMD package from the [current release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.2-preview).
 2. Extract the whole ZIP to a writable local folder outside the game directory.
    The package-folder path must contain neither semicolons (;) nor percent (%) signs.
 3. Start Steam, then run **Launch-EnshroudedVRM.cmd**.
@@ -40,6 +40,11 @@ The three readable launcher files are in [portable/script](portable/script).
 The required native Vulkan runtime DLL handles the in-game rendering. The package
 includes GPU skinning, lit rendering, spring motion, menu previews and held-item
 alignment.
+
+Version 0.1.2 refines long-hair inertia, reduces running trail and keeps nearby
+sections together. Static pose preparation and idle GPU resources are reused to
+reduce processing overhead. See the [measurements](docs/performance/0.1.2-optimization.md)
+and [release notes](RELEASE-NOTES.md) for validation and limitations.
 
 ## Compatibility and limits
 

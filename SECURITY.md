@@ -45,7 +45,7 @@ Release checksums identify exact bytes; they are not a signature or proof of saf
 The native runtime is unsigned. Individual-file reports and coverage are recorded
 outside the package so publishing scan evidence does not change the scanned bytes.
 Unsupported engines, failures and timeouts are coverage gaps, not clean verdicts.
-Version 0.1.1 rebuilds the runtime and changes launcher/document/archive bytes.
+Version 0.1.2 rebuilds the runtime and changes launcher/document/archive bytes.
 Previous scan records identify only their original exact bytes. Use the new
 release's verification record for current coverage; do not infer a clean verdict
 for changed files from an earlier release's reports.

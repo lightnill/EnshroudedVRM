@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -17,6 +18,9 @@ constexpr M3 identity_rotation{1,0,0, 0,1,0, 0,0,1};
 
 void require(bool condition, const std::string& error) {
     if (!condition) throw std::runtime_error(error);
+}
+void require(bool condition,const char* error) {
+    if(!condition)throw std::runtime_error(error);
 }
 
 M3 linear(const M4& a) {
@@ -186,10 +190,11 @@ M3 inverse(const M3& matrix) {
 M4 affine(const Matrix& input, const std::string& label) {
     M4 m{};
     for (int i = 0; i < 16; ++i) {
-        require(std::isfinite(input[i]),label + " is nonfinite"); m[i] = input[i];
+        if(!std::isfinite(input[i]))throw std::runtime_error(label + " is nonfinite");
+        m[i] = input[i];
     }
-    require(std::abs(m[3]) <= 1e-5 && std::abs(m[7]) <= 1e-5 &&
-            std::abs(m[11]) <= 1e-5 && std::abs(m[15]-1) <= 1e-5,label + " is not affine");
+    if(!(std::abs(m[3]) <= 1e-5 && std::abs(m[7]) <= 1e-5 &&
+            std::abs(m[11]) <= 1e-5 && std::abs(m[15]-1) <= 1e-5))throw std::runtime_error(label + " is not affine");
     inverse(linear(m));
     m[3] = m[7] = m[11] = 0; m[15] = 1;
     return m;
@@ -292,9 +297,34 @@ bool close(const M4& a, const M4& b) {
     return true;
 }
 
+struct RetargetPreparation {
+    bool ready=false;
+    std::map<std::string,Matrix> rest_key;
+    std::vector<std::string> current_keys;
+    RetargetOptions options;
+    std::map<std::string,M4> source_rest;
+    std::map<std::string,M3> rest_rotation;
+    std::vector<M4> locals,rest_world;
+    std::vector<std::size_t> order;
+    std::vector<detail::ConstraintStep> constraint_schedule;
+    std::vector<std::string> semantic;
+    std::vector<M3> rest_alignment,avatar_rotation;
+    std::vector<std::vector<M4>> inverse_binds;
+    bool matches(const SourcePose& source,const RetargetOptions& value)const {
+        if(!ready||source.rest.size()!=rest_key.size()||source.current.size()!=current_keys.size()||
+            value.align_rest_directions!=options.align_rest_directions||
+            std::memcmp(value.source_to_avatar_basis.data(),options.source_to_avatar_basis.data(),sizeof(Matrix))||
+            std::memcmp(&value.source_rest_height,&options.source_rest_height,sizeof(float))||
+            std::memcmp(&value.avatar_rest_height,&options.avatar_rest_height,sizeof(float)))return false;
+        auto old=rest_key.begin();
+        for(const auto& entry:source.rest){if(entry.first!=old->first||std::memcmp(entry.second.data(),old->second.data(),sizeof(Matrix)))return false;++old;}
+        std::size_t index=0;for(const auto& entry:source.current)if(entry.first!=current_keys[index++])return false;
+        return true;
+    }
+};
 } // namespace
 
-RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const RetargetOptions& options) {
+static RetargetResult retarget_prepared(const Avatar& avatar,const SourcePose& source,const RetargetOptions& options,RetargetPreparation* cached) {
     try {
         require(!avatar.nodes.empty(),"Avatar has no nodes");
         require(std::isfinite(options.source_rest_height) && options.source_rest_height > 0 &&
@@ -307,22 +337,28 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
         for (int c = 0; c < 3; ++c) for (int i = 0; i < 3; ++i)
             require(std::abs(metric[c*3+i]-(c == i ? 1.0 : 0.0)) < 1e-5,"Source-to-avatar basis must be orthonormal");
         require(source.rest.count("hips") && source.current.count("hips"),"Source rest and current hips are required");
-        std::map<std::string,M4> source_rest, source_current;
-        std::map<std::string,M3> rest_rotation, current_rotation;
-        for (const auto& joint : source.rest) {
+        const bool reuse=cached&&cached->matches(source,options);
+        RetargetPreparation fresh;auto& preparation=reuse?*cached:fresh;
+        auto& source_rest=preparation.source_rest;auto& rest_rotation=preparation.rest_rotation;
+        std::map<std::string,M4> source_current;
+        std::map<std::string,M3> current_rotation;
+        if(!reuse)for (const auto& joint : source.rest) {
             source_rest[joint.first] = affine(joint.second,"Source rest " + joint.first);
             rest_rotation[joint.first] = rotation(source_rest.at(joint.first));
         }
         for (const auto& joint : source.current) {
-            require(source.rest.count(joint.first),"Source current joint lacks rest calibration: " + joint.first);
+            if(!source.rest.count(joint.first))throw std::runtime_error("Source current joint lacks rest calibration: " + joint.first);
             source_current[joint.first] = affine(joint.second,"Source current " + joint.first);
             current_rotation[joint.first] = rotation(source_current.at(joint.first));
         }
 
         const auto count = avatar.nodes.size();
-        std::vector<M4> locals(count), rest_world(count), pose(count);
+        auto& locals=preparation.locals;auto& rest_world=preparation.rest_world;auto& order=preparation.order;
+        auto& semantic=preparation.semantic;
+        std::vector<M4> pose(count);
+        if(!reuse) {
+        locals.resize(count);rest_world.resize(count);semantic.resize(count);
         std::vector<std::vector<std::size_t>> children(count);
-        std::vector<std::size_t> order;
         order.reserve(count);
         for (std::size_t i = 0; i < count; ++i) {
             const auto& node = avatar.nodes[i];
@@ -344,22 +380,24 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
             const auto expected = parent < 0 ? locals[i] : multiply(rest_world[parent],locals[i]);
             require(close(rest_world[i],expected),"Avatar local and cached world transforms disagree");
         }
-        const auto constraint_schedule=detail::node_constraint_order(avatar);
+        preparation.constraint_schedule=detail::node_constraint_order(avatar);
         require(avatar.humanoid.count("hips"),"Avatar humanoid hips are required");
-        std::vector<std::string> semantic(count);
         std::set<int> humanoid_nodes;
         for (const auto& joint : avatar.humanoid) {
             require(joint.second >= 0 && static_cast<std::size_t>(joint.second) < count,"Invalid humanoid node");
             require(humanoid_nodes.insert(joint.second).second,"Duplicated humanoid node");
             semantic[joint.second] = joint.first;
         }
-        const int hips = avatar.humanoid.at("hips");
+        const int hips=avatar.humanoid.at("hips");
         for (const auto& joint : avatar.humanoid) if (joint.first != "hips") {
             int ancestor = avatar.nodes[joint.second].parent;
             while (ancestor >= 0 && ancestor != hips) ancestor = avatar.nodes[ancestor].parent;
             require(ancestor == hips,"Humanoid joint is not below hips: " + joint.first);
         }
-        std::vector<M3> rest_alignment(count,identity_rotation);
+        }
+        const int hips=avatar.humanoid.at("hips");
+        auto& rest_alignment=preparation.rest_alignment;
+        if(!reuse)rest_alignment.assign(count,identity_rotation);
         auto align_segment=[&](const std::string& parent_name,const std::string& child_name,M3& alignment){
             const auto target_parent=avatar.humanoid.find(parent_name),target_child=avatar.humanoid.find(child_name);
             const auto source_parent=source_rest.find(parent_name),source_child=source_rest.find(child_name);
@@ -374,7 +412,7 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
             }
             return direction_rotation(from,to,alignment);
         };
-        if (options.align_rest_directions) for (const auto& joint : avatar.humanoid) {
+        if (!reuse&&options.align_rest_directions) for (const auto& joint : avatar.humanoid) {
             for(const auto& child_name:child_candidates(joint.first))
                 if(align_segment(joint.first,child_name,rest_alignment[joint.second]))break;
             // A distal finger has no measured outgoing endpoint. Its incoming
@@ -388,7 +426,7 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
         // not a neutral flat-ground axis. Preserve that rest relationship by
         // carrying the nearest measured leg's Q0 through foot and toe. Only Q0
         // is inherited: each bone still receives its own animated source delta.
-        if (options.align_rest_directions) for(const auto& side:{std::string("left"),std::string("right")}) {
+        if (!reuse&&options.align_rest_directions) for(const auto& side:{std::string("left"),std::string("right")}) {
             for(const auto& name:{side+"Foot",side+"Toes"}) {
                 const auto target=avatar.humanoid.find(name);if(target==avatar.humanoid.end())continue;
                 for(const auto& parent_name:{side+"Foot",side+"LowerLeg",side+"UpperLeg"}) {
@@ -402,8 +440,9 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
                 }
             }
         }
-        std::vector<std::vector<M4>> inverse_binds(avatar.skins.size());
-        for (std::size_t i = 0; i < avatar.skins.size(); ++i) {
+        auto& inverse_binds=preparation.inverse_binds;
+        if(!reuse)inverse_binds.resize(avatar.skins.size());
+        if(!reuse)for (std::size_t i = 0; i < avatar.skins.size(); ++i) {
             const auto& skin = avatar.skins[i];
             require(!skin.joints.empty() && skin.joints.size() == skin.inverse_bind.size(),"Invalid skin inverse-bind count");
             std::set<int> joints;
@@ -413,6 +452,8 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
                 inverse_binds[i].push_back(affine(skin.inverse_bind[j],"Skin inverse bind transform"));
             }
         }
+
+        if(!reuse){preparation.avatar_rotation.assign(count,identity_rotation);for(std::size_t i=0;i<count;++i)if(!semantic[i].empty()&&current_rotation.count(semantic[i]))preparation.avatar_rotation[i]=rotation(rest_world[i]);}
 
         std::array<double,3> hips_delta{};
         const double height_ratio = static_cast<double>(options.avatar_rest_height)/options.source_rest_height;
@@ -425,7 +466,7 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
             const auto& name = semantic[i];
             if (!name.empty() && current_rotation.count(name)) {
                 const auto delta = multiply(multiply(multiply(basis,current_rotation.at(name)),transpose(rest_rotation.at(name))),basis_inverse);
-                const auto desired = multiply(multiply(delta,rest_alignment[i]),rotation(rest_world[i]));
+                const auto desired = multiply(multiply(delta,rest_alignment[i]),preparation.avatar_rotation[i]);
                 const auto correction = multiply(desired,transpose(rotation(pose[i])));
                 const auto rotated = multiply(correction,linear(pose[i]));
                 for (int c = 0; c < 3; ++c) for (int r = 0; r < 3; ++r) pose[i][c*4+r] = rotated[c*3+r];
@@ -433,7 +474,7 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
             if (static_cast<int>(i) == hips) for (int k = 0; k < 3; ++k) pose[i][12+k] += hips_delta[k];
         }
 
-        evaluate_constraints(avatar,locals,pose,constraint_schedule);
+        evaluate_constraints(avatar,locals,pose,preparation.constraint_schedule);
         RetargetResult result;
         result.node_world.reserve(count);
         for (const auto& matrix : pose) result.node_world.push_back(output(matrix));
@@ -448,10 +489,32 @@ RetargetResult retarget(const Avatar& avatar, const SourcePose& source, const Re
                 palette.matrices.push_back(output(multiply(multiply(mesh_inverse,pose[skin.joints[j]]),inverse_binds[node.skin][j])));
             result.palettes.push_back(std::move(palette));
         }
+        if(cached&&!reuse){
+            // Publish only a completely validated calibration. A failed new
+            // source/options combination leaves the previous cache intact.
+            preparation.rest_key=source.rest;preparation.current_keys.reserve(source.current.size());
+            for(const auto& entry:source.current)preparation.current_keys.push_back(entry.first);
+            preparation.options=options;preparation.ready=true;*cached=std::move(preparation);
+        }
         return result;
     } catch (const std::exception& exception) {
         RetargetResult failure; failure.error = exception.what(); return failure;
     }
 }
+
+struct Retargeter::Impl {
+    Avatar avatar;
+    RetargetPreparation preparation;
+    explicit Impl(const Avatar& source){
+        avatar.version=source.version;avatar.nodes=source.nodes;avatar.skins=source.skins;
+        avatar.humanoid=source.humanoid;avatar.constraints=source.constraints;
+        // Only mesh-count metadata is used by retarget validation.
+        avatar.meshes.resize(source.meshes.size());
+    }
+};
+Retargeter::Retargeter(const Avatar& avatar):impl_(std::make_unique<Impl>(avatar)){}
+Retargeter::~Retargeter()=default;
+RetargetResult Retargeter::update(const SourcePose& source,const RetargetOptions& options){return retarget_prepared(impl_->avatar,source,options,&impl_->preparation);}
+RetargetResult retarget(const Avatar& avatar,const SourcePose& source,const RetargetOptions& options){return retarget_prepared(avatar,source,options,nullptr);}
 
 } // namespace vrm

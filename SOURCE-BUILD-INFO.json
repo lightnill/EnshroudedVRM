@@ -1,8 +1,8 @@
 {
-  "version": "0.1.1-preview",
+  "version": "0.1.2-preview",
   "author": "lightnill",
   "originalCodeLicense": "MIT",
-  "runtimeSha256": "abd28b10bd9c331c8b750f1e4dc1b17335a86051004263aa4c4f597823f2af26",
+  "runtimeSha256": "2cb563022d2bd42b0395aa48d30d2ef1547b8e58e7e2c0cb79fce424c65e0c67",
   "correctedEquipmentBaselineSha256": "62E87EC534B341ABC974BB7D5CA225BE651679961EBD7CEC3A36FA454B8CF669",
   "preservedGripSources": {
     "tool_grip.cpp": "32c3def372b1968eeac57e84d163f1dcad06ec76dfc96975dc4ff0d3460277db",
@@ -19,7 +19,7 @@
     },
     {
       "path": "portable/runtime.rc",
-      "sha256": "386922b964cffe292f919dadeb0e12a33de77c5f5c181b90685b257ff61b0d98"
+      "sha256": "395f5f2b872df4d98aa1e69bc665fc2bdca637a926f518d5974814dbe2ef895c"
     },
     {
       "path": "shaders/avatar.hlsl",
@@ -63,7 +63,7 @@
     },
     {
       "path": "src/avatar_renderer.cpp",
-      "sha256": "406efbfab22466aac674c3b64182776cb416d9f0c37100afc50d51ed39e15379"
+      "sha256": "5f6def8a0c078bc5287732fd15e8464eded62679271a3e1f2ec625697afe09b9"
     },
     {
       "path": "src/avatar_renderer.hpp",
@@ -335,7 +335,7 @@
     },
     {
       "path": "src/native_skinning_gpu.cpp",
-      "sha256": "070b72eb320fdaa90d18fc0199d70d3edcfb7ba78154703491df7b0b88227baa"
+      "sha256": "7d7014b2227616794636ec8f0c69372ab5c8cbdc289dee6d6ba736c9e994de1a"
     },
     {
       "path": "src/native_skinning_gpu.hpp",
@@ -415,11 +415,11 @@
     },
     {
       "path": "src/retarget.cpp",
-      "sha256": "4aae297896a0d7604d204dad419524d8ab5d7fd8a38d33082145565b8b45fc83"
+      "sha256": "733210efb232f3ec099571b5381f539392028bcf3a17e34b3d2747ed4d6e924a"
     },
     {
       "path": "src/retarget.hpp",
-      "sha256": "478f2343768aa9d46576d4fe38677292280282beb3b9c580adf6d4d332699ee6"
+      "sha256": "5be19db76b07b99e090ecc083e843426c602b1fba6afc2cbeed7252fb9fffbcf"
     },
     {
       "path": "src/runtime_bridge.cpp",
@@ -447,11 +447,11 @@
     },
     {
       "path": "src/spring_bones.cpp",
-      "sha256": "beb500be99df65af0e6874a672f80a6702564bf9f49dd2df745d569930d99be1"
+      "sha256": "ae0b7d636e5f399b5d6560c289d1add6a2389b1e7132a8ea5d9b0329492927b3"
     },
     {
       "path": "src/spring_bones.hpp",
-      "sha256": "abb65312b944e4e5d580209108401791ac80fdca18768ce0631e2a411be37ce2"
+      "sha256": "12e2e0f2edcb6ecc706b17911c70d904f9ce6d0c24b5f1511d68e9c83165dfb7"
     },
     {
       "path": "src/spring_frame.hpp",
@@ -495,46 +495,28 @@
   },
   "automaticBufferExports": false,
   "bundledAvatars": 0,
-  "menuPreviewTransparency": "BLEND uses 0.5 cutout in guarded menu views; world BLEND unchanged",
+  "menuPreviewTransparency": "Guarded menu BLEND uses 0.5 cutout; world BLEND retained except documented VRoid FaceBrow compatibility rule",
   "publicationStatus": "preview",
-  "releaseTag": "v0.1.1-preview",
+  "releaseTag": "v0.1.2-preview",
   "runtimeRebuilt": true,
   "compiler": "GCC 16.2.0; DXC 1.9.2609.5; readable CMD/Windows PowerShell 5.1 launcher",
   "nativeBuild": {
-    "target": "Bridge",
-    "portableRelease": true,
-    "shadersUnchanged": 13
+    "command": "build.ps1 -Target Bridge -PortableRelease",
+    "compiler": "GCC 16.2.0; DXC 1.9.2609.5",
+    "runtimeFileVersion": "0.1.2-preview",
+    "runtimeSha256": "2cb563022d2bd42b0395aa48d30d2ef1547b8e58e7e2c0cb79fce424c65e0c67"
   },
-  "packageSha256": "29da1c468dc5f8c3b6df4b659ccb2be4e9d1067d8eb67769b3235bf62d2a9967",
+  "packageSha256": "3f8e5610f6307fa7f85645263843715d9fb07fb4d1d5bb59cb171b10e8baf5a6",
   "packageFiles": 39,
   "launcherKind": "readable CMD/Windows PowerShell 5.1; generated local Play script",
   "eyebrowCompatibility": "Unfaded standard _FaceBrow_ MToon BLEND overlays use MASK cutoff 0.5; other materials unchanged.",
-  "sourceHashNormalization": "sourceInputs and sourceFiles identify exact published bytes; Git staging disables automatic CRLF conversion. Legacy preservedGripSources identify the LF-normalized accepted grip baseline; current exact-byte grip pins are in sourceInputs.",
-  "publishedBaselineTag": "v0.1.0-preview-script",
+  "sourceHashNormalization": "sourceInputs and sourceFiles identify exact published bytes; Git blob creation preserves file bytes without text conversion. Legacy preservedGripSources identify the LF-normalized accepted grip baseline; current exact-byte grip pins are in sourceInputs.",
+  "publishedBaselineTag": "v0.1.1-preview",
   "validation": {
-    "launcher": {
-      "run": 62,
-      "failures": 0
-    },
-    "package": {
-      "run": 8,
-      "failures": 0,
-      "skipped": 1,
-      "skipReason": "Symbolic-link privilege unavailable"
-    },
-    "releaseBuilder": {
-      "run": 17,
-      "failures": 0
-    },
-    "fixtureBuilder": {
-      "run": 2,
-      "failures": 0
-    },
-    "materialImport": {
-      "syntheticChecks": 84,
-      "originalAvatarChecks": 3,
-      "failures": 0
-    }
+    "current": "validation/preview-0.1.2-20261028/final-verification.json",
+    "individualFiles": "validation/preview-0.1.2-20261028/PER-FILE-SCAN-RESULTS.csv",
+    "performance": "docs/performance/0.1.2-optimization.md",
+    "inGameFpsGainMeasured": false
   },
   "sourceFiles": [
     {
@@ -544,13 +526,13 @@
     },
     {
       "path": "BUILDING.md",
-      "sha256": "7250cffef5a79298b9f0251a84fc6c576cc55760ad78b71b811cf293ad84aa82",
-      "bytes": 4927
+      "sha256": "a9b11ce7dfc5bbd841d91593d56100ce26815de0d145462d6b575a6b00f3de88",
+      "bytes": 11356
     },
     {
       "path": "KNOWN-ISSUES.txt",
-      "sha256": "bb391048f18c9d499034c8aade7c07db996c0ab7132646031e36bf72837a2bce",
-      "bytes": 5512
+      "sha256": "f266cd40f6d2031e570a663139333dad84600a8c1ec3f08ef3e0bf079e454739",
+      "bytes": 6076
     },
     {
       "path": "LICENSE",
@@ -559,17 +541,17 @@
     },
     {
       "path": "README.md",
-      "sha256": "60727983b3d7c58343e2ef1ee524d38e159f03a104698a79e6374edba78cf1d1",
-      "bytes": 4436
+      "sha256": "58cae68ab8756ceeb79660346a10dded4ea44a0f0a0b759236246f6565be5ef6",
+      "bytes": 4758
     },
     {
       "path": "RELEASE-NOTES.md",
-      "sha256": "936d69a82b6d8afe48f3168a1f0d857bdecb18cdb1892777974b100c42d6616d",
-      "bytes": 2401
+      "sha256": "8592a29d97ee0486ba11501679cf460ea6aa91f0dfbe3dd3d5d806283627ea28",
+      "bytes": 2232
     },
     {
       "path": "SECURITY.md",
-      "sha256": "b75403c488172312c2764d0616f6a2866736aa87019c674cf0805418e30dd008",
+      "sha256": "0d1a6333a0f3a99c420d5b1c2b19d6bb876fb4858f40c344b254602e8e38dece",
       "bytes": 3573
     },
     {
@@ -591,6 +573,11 @@
       "path": "docs/compatibility/loader-coexistence.md",
       "sha256": "4f3cde481362e0052c42b1759890fa515fdf8bfd371a588db8dd4448c2321c90",
       "bytes": 6513
+    },
+    {
+      "path": "docs/performance/0.1.2-optimization.md",
+      "sha256": "47e6fb246aee7ea40600ee77f031c64cb4909656c734684b6193fe56552d5904",
+      "bytes": 3798
     },
     {
       "path": "docs/superpowers/plans/2026-10-27-preview-update.md",
@@ -659,17 +646,17 @@
     },
     {
       "path": "portable/docs/BUILDING.md",
-      "sha256": "7250cffef5a79298b9f0251a84fc6c576cc55760ad78b71b811cf293ad84aa82",
-      "bytes": 4927
+      "sha256": "a9b11ce7dfc5bbd841d91593d56100ce26815de0d145462d6b575a6b00f3de88",
+      "bytes": 11356
     },
     {
       "path": "portable/docs/KNOWN-ISSUES.txt",
-      "sha256": "bb391048f18c9d499034c8aade7c07db996c0ab7132646031e36bf72837a2bce",
-      "bytes": 5512
+      "sha256": "f266cd40f6d2031e570a663139333dad84600a8c1ec3f08ef3e0bf079e454739",
+      "bytes": 6076
     },
     {
       "path": "portable/docs/NEXUS-DESCRIPTION.txt",
-      "sha256": "00bac27bc74d6c5dcc76176c8ecde635fcb509070ee84fd40cd2f3e973d848e0",
+      "sha256": "6cf9bd5526322ce72e40e79cde8c5628fbe850d8a02da8e00f1e7a1204402388",
       "bytes": 4169
     },
     {
@@ -679,8 +666,8 @@
     },
     {
       "path": "portable/docs/RELEASE-NOTES.md",
-      "sha256": "936d69a82b6d8afe48f3168a1f0d857bdecb18cdb1892777974b100c42d6616d",
-      "bytes": 2401
+      "sha256": "8592a29d97ee0486ba11501679cf460ea6aa91f0dfbe3dd3d5d806283627ea28",
+      "bytes": 2232
     },
     {
       "path": "portable/docs/SCRIPT-LAUNCHER.txt",
@@ -689,7 +676,7 @@
     },
     {
       "path": "portable/docs/SECURITY.md",
-      "sha256": "b75403c488172312c2764d0616f6a2866736aa87019c674cf0805418e30dd008",
+      "sha256": "0d1a6333a0f3a99c420d5b1c2b19d6bb876fb4858f40c344b254602e8e38dece",
       "bytes": 3573
     },
     {
@@ -699,7 +686,7 @@
     },
     {
       "path": "portable/docs/UPLOAD-NOTES.md",
-      "sha256": "e4e06e77b1f574c74f4916a1cdb1258a555e58b5a5ec51cf34c9ca9496ba2fb3",
+      "sha256": "8e9f85e35b611b6a2e1925d68645d8bdc0fa63fbef796bb097631df2424f63a5",
       "bytes": 1115
     },
     {
@@ -759,8 +746,8 @@
     },
     {
       "path": "portable/runtime.rc",
-      "sha256": "386922b964cffe292f919dadeb0e12a33de77c5f5c181b90685b257ff61b0d98",
-      "bytes": 807
+      "sha256": "395f5f2b872df4d98aa1e69bc665fc2bdca637a926f518d5974814dbe2ef895c",
+      "bytes": 779
     },
     {
       "path": "portable/script/Launch-EnshroudedVRM.cmd",
@@ -769,7 +756,7 @@
     },
     {
       "path": "portable/script/Launch-EnshroudedVRM.ps1",
-      "sha256": "076f4e0d82d7e2c289e636036d99f2276dc43cb373f69caa55f3b26a62cd457a",
+      "sha256": "13bbe0fc27a712dd655bb0a97e5194953991773dd5b9f1b4247eba50686a9053",
       "bytes": 5703
     },
     {
@@ -829,8 +816,8 @@
     },
     {
       "path": "src/avatar_renderer.cpp",
-      "sha256": "406efbfab22466aac674c3b64182776cb416d9f0c37100afc50d51ed39e15379",
-      "bytes": 64137
+      "sha256": "5f6def8a0c078bc5287732fd15e8464eded62679271a3e1f2ec625697afe09b9",
+      "bytes": 64820
     },
     {
       "path": "src/avatar_renderer.hpp",
@@ -1169,8 +1156,8 @@
     },
     {
       "path": "src/native_skinning_gpu.cpp",
-      "sha256": "070b72eb320fdaa90d18fc0199d70d3edcfb7ba78154703491df7b0b88227baa",
-      "bytes": 17654
+      "sha256": "7d7014b2227616794636ec8f0c69372ab5c8cbdc289dee6d6ba736c9e994de1a",
+      "bytes": 20388
     },
     {
       "path": "src/native_skinning_gpu.hpp",
@@ -1269,13 +1256,13 @@
     },
     {
       "path": "src/retarget.cpp",
-      "sha256": "4aae297896a0d7604d204dad419524d8ab5d7fd8a38d33082145565b8b45fc83",
-      "bytes": 25724
+      "sha256": "733210efb232f3ec099571b5381f539392028bcf3a17e34b3d2747ed4d6e924a",
+      "bytes": 29604
     },
     {
       "path": "src/retarget.hpp",
-      "sha256": "478f2343768aa9d46576d4fe38677292280282beb3b9c580adf6d4d332699ee6",
-      "bytes": 4352
+      "sha256": "5be19db76b07b99e090ecc083e843426c602b1fba6afc2cbeed7252fb9fffbcf",
+      "bytes": 5045
     },
     {
       "path": "src/runtime_bridge.cpp",
@@ -1309,13 +1296,13 @@
     },
     {
       "path": "src/spring_bones.cpp",
-      "sha256": "beb500be99df65af0e6874a672f80a6702564bf9f49dd2df745d569930d99be1",
-      "bytes": 17882
+      "sha256": "ae0b7d636e5f399b5d6560c289d1add6a2389b1e7132a8ea5d9b0329492927b3",
+      "bytes": 46886
     },
     {
       "path": "src/spring_bones.hpp",
-      "sha256": "abb65312b944e4e5d580209108401791ac80fdca18768ce0631e2a411be37ce2",
-      "bytes": 1472
+      "sha256": "12e2e0f2edcb6ecc706b17911c70d904f9ce6d0c24b5f1511d68e9c83165dfb7",
+      "bytes": 1491
     },
     {
       "path": "src/spring_frame.hpp",
@@ -1363,14 +1350,69 @@
       "bytes": 6637
     },
     {
+      "path": "tests/native_skinning_gpu.cpp",
+      "sha256": "38da0084e77016d4f78c838d4cf33b6884f75d5e6a39a05b19185b5a839a526c",
+      "bytes": 17249
+    },
+    {
+      "path": "tests/native_skinning_gpu.ps1",
+      "sha256": "9f94abe8411c0b8e777621a21709c03225d4b4acb399340403cd8169d5b93698",
+      "bytes": 3311
+    },
+    {
+      "path": "tests/native_skinning_gpu_reuse.cpp",
+      "sha256": "d80fb280b7e449b1e0402461780fc2e17d532270dc56317290d00ccbd2c8a636",
+      "bytes": 19191
+    },
+    {
       "path": "tests/portable_child.cpp",
       "sha256": "8758bf8994ccb03f9e355ef944ed643f472b76918ef224fb4c4ded9dce71e88f",
       "bytes": 1032
     },
     {
+      "path": "tests/retarget_cache.cpp",
+      "sha256": "da621a718544765ba07dbbf969512ca6debf28c4c4b86b0922e6e80a039bf6d0",
+      "bytes": 10955
+    },
+    {
+      "path": "tests/retarget_views.cpp",
+      "sha256": "5558bb445492399da6696b5fd2b8fb348620fe842ee56ff77834c2f4631297cb",
+      "bytes": 2920
+    },
+    {
       "path": "tests/secondary_hand_contact.cpp",
       "sha256": "2b1bae99938176f9afe1ae4411fdeadde035aa9dad4fcf24e4f3ab0a280fdf93",
       "bytes": 14541
+    },
+    {
+      "path": "tests/spring_airflow.cpp",
+      "sha256": "afbcd13494d0e48af25349680ce6813659e98f858efbf71e3113ed31342d6426",
+      "bytes": 10594
+    },
+    {
+      "path": "tests/spring_arm_release.cpp",
+      "sha256": "e404e149857e031fe3826f766b79cf0af09bd13d4933ffd04e40b4130bd37f63",
+      "bytes": 4181
+    },
+    {
+      "path": "tests/spring_cohesion.cpp",
+      "sha256": "eedf99ae9bcacf520782937ce356f2eea3a3797e02ee1e641f2cfa50455b53d4",
+      "bytes": 13511
+    },
+    {
+      "path": "tests/spring_collision.cpp",
+      "sha256": "d03400f1f9df1a14b3e8c8372e217e19b5780c57dbdbf235a267ce10e923cecb",
+      "bytes": 11903
+    },
+    {
+      "path": "tests/spring_inertial.cpp",
+      "sha256": "f59574b944120ab76eec246515d479b5e4864856d3ed91b3d2ed55945f8c86d1",
+      "bytes": 14918
+    },
+    {
+      "path": "tests/spring_shape.cpp",
+      "sha256": "81e29f1c72e28683bd5e4dc2dc549f9051621ac4c75493af9493f2154ff0f07d",
+      "bytes": 10271
     },
     {
       "path": "tests/test_material_compatibility.py",
@@ -1381,6 +1423,11 @@
       "path": "tests/test_portable_package.py",
       "sha256": "054880c03ea94c11d1373a66a458279513a2a6e9fb2a057930671b625d534b15",
       "bytes": 4507
+    },
+    {
+      "path": "tests/test_retarget_cache.py",
+      "sha256": "b550be99b7b5d4eadff7e5b05308bfa8008fd846f2c89efb8a06b546df315bdf",
+      "bytes": 2822
     },
     {
       "path": "tests/test_script_fixture_build.py",
@@ -1396,6 +1443,36 @@
       "path": "tests/test_script_release.py",
       "sha256": "7dac52b546d9df3e98498dd7c8bc8f97cf3bc404df7696623c6be11b5f742b3e",
       "bytes": 15272
+    },
+    {
+      "path": "tests/test_spring_airflow.py",
+      "sha256": "f27b42ab5943d0bb8c527ca30b4713a43e3e8028c395cf0f6c03337b6afc4bea",
+      "bytes": 1308
+    },
+    {
+      "path": "tests/test_spring_arm_release.py",
+      "sha256": "baff5aefc205b4830e0f242f0375af7b54a60c43fda576a3c479d188ca41a9dd",
+      "bytes": 1353
+    },
+    {
+      "path": "tests/test_spring_cohesion.py",
+      "sha256": "95a2ebc7d5e6aee5ecc40423bdde7d90e975a031cebf69ca7d5869adde12b866",
+      "bytes": 1331
+    },
+    {
+      "path": "tests/test_spring_collision.py",
+      "sha256": "73ec1143da1cb8c20fbcc8e8023ef3cfb5c0046211c710fbde3c6cefa385df6c",
+      "bytes": 1341
+    },
+    {
+      "path": "tests/test_spring_inertial.py",
+      "sha256": "3a783aec4c55e411454c9cef82013bcc832e437d318464f02527f6aabe28c015",
+      "bytes": 1338
+    },
+    {
+      "path": "tests/test_spring_shape.py",
+      "sha256": "cc22d55857146eb1ed8b87a9373710ca90434842fcf2f205eeecf7612fed9ac6",
+      "bytes": 1327
     },
     {
       "path": "tests/tool_grip.cpp",
@@ -1421,6 +1498,16 @@
       "path": "validation/preview-0.1.1-20261027/final-verification.json",
       "sha256": "55c2e288da7cb1e8e8fe2147c16cd4d6fbcc2074aba0e0dc6fbcd2c554aebb08",
       "bytes": 2305
+    },
+    {
+      "path": "validation/preview-0.1.2-20261028/PER-FILE-SCAN-RESULTS.csv",
+      "sha256": "583601dba769c1bf302737043309893dbbce8903064dbac7015ee1771a8db04c",
+      "bytes": 6853
+    },
+    {
+      "path": "validation/preview-0.1.2-20261028/final-verification.json",
+      "sha256": "9b4f3dc8b04a720e25f09546db8cfa15b8d5f63c5b960c9dfe6f2de9b7854864",
+      "bytes": 1787
     },
     {
       "path": "validation/script-launcher-20261026/PER-FILE-SCAN-RESULTS.csv",

@@ -20,7 +20,7 @@ $interactive = -not ($Check -or $Launch -or $Play -or $Version)
 $result = $null
 $code = 1
 try {
-    if ($Version) { [Console]::WriteLine('EnshroudedVRM 0.1.1-preview script launcher by lightnill'); exit 0 }
+    if ($Version) { [Console]::WriteLine('EnshroudedVRM 0.1.2-preview script launcher by lightnill'); exit 0 }
     if ($Play -and ($Check -or $Launch -or $PSBoundParameters.ContainsKey('Game') -or $PSBoundParameters.ContainsKey('Model') -or $NoSprings -or $EnableSprings)) {
         throw '-Play uses saved settings; choose it without -Check, -Launch, game/avatar paths or spring overrides.'
     }
@@ -67,7 +67,7 @@ try {
     }
     $plan = Get-EvrmLaunchPlan -Root $PSScriptRoot -Game $Game -Model $Model -Springs $springs
     if ($Check) {
-        $result = [ordered]@{ok=$true; version='0.1.1-preview'; publicationStatus=$plan.PublicationStatus; runtimeSha256=$plan.RuntimeHash; captureFiles=$false; gameStarted=$false; launcherKind='script'}
+        $result = [ordered]@{ok=$true; version='0.1.2-preview'; publicationStatus=$plan.PublicationStatus; runtimeSha256=$plan.RuntimeHash; captureFiles=$false; gameStarted=$false; launcherKind='script'}
     } else {
         if ($interactive) {
             Write-Host ('Game: ' + $plan.Game)

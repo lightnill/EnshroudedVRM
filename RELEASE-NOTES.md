@@ -1,38 +1,36 @@
-# EnshroudedVRM 0.1.1 preview
+# EnshroudedVRM 0.1.2 preview
 
-By lightnill. Windows x64; readable CMD/Windows PowerShell launcher and the
-required native VRM runtime DLL. No avatars or game executables are bundled.
+Long hair has more natural inertia and damping during movement. Running produces
+a smaller backward trail, and neighbouring sections share a little rotation to
+keep gaps less visible. Hair permits arm overlap to reduce catching; retained torso/head colliders
+still take priority. Shoulder contacts follow the model's collider references. Avatar files are
+never edited. Enable spring motion to use this behavior.
 
-- After first setup, use the generated **Play-EnshroudedVRM.cmd** to start with
-  saved game, avatar and spring settings without selecting files or typing.
-- Steam game discovery checks local library installations. Setup asks for the
-  executable only when it cannot find a usable game path.
-- Startup observation records launch failures and early exits without retrying
-  or closing the game. Only the latest five recognized sessions are retained;
-  game-log tails are limited to 256 KB and completed mod logs to 1 MB.
-- Standard unfaded VRoid MToon `_FaceBrow_` overlays use the tested 0.5 alpha
-  cutout path in the world, correcting the eyebrow shading mismatch. Other
-  materials, including blended eyes and glasses, retain their existing behavior.
-- Initial single-player checks passed with EML 0.2.0 and ShroudForge 1.7.5,
-  each tested separately alongside VRM. ShroudForge's Hands-Free Lantern 0.11.1
-  also passed the tested basic-lantern gameplay checks. No loader or lantern mod
-  is bundled, and direct loader integration remains deferred.
+The runtime also avoids rebuilding static skeleton calibration every frame and
+reuses idle GPU buffers and descriptor resources. GPU skinning remains enabled
+by default. Isolated tests measured skeleton updates at about 0.055 ms versus
+1.15 ms, and greatly reduced GPU resource allocation/retirement costs. These are
+processing measurements, not a measured in-game FPS increase. See the source
+repository's docs/performance/0.1.2-optimization.md for scope and reproduction.
 
-Extract the whole ZIP outside the game folder, start Steam, and run
-**Launch-EnshroudedVRM.cmd** once. Choose your avatar, confirm the detected game,
-and type Y. Use **Play-EnshroudedVRM.cmd** afterward. Run Launch again to change
-avatars or repair missing paths. Existing package and executable checks remain.
+The approved hair tuning is preserved exactly in this optimization pass. Short
+head strands can still jitter during combined running/blocking, and collision
+coverage depends on the avatar's authored colliders. Broader rig/scene testing
+is still needed.
 
-The runtime DLL is rebuilt for this release. All 13 shaders and compatibility
-data retain their accepted bytes. This is a targeted VRoid material compatibility
-rule, with hard cutout edges; full MToon and general shaded transparency remain
-future work. The original avatar file is never edited.
+Extract the complete ZIP outside the game folder, start Steam, and run
+Launch-EnshroudedVRM.cmd once. Choose your avatar, confirm the game path and type
+Y. Use the generated Play-EnshroudedVRM.cmd afterward. Existing one-click setup,
+startup history, held-item alignment and VRoid eyebrow compatibility remain.
 
-Supported game: Steam build **26082781**, resource version **1273043**. Other
-executables are rejected. Windows 10/11 x64 and Windows PowerShell 5.1 are required.
-Only you see the replacement; multiplayer avatar synchronization is not included.
-Large avatars and unusual equipment/rigs need broader testing. See KNOWN-ISSUES.txt.
+Windows 10/11 x64 and Windows PowerShell 5.1 are required. Supported game:
+Steam build 26082781, resource version 1273043. Only you see the replacement;
+multiplayer avatar synchronization is not implemented. No avatars, saves, custom
+launcher EXE or third-party mods are bundled. Keep LICENSE and all notices.
 
-Verification records identify this release's exact files. Previous antivirus
-reports apply only to their original hashes; they do not validate the rebuilt
-DLL or other changed bytes. Retain LICENSE and third-party notices.
+Automated checks cover the launcher/package, 96 spring scenarios, cached pose
+validation and output equality, rejected-view history preservation, and GPU
+skinning/resource lifetimes. The optimized runtime was not newly tested in-game.
+All 13 shaders and compatibility data retain their accepted bytes. This release's
+verification and scan records identify its exact files; earlier antivirus reports
+apply only to their original hashes.

@@ -1,6 +1,6 @@
 # Release upload notes
 
-Author: lightnill. Version: 0.1.1-preview. Original code: MIT.
+Author: lightnill. Version: 0.1.2-preview. Original code: MIT.
 
 Ship only the current explicitly assembled CMD package and its matching source
 and checksums. No custom launcher EXE belongs in the player download. Runtime DLL,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vrm_asset.hpp"
+#include <memory>
 
 namespace vrm {
 
@@ -77,5 +78,21 @@ struct RetargetResult {
 // Invalid input returns an error with no partial pose or palette.
 RetargetResult retarget(const Avatar& avatar, const SourcePose& source,
                         const RetargetOptions& options = {});
+
+// Repeated-pose evaluator with an immutable rig-metadata snapshot. Geometry and
+// textures are not copied. Validated preparation is reused only while source
+// rest bytes, current semantic availability and options match exactly. Every
+// dynamic source matrix is still validated. Call from one serialized view.
+class Retargeter {
+public:
+    explicit Retargeter(const Avatar& avatar);
+    ~Retargeter();
+    Retargeter(const Retargeter&) = delete;
+    Retargeter& operator=(const Retargeter&) = delete;
+    RetargetResult update(const SourcePose& source, const RetargetOptions& options = {});
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 } // namespace vrm

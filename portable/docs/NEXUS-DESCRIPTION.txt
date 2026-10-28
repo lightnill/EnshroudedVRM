@@ -32,8 +32,8 @@ Only you see the replacement; multiplayer avatar synchronization is not included
 Original code is MIT, Copyright (c) 2026 lightnill. Reuse, modification and redistribution are allowed with the copyright and license notice retained. Preserve all third-party notices. Game and avatar rights remain with their owners. This is unofficial and not affiliated with or endorsed by Keen Games.
 
 [url=https://github.com/lightnill/EnshroudedVRM]Source, issues and build instructions on GitHub[/url]
-[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.1-preview]CMD release and checksums[/url]
-[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.1-preview]Current release verification, file hashes and scan coverage[/url]
+[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.2-preview]CMD release and checksums[/url]
+[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.2-preview]Current release verification, file hashes and scan coverage[/url]
 
 Dependencies and credits: TinyGLTF, nlohmann/json, stb_image, ShroudForge-derived interface contracts, Vulkan-Headers and compiler runtime components. Full provenance and notices are included in THIRD_PARTY_NOTICES.md and notices/. No ValheimVRM source or assets are bundled.
 

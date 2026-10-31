@@ -36,6 +36,10 @@ The launcher observes the first 30 seconds and keeps bounded startup diagnostics
 
 Source, licenses and security
 
-See [BUILDING.md](BUILDING.md), [release notes](RELEASE-NOTES.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [security behavior](SECURITY.md). The package includes the separately licensed official Oculus LipSync runtime and its notices. Original code is MIT, Copyright (c) 2026 lightnill. No avatars, game executables, saves or private logs are bundled. This mod is unofficial and is not endorsed by Keen Games.
+See the bundled RELEASE-NOTES.md, THIRD_PARTY_NOTICES.md and SECURITY.md.
+Developer build instructions are in the public source repository:
+https://github.com/lightnill/EnshroudedVRM/blob/main/BUILDING.md
+
+The package includes the separately licensed official Oculus LipSync runtime and its notices. Original code is MIT, Copyright (c) 2026 lightnill. No avatars, game executables, saves or private logs are bundled. This mod is unofficial and is not endorsed by Keen Games.
 
 Release scan evidence identifies exact file hashes, analysis times and engine coverage. Missing, unsupported or pending results are not clean scans; zero detections do not guarantee safety. Development included substantial AI-generated code under lightnill's direction and testing.

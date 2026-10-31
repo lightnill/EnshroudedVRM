@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "documentationRevision": "docs1",
+  "archiveSha256": "6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26",
+  "archiveBytes": 18891000,
+  "runtimeSha256": "910ab2ccec93f3a386e2eca785883f061d8ece94c784cbfc2494ba1d56e52318",
+  "priorArchiveSha256": "611d9c6311e222b38f093ad4f9d5befd1da039a8182f36850c7339533b0fcb32",
+  "files": 44,
+  "manifestPins": 42,
+  "runtimeSourcePins": 228,
+  "releaseSourcePins": 24,
+  "runtimeSourcePinsUnchanged": true,
+  "runtimeAndAllShadersUnchanged": true,
+  "deterministic": true,
+  "changedMembers": [
+    "Avatars/README.txt",
+    "BUILD-INFO.json",
+    "KNOWN-ISSUES.txt",
+    "README.txt",
+    "SHA256SUMS.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "release-manifest.json"
+  ],
+  "documentedManifestCommandPassed": true,
+  "modelFreeLauncherCheck": true,
+  "gameStarted": false,
+  "privateAssetsIncluded": false,
+  "documentationIssuesResolved": 3,
+  "freshPackageTestsPassed": 30,
+  "existingWindowsPermissionSkip": 1,
+  "priorFullSuite": {
+    "passed": 154,
+    "skipped": 1,
+    "rerunForDocsOnly": false
+  }
+}

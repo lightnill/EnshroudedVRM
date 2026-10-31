@@ -168,45 +168,51 @@ allocation costs; these are not measured in-game FPS gains.
 Other development targets may depend on omitted research fixtures; only the
 documented targets and selected synthetic tests are claimed to be self-contained.
 
-## Assemble a release
+## Assemble a 0.2.0 release
 
-Use a locally supplied, verified current package as the source for the supported
-Runtime and Compatibility data. Supply its published SHA-256 explicitly:
+Build and verify the current runtime and shaders using the Bridge command above.
+The package builder does not compile or test the supplied DLL. Use the published
+0.1.2-preview ZIP as the hash-verified compatibility baseline; the builder's strict
+base-member policy does not accept the newer voice-enabled package as a base.
+Download that baseline separately and preserve its published SHA-256 below.
+
+Create a manifest for the exact two skinning shaders beside the verified DLL:
 
 ```powershell
-python ./portable/package_script_release.py `
-  --base-package C:/Releases/accepted.zip `
-  --base-sha256 PUBLISHED_64_CHARACTER_SHA256 `
-  --output ./dist/EnshroudedVRM-0.1.0-preview-script.zip
+$releaseShaders = @('native_skinning.comp.spv', 'native_skinning.finalize.spv') |
+  ForEach-Object {
+    $releaseShaderPath = (Resolve-Path (Join-Path './build/Runtime/shaders' $_)).Path
+    @{ name = $_; path = $releaseShaderPath;
+       sha256 = (Get-FileHash -LiteralPath $releaseShaderPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+  }
+@{ schema = 'enshrouded-vrm-rebuilt-shaders-v1'; modules = @($releaseShaders) } |
+  ConvertTo-Json -Depth 4 | Set-Content -LiteralPath './build/rebuilt-shaders.json' -Encoding UTF8
+$releaseRuntimeHash = (Get-FileHash -LiteralPath './build/Runtime/enshrouded_vrm_runtime.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
 ```
 
-The builder uses an explicit member map, carries the 17 runtime/compatibility
-files unchanged, and regenerates package metadata, manifest and hashes. It does
-not walk the workspace, include avatars/State, or download anything. Newly built
-bytes need their own scan record; old reports do not validate a rebuilt archive.
-
-Keep the compatibility data's provenance flags. Never bypass game fingerprints,
-resource ownership or package hash checks. Preserve runtime license notices.
-Published source hashes state their text normalization separately from binary
-package hashes. Captures and model exports remain disabled.
-
-## Package a separately rebuilt runtime
-
-The release builder accepts an explicitly supplied DLL and digest. It does not
-compile or test that DLL. Build and verify it first, then use:
+Package those verified bytes with the current source checkout:
 
 ```powershell
 python ./portable/package_script_release.py `
-  --base-package C:/Releases/accepted.zip `
-  --base-sha256 PUBLISHED_BASE_SHA256 `
+  --base-package C:/Releases/EnshroudedVRM-0.1.2-preview.zip `
+  --base-sha256 3f8e5610f6307fa7f85645263843715d9fb07fb4d1d5bb59cb171b10e8baf5a6 `
   --runtime-dll ./build/Runtime/enshrouded_vrm_runtime.dll `
-  --runtime-sha256 VERIFIED_REBUILT_DLL_SHA256 `
-  --version 0.1.2-preview `
-  --output ./dist/EnshroudedVRM-0.1.2-preview.zip
+  --runtime-sha256 $releaseRuntimeHash `
+  --shader-manifest ./build/rebuilt-shaders.json `
+  --version 0.2.0 `
+  --root-name EnshroudedVRM-0.2.0 `
+  --output ./dist/EnshroudedVRM-0.2.0.zip
 ```
 
-The 16 other runtime/shader/compatibility members remain hash-verified against
-the base package. Runtime source pins are refreshed from the supplied source
-checkout. The source files must match the verified build; the builder's source
-hashes are not by themselves proof that a DLL was built from those sources.
-Private State, saves, avatars, captures and test executables are excluded.
+The remaining baseline runtime/shader/compatibility members are hash-verified;
+the official Oculus LipSync DLL and notices come from the separately verified
+vendor input. The explicit member map regenerates metadata, manifest and hashes
+without walking the workspace or downloading dependencies. Runtime and release
+source pins are refreshed from the supplied checkout. The source files must
+match the verified build; source hashes alone do not prove the DLL's origin.
+Choose a new output path if an archive or its receipt already exists.
+
+Keep compatibility provenance, game fingerprints, resource ownership and package
+hash checks intact. Newly packaged bytes need their own scan evidence; reports
+for an earlier archive do not validate a changed ZIP. Private State, saves,
+avatars, captures and test executables are excluded; retain all runtime licenses.

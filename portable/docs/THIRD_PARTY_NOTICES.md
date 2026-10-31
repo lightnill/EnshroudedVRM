@@ -9,8 +9,8 @@ The project license does not replace third-party licenses or license game conten
 Pinned C++ headers from syoyo/tinygltf revision
 `0d9ce1a9561688c6c6e7471430d15a50a0b15f1a`, `attic/`:
 
-- TinyGLTF: MIT, Copyright (c) 2017 Syoyo Fujita, AurÃ©lien Chatelain and contributors.
-- JSON for Modern C++ 3.10.4: MIT, Copyright (c) 2013â€“2019 Niels Lohmann.
+- TinyGLTF: MIT, Copyright (c) 2017 Syoyo Fujita, Aurélien Chatelain and contributors.
+- JSON for Modern C++ 3.10.4: MIT, Copyright (c) 2013–2019 Niels Lohmann.
 - stb_image: selected MIT alternative, Copyright (c) 2017 Sean Barrett.
 
 Headers and embedded notices are preserved in the source archive. Full
@@ -29,7 +29,7 @@ Source: https://github.com/bonsaibauer/shroudforge
 
 ## Vulkan headers
 
-The build uses Khronos Vulkan API headers, Copyright 2015â€“2026 The Khronos Group
+The build uses Khronos Vulkan API headers, Copyright 2015–2026 The Khronos Group
 Inc., under their MIT alternative (SPDX Apache-2.0 OR MIT). Full selected notice:
 notices/Vulkan-Headers-MIT.txt. The SDK/headers/compiler tools are not bundled in
 the portable binary ZIP.

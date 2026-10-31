@@ -26,11 +26,13 @@ Some Vulkan loaders cannot read non-ASCII layer-folder paths. The launcher uses 
 existing Windows short-path alias when available, after checking that it points
 to the same runtime folder. If Windows has no usable alias, move the mod into a
 writable ASCII-only path. No aliases or volume settings are created or changed.
-Saved avatar selections are absolute paths. After moving a used package with its
-avatar, run Launch-EnshroudedVRM.cmd and choose the avatar again if its saved
-location no longer exists. The same applies to a moved game installation.
-Play-EnshroudedVRM.cmd requires complete saved settings and keeps all build/package
-checks. Missing/invalid settings produce a setup error with no automatic fallback.
+Saved avatar selections are absolute paths. If a model is moved or deleted,
+launch the game and use Browse... or the avatar list in F8 to choose its new
+location or another model. A missing model does not block access to F8.
+If the game installation moves, run Launch-EnshroudedVRM.cmd to detect or choose
+the new game executable. Play-EnshroudedVRM.cmd requires valid saved launcher
+settings for the game, not a saved avatar, and keeps all build/package checks.
+Missing/invalid launcher settings produce a setup error with no automatic fallback.
 Keep Play beside the rest of the launcher. If generating it fails after the game
 starts, the game remains running and the launcher reports a warning. An existing
 file with different contents or a directory/link named Play-EnshroudedVRM.cmd is

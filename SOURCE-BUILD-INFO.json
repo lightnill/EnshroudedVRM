@@ -926,12 +926,12 @@
     {
       "path": "portable/docs/Avatars-README.txt",
       "archivePath": "Avatars/README.txt",
-      "sha256": "ff84e739107995d8b0113a6a3ce9473390b3ddf5df3c914bf2e99c7113407f99"
+      "sha256": "b81266115976458b72d11e31336a810afce7a8c20ce7a71e4bd39e9cf74329c1"
     },
     {
       "path": "portable/docs/KNOWN-ISSUES.txt",
       "archivePath": "KNOWN-ISSUES.txt",
-      "sha256": "687c54a2049446b21ba253bc438f5146944533988683abd46ed4fc48b32c7846"
+      "sha256": "a8d62fa07fc15ca2463eb37a75bf9e2ca551249373a0eda1e7734cd9236c47c1"
     },
     {
       "path": "portable/docs/RELEASE-NOTES.md",
@@ -941,7 +941,7 @@
     {
       "path": "portable/docs/SCRIPT-LAUNCHER.txt",
       "archivePath": "README.txt",
-      "sha256": "81acf14b57f90c421b43142c105c8a2406cf05a4ad228c7d07a0c01905e6d3d1"
+      "sha256": "37660ec7411780c80450e43f7af0d42f70606d825d2957148ec7ffb18e973346"
     },
     {
       "path": "portable/docs/SECURITY.md",
@@ -951,7 +951,7 @@
     {
       "path": "portable/docs/THIRD_PARTY_NOTICES.md",
       "archivePath": "THIRD_PARTY_NOTICES.md",
-      "sha256": "b7a95847b169e9b18aa0ef270bc64c8a04e305e02c5be27f13c4eeec2a221680"
+      "sha256": "b0bdcbd95fe6a0cb1ea3e914ca9a04ed608d8ab21843968472900e3c8604e92b"
     },
     {
       "path": "portable/docs/VOICE-MENU-TEST.txt",
@@ -1055,7 +1055,7 @@
     "native_volume_snapshot.comp.spv": "a0d207e8e92e3bba89f2f78a63951d178f171479a44f990d49f7b829928d92f3"
   },
   "releaseTag": "v0.2.0",
-  "packageSha256": "611d9c6311e222b38f093ad4f9d5befd1da039a8182f36850c7339533b0fcb32",
+  "packageSha256": "6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26",
   "publishedBaselineTag": "v0.1.2-preview",
   "binaryInputs": [
     {
@@ -1088,9 +1088,10 @@
     "runtimeFileVersion": "0.2.0"
   },
   "validation": {
-    "current": "validation/0.2.0/package-verification.json",
+    "current": "validation/0.2.0-docs1/package-verification.json",
     "tests": "validation/0.2.0/suite.json",
-    "scanEvidence": "Release assets identify exact hashes, dates and engine coverage"
+    "scanEvidence": "validation/0.2.0-docs1/SCAN-RESULTS-0.2.0-docs1.json",
+    "currentTests": "30 package methods passed; one existing Windows permission skip. Prior full suite retained separately; not rerun for documentation-only correction."
   },
   "sourceHashNormalization": "Exact published bytes; no text normalization. Binary SDK input is distributed with player ZIP and notices, separately from source Git history.",
   "sourceFiles": [
@@ -1101,13 +1102,13 @@
     },
     {
       "path": "BUILDING.md",
-      "sha256": "6dd83cdcfdaa938cbfb1b545d7be7e3db3750c166aff99c5e7533ee351387397",
-      "bytes": 12438
+      "sha256": "cd0f82d9ae4ed5a02198cc468991bbe4f9b1f2affa79a78b528848214b5e0aff",
+      "bytes": 13101
     },
     {
       "path": "KNOWN-ISSUES.txt",
-      "sha256": "5c157cc33a0040b4d7ea74d54a3256bc984ec4703704bafb3aab4808741a975e",
-      "bytes": 6520
+      "sha256": "0ae7b782e5275ed0ba7620d921449bf718ffc02497370510e1403ff762dacc04",
+      "bytes": 6669
     },
     {
       "path": "LICENSE",
@@ -1131,8 +1132,8 @@
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "b7a95847b169e9b18aa0ef270bc64c8a04e305e02c5be27f13c4eeec2a221680",
-      "bytes": 5211
+      "sha256": "b0bdcbd95fe6a0cb1ea3e914ca9a04ed608d8ab21843968472900e3c8604e92b",
+      "bytes": 5199
     },
     {
       "path": "build.ps1",
@@ -1206,8 +1207,8 @@
     },
     {
       "path": "portable/docs/Avatars-README.txt",
-      "sha256": "ff84e739107995d8b0113a6a3ce9473390b3ddf5df3c914bf2e99c7113407f99",
-      "bytes": 382
+      "sha256": "b81266115976458b72d11e31336a810afce7a8c20ce7a71e4bd39e9cf74329c1",
+      "bytes": 600
     },
     {
       "path": "portable/docs/BUILDING.md",
@@ -1216,8 +1217,8 @@
     },
     {
       "path": "portable/docs/KNOWN-ISSUES.txt",
-      "sha256": "687c54a2049446b21ba253bc438f5146944533988683abd46ed4fc48b32c7846",
-      "bytes": 6992
+      "sha256": "a8d62fa07fc15ca2463eb37a75bf9e2ca551249373a0eda1e7734cd9236c47c1",
+      "bytes": 7141
     },
     {
       "path": "portable/docs/NEXUS-DESCRIPTION.txt",
@@ -1236,8 +1237,8 @@
     },
     {
       "path": "portable/docs/SCRIPT-LAUNCHER.txt",
-      "sha256": "81acf14b57f90c421b43142c105c8a2406cf05a4ad228c7d07a0c01905e6d3d1",
-      "bytes": 5061
+      "sha256": "37660ec7411780c80450e43f7af0d42f70606d825d2957148ec7ffb18e973346",
+      "bytes": 5120
     },
     {
       "path": "portable/docs/SECURITY.md",
@@ -1246,8 +1247,8 @@
     },
     {
       "path": "portable/docs/THIRD_PARTY_NOTICES.md",
-      "sha256": "b7a95847b169e9b18aa0ef270bc64c8a04e305e02c5be27f13c4eeec2a221680",
-      "bytes": 5211
+      "sha256": "b0bdcbd95fe6a0cb1ea3e914ca9a04ed608d8ab21843968472900e3c8604e92b",
+      "bytes": 5199
     },
     {
       "path": "portable/docs/UPLOAD-NOTES.md",
@@ -2775,6 +2776,26 @@
       "bytes": 6990
     },
     {
+      "path": "validation/0.2.0-docs1/PER-FILE-SCANS-0.2.0-docs1.csv",
+      "sha256": "a98d6ec0780e98db2c3c6a27517689a79d7f5153461b48da04f5a00629c305a5",
+      "bytes": 11495
+    },
+    {
+      "path": "validation/0.2.0-docs1/SCAN-RESULTS-0.2.0-docs1.json",
+      "sha256": "9d1d8f3d0cbc207d44a695b6b6245a2dd4ccc236b72835216077d7ae6c3bed9b",
+      "bytes": 51665
+    },
+    {
+      "path": "validation/0.2.0-docs1/final-verification-0.2.0-docs1.json",
+      "sha256": "8c441436f2fc1de4fafe393ffe587c63d49a92fdd3cb5157ad5ab9e9aea595fa",
+      "bytes": 1621
+    },
+    {
+      "path": "validation/0.2.0-docs1/package-verification.json",
+      "sha256": "abf3ed72aa7b6db56459ebfff3c138cb90dc3136a498f79f1cd12482cfbfdb18",
+      "bytes": 1121
+    },
+    {
       "path": "validation/0.2.0/PER-FILE-SCANS-0.2.0.csv",
       "sha256": "f9e2c8faa39f0a7cfb363b2f39e5b517e359b6e6b8e40a30e2a77c8b0df44e56",
       "bytes": 11476
@@ -3044,5 +3065,9 @@
       "sha256": "b061bd4672c939fbbfbcd8a923385f51276e4fea1c44b0b7035768378160b336",
       "bytes": 289320
     }
-  ]
+  ],
+  "documentationRevision": "docs1",
+  "originalReleaseTag": "v0.2.0",
+  "documentationSourceRef": "main",
+  "packageName": "EnshroudedVRM-0.2.0-docs1.zip"
 }

@@ -2,7 +2,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace evrm {
@@ -46,6 +48,22 @@ struct NativeOwnerGuard {
     // Diagnostic provenance only. It never affects guard acceptance.
     NativeOwnerObservationPhase capture_phase=NativeOwnerObservationPhase::none;
 };
+// Capture transfers its local guards once. Consumers share const storage;
+// copying a candidate never copies thousands of individually allocated spans.
+class NativeOwnerGuards {
+    using Storage=std::vector<NativeOwnerGuard>;
+    std::shared_ptr<const Storage> saved_;
+public:
+    NativeOwnerGuards()=default;
+    NativeOwnerGuards(Storage guards):saved_(guards.empty()?nullptr:std::make_shared<const Storage>(std::move(guards))){}
+    const Storage& view()const noexcept {static const Storage empty;return saved_?*saved_:empty;}
+    bool empty()const noexcept{return !saved_||saved_->empty();}
+    std::size_t size()const noexcept{return saved_?saved_->size():0;}
+    auto begin()const noexcept{return view().begin();}
+    auto end()const noexcept{return view().end();}
+    const NativeOwnerGuard& operator[](std::size_t index)const noexcept{return view()[index];}
+    const NativeOwnerGuard& back()const noexcept{return view().back();}
+};
 struct NativeOwnerModel {
     std::uint32_t equipment_slot=0, handle=0, index=0, generation=0;
     std::uint64_t record=0;
@@ -61,7 +79,7 @@ struct NativeOwnerCandidate {
     std::uint64_t native_buffer=0, native_buffer_bytes=0;
     std::uint32_t instance_capacity=0, instance_extra=0;
     std::vector<NativeOwnerModel> models;
-    std::vector<NativeOwnerGuard> guards;
+    NativeOwnerGuards guards;
     std::size_t read_calls=0, read_bytes=0;
     std::uint64_t elapsed_milliseconds=0;
 };
@@ -71,7 +89,7 @@ bool capture_native_owner(const NativeOwnerMemory&, const NativeOwnerImage&, Nat
 bool revalidate_native_owner(const NativeOwnerMemory&, NativeOwnerCandidate&, std::string&,
                              const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
 
-// Externally synchronized. Retains a private deep copy, never an ownership
+// Externally synchronized. Retains owned immutable guards, never an ownership
 // lease: all guards are freshly read before reuse and again at submission.
 class NativeOwnerCache {
     NativeOwnerCandidate cached_;

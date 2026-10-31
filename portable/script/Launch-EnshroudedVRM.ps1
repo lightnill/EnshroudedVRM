@@ -20,7 +20,7 @@ $interactive = -not ($Check -or $Launch -or $Play -or $Version)
 $result = $null
 $code = 1
 try {
-    if ($Version) { [Console]::WriteLine('EnshroudedVRM 0.1.2-preview script launcher by lightnill'); exit 0 }
+    if ($Version) { [Console]::WriteLine('EnshroudedVRM 0.2.0 script launcher by lightnill'); exit 0 }
     if ($Play -and ($Check -or $Launch -or $PSBoundParameters.ContainsKey('Game') -or $PSBoundParameters.ContainsKey('Model') -or $NoSprings -or $EnableSprings)) {
         throw '-Play uses saved settings; choose it without -Check, -Launch, game/avatar paths or spring overrides.'
     }
@@ -41,10 +41,10 @@ try {
         if ($EnableSprings) { $springs = $true }
     }
     if ($interactive) {
-        Write-Host 'EnshroudedVRM - readable script launcher by lightnill'
-        Write-Host 'Choose your avatar. The game is detected automatically when possible; package and build checks still run before launch.'
-        Add-Type -AssemblyName System.Windows.Forms
-        foreach ($selection in @(Get-EvrmSetupSelections $Game $PSScriptRoot)) {
+        Write-Host 'EnshroudedVRM by lightnill - press F8 in game to choose your avatar, lip sync and appearance.'
+        $selections = @(Get-EvrmSetupSelections $Game $PSScriptRoot)
+        if ($selections.Count) { Add-Type -AssemblyName System.Windows.Forms }
+        foreach ($selection in $selections) {
             $dialog = [Windows.Forms.OpenFileDialog]::new()
             try {
                 $dialog.RestoreDirectory = $true
@@ -54,31 +54,21 @@ try {
                     $dialog.Title = 'Choose enshrouded.exe from Steam'
                     $dialog.Filter = 'Enshrouded (enshrouded.exe)|enshrouded.exe'
                     if ($Game) { $dialog.FileName = $Game }
-                } else {
-                    $dialog.Title = 'Choose your VRM avatar'
-                    $dialog.Filter = 'VRM avatars (*.vrm)|*.vrm'
-                    if ($Model) { $dialog.FileName = $Model }
-                    elseif (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Avatars') -PathType Container) { $dialog.InitialDirectory = Join-Path $PSScriptRoot 'Avatars' }
                 }
                 if ($dialog.ShowDialog() -ne [Windows.Forms.DialogResult]::OK) { Write-Host 'Cancelled. No game was started.'; exit 0 }
-                if ($selection -eq 'Game') { $Game = $dialog.FileName } else { $Model = $dialog.FileName }
+                $Game = $dialog.FileName
             } finally { $dialog.Dispose() }
         }
     }
     $plan = Get-EvrmLaunchPlan -Root $PSScriptRoot -Game $Game -Model $Model -Springs $springs
     if ($Check) {
-        $result = [ordered]@{ok=$true; version='0.1.2-preview'; publicationStatus=$plan.PublicationStatus; runtimeSha256=$plan.RuntimeHash; captureFiles=$false; gameStarted=$false; launcherKind='script'}
+        $result = [ordered]@{ok=$true; version='0.2.0'; publicationStatus=$plan.PublicationStatus; runtimeSha256=$plan.RuntimeHash; captureFiles=$false; gameStarted=$false; launcherKind='script'}
     } else {
-        if ($interactive) {
-            Write-Host ('Game: ' + $plan.Game)
-            Write-Host ('Avatar: ' + $plan.Model)
-            $answer = Read-Host 'Checks passed. Start Enshrouded with this avatar? [y/N]'
-            if ($answer -ine 'y' -and $answer -ine 'yes') { Write-Host 'Cancelled. No game was started.'; exit 0 }
-        }
+        Write-Host 'Press F8 in game for mod settings: avatar, voice to viseme and appearance presets.'
         if (-not $Wait) { Write-Host 'Starting Enshrouded. This window checks startup for up to 30 seconds, then closes automatically.' }
         $result = Invoke-EvrmLaunch $plan -Wait:$Wait
         if ($interactive) {
-            if ($result.Contains('playScriptPath')) { Write-Host ('Next time, open Play-EnshroudedVRM.cmd to play with these settings. Run Launch-EnshroudedVRM.cmd to change them.') }
+            if ($result.Contains('playScriptPath')) { Write-Host 'Next time, open Play-EnshroudedVRM.cmd. Change mod settings with F8 in game.' }
             if ($result.Contains('playScriptWarning')) { Write-Warning $result['playScriptWarning'] }
         }
     }

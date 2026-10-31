@@ -1,0 +1,11 @@
+EnshroudedVRM 0.2.0 - F8 mod settings
+
+Launch the game with Launch-EnshroudedVRM.cmd, then press F8.
+Choose a VRM with Browse or the avatar list. Drag the menu title bar to move it.
+Voice to viseme starts Off. Game voice chat requires an active voice session;
+Local microphone works offline, with Windows default or a chosen device.
+Expand Adjust mouth movement for strength, sensitivity and smoothing.
+Appearance presets provides Game lighting/Matte for the whole model and
+individual material overrides. Use model preset restores inheritance.
+Model and appearance preferences save automatically in State/avatar-settings.json.
+Keep State private. Original game appearance remains until a valid VRM activates.

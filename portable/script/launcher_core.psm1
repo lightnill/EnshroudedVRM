@@ -236,7 +236,7 @@ function Get-EvrmDefaults([string]$Root) {
         $settings = [IO.Path]::Combine($Root, 'State\settings.json')
         if ([IO.File]::Exists($settings)) {
             $saved = (Read-EvrmText $settings 32768) | ConvertFrom-Json
-            foreach ($name in @('game', 'model')) {
+            foreach ($name in @('game')) {
                 $property = $saved.PSObject.Properties[$name]
                 if ($null -ne $property -and $property.Value -is [string]) { $result[$name] = $property.Value }
             }
@@ -246,13 +246,6 @@ function Get-EvrmDefaults([string]$Root) {
     } catch { # Invalid saved settings do not prevent selecting files again.
     }
     if (-not $result.Game) { $result.Game = Find-EvrmGame }
-    if (-not $result.Model) {
-        $folder = [IO.Path]::Combine($Root, 'Avatars')
-        if ([IO.Directory]::Exists($folder)) {
-            $models = @([IO.Directory]::EnumerateFiles($folder, '*.vrm') | Select-Object -First 2)
-            if ($models.Count -eq 1) { $result.Model = $models[0] }
-        }
-    }
     return [pscustomobject]$result
 }
 
@@ -274,7 +267,6 @@ function Get-EvrmSetupSelections([string]$Game, [string]$Root='') {
         }
     }
     if (-not $found) { 'Game' }
-    'Model'
 }
 
 function Get-EvrmSavedSettings([string]$Root) {
@@ -284,20 +276,21 @@ function Get-EvrmSavedSettings([string]$Root) {
     catch { throw 'The saved setup could not be read.' }
     Assert-Evrm ($saved -is [pscustomobject]) 'The saved setup is invalid.'
     $game = Get-EvrmProperty $saved 'game'
-    $model = Get-EvrmProperty $saved 'model'
     $springs = Get-EvrmProperty $saved 'springs'
     # IsPathRooted also accepts C:relative and \root-relative paths on .NET
     # Framework. Saved launches must not depend on the caller's directory/drive.
     Assert-Evrm ($game -is [string] -and $game -match '^[A-Za-z]:[\\/]') 'The saved game path is invalid.'
-    Assert-Evrm ($model -is [string] -and $model -match '^[A-Za-z]:[\\/]') 'The saved avatar path is invalid.'
     Assert-Evrm ($springs -is [bool]) 'The saved spring setting is invalid.'
-    return [pscustomobject]@{Game=$game; Model=$model; Springs=$springs}
+    # F8 owns avatar persistence. Deleted legacy launcher model paths must not
+    # prevent starting the game to choose a replacement.
+    return [pscustomobject]@{Game=$game; Model=''; Springs=$springs}
 }
 
 function Get-EvrmLaunchPlan([string]$Root, [string]$Game, [string]$Model, [bool]$Springs=$true) {
     $rootPath = Resolve-EvrmLocalPath $Root
     $gamePath = Resolve-EvrmLocalPath $Game
-    $modelPath = Resolve-EvrmLocalPath $Model
+    $modelPath = ''
+    if ($Model) { $modelPath = Resolve-EvrmLocalPath $Model }
     Assert-Evrm ([IO.Directory]::Exists($rootPath)) 'The package folder is not a directory.'
     Assert-Evrm (-not $rootPath.Contains(';')) 'Move the portable mod into a folder without a semicolon (;). Vulkan treats it as a folder-list separator.'
     Assert-Evrm (-not $rootPath.Contains('%')) 'Move the portable mod into a folder without percent (%) signs. Windows can expand them before a CMD launcher starts.'
@@ -326,13 +319,15 @@ function Get-EvrmLaunchPlan([string]$Root, [string]$Game, [string]$Model, [bool]
     }
     Assert-Evrm ([IO.Path]::GetFileName($gamePath) -ieq 'enshrouded.exe' -and [IO.File]::Exists($gamePath)) 'Choose enshrouded.exe from your Steam installation.'
     Assert-Evrm ((Get-EvrmSha256 $gamePath) -ceq $gameHash) 'This game version is not supported by this preview. No modded game was started.'
-    Assert-Evrm ([IO.Path]::GetExtension($modelPath) -ieq '.vrm' -and [IO.File]::Exists($modelPath)) 'Choose a local .vrm avatar file.'
-    $stream = [IO.File]::OpenRead($modelPath)
-    try {
-        $header = New-Object byte[] 12
-        $count = $stream.Read($header, 0, 12)
-        Assert-Evrm ($count -eq 12 -and $stream.Length -ge 12 -and $stream.Length -le 512MB -and [BitConverter]::ToUInt32($header, 0) -eq 0x46546c67 -and [BitConverter]::ToUInt32($header, 4) -eq 2 -and [BitConverter]::ToUInt32($header, 8) -eq $stream.Length) 'This file is not a complete supported VRM/GLB container.'
-    } finally { $stream.Dispose() }
+    if ($modelPath) {
+        Assert-Evrm ([IO.Path]::GetExtension($modelPath) -ieq '.vrm' -and [IO.File]::Exists($modelPath)) 'Choose a local .vrm avatar file.'
+        $stream = [IO.File]::OpenRead($modelPath)
+        try {
+            $header = New-Object byte[] 12
+            $count = $stream.Read($header, 0, 12)
+            Assert-Evrm ($count -eq 12 -and $stream.Length -ge 12 -and $stream.Length -le 512MB -and [BitConverter]::ToUInt32($header, 0) -eq 0x46546c67 -and [BitConverter]::ToUInt32($header, 4) -eq 2 -and [BitConverter]::ToUInt32($header, 8) -eq $stream.Length) 'This file is not a complete supported VRM/GLB container.'
+        } finally { $stream.Dispose() }
+    }
 
     $environment = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) {

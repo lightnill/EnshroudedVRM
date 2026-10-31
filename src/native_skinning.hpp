@@ -26,6 +26,13 @@ struct NativeSkinNode {
     std::vector<NativeSkinBounds> joint_blend;
     double min_weight_sum=1,max_weight_sum=1;
 };
+struct NativeSkinMouthJoint {std::uint32_t joint=0;NativeSkinBounds bounds;};
+struct NativeSkinMouthNode {
+    std::uint32_t node=0; // index into the compiled skin node vector
+    NativeSkinBounds safety; // all affected vertices, including opaque geometry
+    NativeSkinBounds static_blend;
+    std::vector<NativeSkinMouthJoint> joints;
+};
 struct NativeSkinAsset {
     // Initial CPU vertices are retained for the validated layout/reference only.
     // Dynamic publications reuse this object without deforming those vertices.
@@ -34,6 +41,11 @@ struct NativeSkinAsset {
     std::vector<NativeSkinNode> nodes;
     std::size_t node_count=0;
     NativeMaterialPlan material_plan;
+    std::shared_ptr<const vrm::MouthData> mouth;
+    std::vector<std::uint32_t> mouth_lookup;
+    std::vector<NativeSkinMouthNode> mouth_nodes;
+    std::uint64_t mouth_peak_bytes=0;
+    std::string mouth_limitation="No mouth shapes";
     std::string error;
     explicit operator bool()const{return error.empty()&&layout&&!vertices.empty();}
 };
@@ -42,6 +54,8 @@ struct NativeSkinPose {
     std::vector<NativeSkinBatch> batches;
     std::vector<vrm::Matrix> matrices;
     NativeMaterialPlan material_plan;
+    bool mouth_safe=false;
+    std::array<float,4> base_blend_min{},base_blend_max{};
     std::string error;
     explicit operator bool()const{return error.empty()&&asset&&bool(*asset)&&!batches.empty();}
 };

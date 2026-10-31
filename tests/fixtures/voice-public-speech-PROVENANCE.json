@@ -1,0 +1,16 @@
+{
+  "purpose": "Licensed public input for the automated SDK adapter test; not captured user microphone audio",
+  "repository": "https://github.com/met4citizen/HeadAudio",
+  "commit": "c6d8af35034068b1c98dcc0fa3ec9602d711e784",
+  "upstreamPath": "tests/test16000Hz.wav",
+  "upstreamGitBlob": "01d2335591916589efc9a178e923ca94b96d9a3f",
+  "bytes": 672122,
+  "sha256": "6318883d5a5d5dc4b95457e43e2bf88d934b187f850a46b52ef02b2f459fb775",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2025 Mika Suominen",
+  "upstreamLicense": "https://github.com/met4citizen/HeadAudio/blob/c6d8af35034068b1c98dcc0fa3ec9602d711e784/LICENSE",
+  "localLicense": "voice-public-speech-LICENSE.txt",
+  "licenseSha256": "d45d4192f4e7502846c6b01d743eddbff20b3752e4c350a88418f59e4587a60f",
+  "verification": "The upstream public Git tree and license were retrieved directly from GitHub; the upstream blob SHA and size match the local fixture exactly.",
+  "distribution": "External manual test download only; not included in GitHub source or the player ZIP. See README.md. No HeadAudio runtime or model is included."
+}

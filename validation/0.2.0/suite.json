@@ -1,0 +1,151 @@
+{
+  "scripts": 24,
+  "methods": 155,
+  "skipped": 1,
+  "results": [
+    {
+      "script": "test_avatar_assets.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_avatar_switch.py",
+      "exit": 0,
+      "tests": 11,
+      "skipped": 0
+    },
+    {
+      "script": "test_fallback_diagnostics.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_local_voice_observation.py",
+      "exit": 0,
+      "tests": 3,
+      "skipped": 0
+    },
+    {
+      "script": "test_material_compatibility.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_microphone_source.py",
+      "exit": 0,
+      "tests": 3,
+      "skipped": 0
+    },
+    {
+      "script": "test_mod_menu.py",
+      "exit": 0,
+      "tests": 12,
+      "skipped": 0
+    },
+    {
+      "script": "test_model_changeover.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_mouth_animation.py",
+      "exit": 0,
+      "tests": 5,
+      "skipped": 0
+    },
+    {
+      "script": "test_performance_contracts.py",
+      "exit": 0,
+      "tests": 3,
+      "skipped": 0
+    },
+    {
+      "script": "test_portable_package.py",
+      "exit": 0,
+      "tests": 8,
+      "skipped": 1
+    },
+    {
+      "script": "test_retarget_cache.py",
+      "exit": 0,
+      "tests": 2,
+      "skipped": 0
+    },
+    {
+      "script": "test_script_fixture_build.py",
+      "exit": 0,
+      "tests": 2,
+      "skipped": 0
+    },
+    {
+      "script": "test_script_launcher.py",
+      "exit": 0,
+      "tests": 65,
+      "skipped": 0
+    },
+    {
+      "script": "test_script_release.py",
+      "exit": 0,
+      "tests": 23,
+      "skipped": 0
+    },
+    {
+      "script": "test_spring_airflow.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_spring_arm_release.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_spring_cohesion.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_spring_collision.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_spring_inertial.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_spring_shape.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_voice_analysis.py",
+      "exit": 0,
+      "tests": 6,
+      "skipped": 0
+    },
+    {
+      "script": "test_voice_automatic.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    },
+    {
+      "script": "test_voice_observer_launcher.py",
+      "exit": 0,
+      "tests": 1,
+      "skipped": 0
+    }
+  ]
+}

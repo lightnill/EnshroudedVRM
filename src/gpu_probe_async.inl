@@ -200,6 +200,14 @@ GpuSnapshot GpuProbe::poll_async(VkQueue queue) noexcept {
             if(found==views.end())views.push_back(std::move(view));else if(found->sequence<view.sequence)*found=std::move(view);
         };
         bool rejected=false;
+        const auto note_rejected=[&](const auto& slot,const char* reason){
+            const auto now=GetTickCount64();const auto event=impl->async_gaps.failure(now,1,reason);
+            if(event.emit)log_event_lazy([&]{return "avatar-fallback.capture-gap episode="+std::to_string(event.episode)+
+                " failures="+std::to_string(event.failures)+" gap-ms="+std::to_string(event.elapsed_ms)+
+                " reason="+reason+" age-ms="+std::to_string(now>=slot.started_ms?now-slot.started_ms:UINT64_MAX)+
+                " epoch="+std::to_string(slot.epoch)+" sequence="+std::to_string(slot.sequence)+
+                " publishable="+std::to_string(slot.publishable)+" rejected-total="+std::to_string(impl->async_rejected)+fallback_event_summary(event);});
+        };
         for(auto& slot:impl->async_slots) {
             if(slot.recorded&&!slot.pending)continue;
             const auto completed=impl->complete_slot(slot,false);
@@ -208,7 +216,7 @@ GpuSnapshot GpuProbe::poll_async(VkQueue queue) noexcept {
             if(impl->async_disabled)return {};
             if(!completed){++impl->async_pending_polls;continue;}
             if(!slot.ready)continue;
-            if(!slot.publishable||slot.queue!=queue){slot.ready=false;if(!slot.recorded)slot.plan={};++impl->async_rejected;rejected=true;continue;}
+            if(!slot.publishable||slot.queue!=queue){slot.ready=false;if(!slot.recorded)slot.plan={};++impl->async_rejected;rejected=true;note_rejected(slot,"unpublishable-or-queue-changed");continue;}
             try {
                 const auto now=GetTickCount64();
                 if(now<slot.started_ms||now-slot.started_ms>250)throw std::runtime_error("Async pose expired");
@@ -220,7 +228,11 @@ GpuSnapshot GpuProbe::poll_async(VkQueue queue) noexcept {
                 auto children=std::move(captured.additional_views);captured.additional_views.clear();
                 retain(std::move(captured));for(auto& view:children)retain(std::move(view));
                 ++impl->async_decoded;
-            }catch(...){++impl->async_rejected;rejected=true;}
+                const auto event=impl->async_gaps.recovery(now);
+                if(event.emit)log_event_lazy([&]{return "avatar-fallback.capture-recovered episode="+std::to_string(event.episode)+
+                    " failures="+std::to_string(event.failures)+" gap-ms="+std::to_string(event.elapsed_ms)+" sequence="+std::to_string(slot.sequence)+fallback_event_summary(event);});
+            }catch(const std::exception& error){++impl->async_rejected;rejected=true;note_rejected(slot,error.what());}
+            catch(...){++impl->async_rejected;rejected=true;note_rejected(slot,"unknown-capture-error");}
             slot.ready=false;slot.plan={};
         }
         auto ordered=std::move(views);

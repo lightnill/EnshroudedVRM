@@ -534,6 +534,7 @@ void build_materials(tinygltf::Model& model, const Json& doc, Avatar& avatar) {
     }
 }
 #include "import_normals.inl"
+#include "import_mouth.inl"
 #include "import_meshes.inl"
 } // namespace
 

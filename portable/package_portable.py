@@ -26,7 +26,8 @@ def safe_archive_member(name):
     suffix=Path(name).suffix.lower()
     if suffix=='.cmd':return name in ('Launch-EnshroudedVRM.cmd','portable/script/Launch-EnshroudedVRM.cmd')
     if suffix=='.exe':return False
-    if suffix=='.dll':return name=='Runtime/enshrouded_vrm_runtime.dll'
+    if suffix=='.dll':return name in ('Runtime/enshrouded_vrm_runtime.dll','Runtime/OVRLipSync.dll')
+    if suffix=='.cs':return name=='vendor/oculus-lipsync/OVRLipSync.cs'
     return parts[-1]=='LICENSE' or name=='.gitignore' or suffix in ('.txt','.md','.json','.spv','.hlsl','.hlsli','.cpp','.hpp','.h','.inl','.py','.ps1','.psm1','.rc','.manifest')
 
 def validate_content(data, private_tokens=()):

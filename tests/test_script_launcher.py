@@ -96,6 +96,26 @@ class ScriptLaunchTests(unittest.TestCase):
         self.assertFalse((self.root/'Play-EnshroudedVRM.cmd').exists())
         self.assertFalse(self.marker.exists())
 
+    def test_model_free_check_defers_selection_to_f8(self):
+        run,result=self.run_script('-Check','-Game',str(self.game),use_paths=False)
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        self.assertTrue(result['ok'])
+        self.assertFalse((self.root/'State').exists())
+
+    def test_model_free_launch_starts_original_character_with_mod(self):
+        run,result=self.run_script('-Launch','-Wait','-Game',str(self.game),use_paths=False)
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        self.assertTrue(result['gameStarted'])
+        self.assertEqual(result['model'],'')
+        self.assertEqual(len(self.marker.read_bytes()),4)
+
+    def test_play_ignores_missing_legacy_avatar_path(self):
+        self.save_settings(model=str(self.base/'deleted-old-avatar.vrm'))
+        run,result=self.run_script('-Play','-Wait',use_paths=False)
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        self.assertTrue(result['gameStarted'])
+        self.assertEqual(result['model'],'')
+
     def run_diagnostics(self,body,extra_env=None):
         command="& (Get-Module launcher_core) { $p=Get-EvrmLaunchPlan $env:EVRM_TEST_ROOT $env:EVRM_TEST_GAME $env:EVRM_TEST_MODEL; "+body+" }"
         probe=self.base/'diagnostics-check.ps1'
@@ -336,10 +356,10 @@ class ScriptLaunchTests(unittest.TestCase):
         run,result = self.run_play_cmd()
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
         self.assertTrue(result.get('gameStarted'),run.stdout+run.stderr)
-        self.assertEqual(result['model'],str(self.model))
+        self.assertEqual(result['model'],'')
         self.assertEqual(len(self.marker.read_bytes()),4,'Play must start exactly one child')
 
-    def test_play_reads_changed_model_and_springs_without_regeneration(self):
+    def test_play_uses_f8_for_models_and_reads_springs_without_regeneration(self):
         run,result = self.run_script('-Launch','-Wait')
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
         play = self.root/'Play-EnshroudedVRM.cmd'
@@ -352,7 +372,7 @@ class ScriptLaunchTests(unittest.TestCase):
         self.marker.unlink()
         run,result = self.run_play_cmd()
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
-        self.assertEqual(result.get('model'),str(other))
+        self.assertEqual(result.get('model'),'')
         self.assertFalse(json.loads(state.read_text())['springs'])
         self.assertEqual(play.read_bytes(),original)
         self.assertEqual(play.stat().st_mtime_ns,stamp,'An identical Play must be left alone')
@@ -434,21 +454,18 @@ class ScriptLaunchTests(unittest.TestCase):
                 self.assertFalse(self.marker.exists())
                 self.assertFalse((self.root/'Play-EnshroudedVRM.cmd').exists())
 
-    def test_play_rejects_missing_avatar_without_falling_back(self):
-        self.save_settings(model=str(self.base/'missing.vrm'))
-        avatars = self.root/'Avatars'
-        avatars.mkdir()
-        shutil.copyfile(self.model,avatars/'only.vrm')
-        run,result = self.run_script('-Play','-Wait',use_paths=False)
-        self.assertNotEqual(run.returncode,0,run.stdout+run.stderr)
-        self.assertFalse(result.get('gameStarted',True),run.stdout+run.stderr)
-        self.assertIn('Launch-EnshroudedVRM.cmd',result.get('error',''))
-        self.assertFalse(self.marker.exists())
+    def test_play_does_not_require_legacy_model_field(self):
+        path=self.save_settings()
+        data=json.loads(path.read_text());del data['model'];path.write_text(json.dumps(data),encoding='utf-8')
+        run,result=self.run_script('-Play','-Wait',use_paths=False)
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        self.assertTrue(result['gameStarted'])
+        self.assertEqual(result['model'],'')
 
     def test_play_rejects_paths_dependent_on_current_drive_or_directory(self):
         # Both forms point at real fixture files from this test's working
         # directory. Accepting them would start a child, not just fail later.
-        for field,path in [('game',self.game),('model',self.model)]:
+        for field,path in [('game',self.game)]:
             variants = [path.drive+os.path.relpath(path,self.base),str(path)[2:]]
             for value in variants:
                 with self.subTest(field=field,value=value):
@@ -662,7 +679,7 @@ class ScriptLaunchTests(unittest.TestCase):
     def test_setup_skips_game_picker_when_executable_is_already_found(self):
         run=self.run_module("$selection=@(Get-EvrmSetupSelections $env:EVRM_TEST_GAME $env:EVRM_TEST_ROOT); ConvertTo-Json -InputObject $selection -Compress")
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
-        self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Model'])
+        self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),[])
         self.assertFalse(self.marker.exists())
         self.assertFalse((self.root/'State').exists())
 
@@ -670,7 +687,7 @@ class ScriptLaunchTests(unittest.TestCase):
         self.game.write_bytes(b'old or unsupported executable')
         run=self.run_module("$selection=@(Get-EvrmSetupSelections $env:EVRM_TEST_GAME $env:EVRM_TEST_ROOT); ConvertTo-Json -InputObject $selection -Compress")
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
-        self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Game','Model'])
+        self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Game'])
         self.assertFalse(self.marker.exists())
         self.assertFalse((self.root/'State').exists())
 
@@ -678,7 +695,7 @@ class ScriptLaunchTests(unittest.TestCase):
         self.game.unlink()
         run=self.run_module("$selection=@(Get-EvrmSetupSelections $env:EVRM_TEST_GAME); ConvertTo-Json -InputObject $selection -Compress")
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
-        self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Game','Model'])
+        self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Game'])
         self.assertFalse(self.marker.exists())
         self.assertFalse((self.root/'State').exists())
 
@@ -687,10 +704,10 @@ class ScriptLaunchTests(unittest.TestCase):
             with self.subTest(path=path):
                 run=self.run_module("$selection=@(Get-EvrmSetupSelections $env:EVRM_SETUP_GAME); ConvertTo-Json -InputObject $selection -Compress",{'EVRM_SETUP_GAME':path})
                 self.assertEqual(run.returncode,0,run.stdout+run.stderr)
-                self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Game','Model'])
+                self.assertEqual(json.loads(run.stdout.lstrip('\ufeff')),['Game'])
                 self.assertFalse(self.marker.exists())
 
-    def first_interactive_picker(self):
+    def first_interactive_picker(self,expect_start=False):
         entry=self.root/'Launch-EnshroudedVRM.ps1'
         text=entry.read_text(encoding='utf-8-sig')
         factory='$dialog = [Windows.Forms.OpenFileDialog]::new()'
@@ -703,6 +720,7 @@ class ScriptLaunchTests(unittest.TestCase):
         # Substitute only the UI object, retaining the real interactive flow and
         # picker-selection policy. Cancellation prevents all game launches.
         command="""
+function Read-Host { throw 'Unexpected startup confirmation' }
 function New-EvrmTestDialog {
     $dialog=[pscustomobject]@{RestoreDirectory=$false; CheckFileExists=$false; CheckPathExists=$false; Title=''; Filter=''; FileName=''; InitialDirectory=''}
     $dialog | Add-Member ScriptMethod ShowDialog { [IO.File]::WriteAllText($env:EVRM_PICKER_MARKER,$this.Title); return [Windows.Forms.DialogResult]::Cancel }
@@ -711,14 +729,19 @@ function New-EvrmTestDialog {
 }
 & (Join-Path $env:EVRM_TEST_ROOT 'Launch-EnshroudedVRM.ps1') -Game $env:EVRM_TEST_GAME -Model $env:EVRM_TEST_MODEL
 """
-        run=self.run_module(command,{'EVRM_PICKER_MARKER':str(title)})
+        run=self.run_module(command,{'EVRM_PICKER_MARKER':str(title),'PORTABLE_TEST_MARKER':str(self.marker)})
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        if expect_start:
+            self.assertEqual(len(self.marker.read_bytes()),4)
+            self.assertTrue((self.root/'Play-EnshroudedVRM.cmd').exists())
+            self.assertFalse(title.exists())
+            return None
         self.assertFalse(self.marker.exists())
         self.assertFalse((self.root/'Play-EnshroudedVRM.cmd').exists())
         return title.read_text(encoding='utf-8-sig')
 
-    def test_interactive_setup_opens_avatar_picker_when_game_is_known(self):
-        self.assertEqual(self.first_interactive_picker(),'Choose your VRM avatar')
+    def test_interactive_startup_uses_f8_without_picker_or_confirmation(self):
+        self.assertIsNone(self.first_interactive_picker(expect_start=True))
 
     def test_interactive_setup_opens_game_picker_when_executable_is_missing(self):
         self.game.unlink()

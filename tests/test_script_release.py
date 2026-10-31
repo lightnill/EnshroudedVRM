@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import struct
+import re
 import unittest
 import zipfile
 
@@ -19,6 +21,57 @@ SHADERS = (
     'native_skinning.finalize.spv', 'native_volume_snapshot.comp.spv',
 )
 SCRIPT_NAMES = ('Launch-EnshroudedVRM.cmd', 'Launch-EnshroudedVRM.ps1', 'launcher_core.psm1')
+VOICE_INPUTS = (
+    'build.ps1', 'src/local_voice_observation.cpp', 'src/local_voice_observation.hpp',
+    'src/local_voice_copy.hpp', 'src/local_voice_copy.cpp',
+    'src/local_voice_observer.cpp', 'src/local_voice_observer.hpp',
+    'src/local_voice_pe_identity.hpp',
+    'src/mouth_types.hpp', 'src/voice_clock.hpp', 'src/voice_clock.cpp',
+    'src/voice_stream.hpp', 'src/voice_stream.cpp',
+    'src/voice_features.hpp', 'src/voice_features.cpp',
+    'src/voice_profiles.hpp', 'src/voice_profiles.cpp',
+    'src/voice_analyser.hpp', 'src/voice_analyser.cpp',
+    'src/voice_automatic.hpp', 'src/voice_automatic.cpp',
+    'src/voice_worker.hpp', 'src/voice_worker.cpp',
+    'src/voice_profile_io.hpp', 'src/voice_profile_io.cpp',
+    'src/voice_input_types.hpp', 'src/voice_inputs.hpp', 'src/voice_inputs.cpp',
+    'src/microphone_audio.hpp', 'src/microphone_backend.hpp', 'src/microphone_backend.cpp',
+    'src/microphone_source.hpp', 'src/microphone_source.cpp', 'src/fallback_diagnostics.hpp',
+    'src/mouth_data.hpp', 'src/import_mouth.inl', 'src/import_meshes.inl',
+    'src/vrm_asset.hpp', 'src/vrm_asset.cpp',
+    'src/mouth_deformation.hpp', 'src/mouth_deformation.cpp', 'src/native_mouth.inl',
+    'src/mouth_publication.hpp', 'src/native_publication.hpp',
+    'src/native_skinning.hpp', 'src/native_skinning.cpp', 'src/native_skinning_gpu.hpp', 'src/native_skinning_gpu.cpp',
+    'src/avatar_renderer.cpp', 'src/native_backend.cpp', 'shaders/native_skinning.hlsl',
+) + tuple('vendor/minhook/' + name for name in (
+    'PROVENANCE.json', 'LICENSE.txt', 'include/MinHook.h', 'src/buffer.c', 'src/buffer.h',
+    'src/hook.c', 'src/trampoline.c', 'src/trampoline.h', 'src/hde/hde64.c',
+    'src/hde/hde64.h', 'src/hde/pstdint.h', 'src/hde/table64.h',
+)) + tuple('vendor/oculus-lipsync/' + name for name in (
+    'PROVENANCE.json', 'LICENSE.txt', 'OVRLipSync.h', 'OVRLipSync.cs',
+    'THIRD_PARTY_NOTICES.txt', 'sdk-license.txt', 'audio-license.txt',
+))
+MENU_INPUTS = (
+    'src/avatar_device_request.hpp',
+    'src/avatar_runtime.hpp', 'src/avatar_runtime.cpp', 'src/avatar_switch_transaction.hpp',
+    'src/native_avatar_assets.hpp', 'src/native_avatar_assets.cpp', 'src/native_avatar_material.hpp',
+    'src/avatar_appearance.hpp', 'src/avatar_settings.hpp', 'src/avatar_settings.cpp',
+    'src/avatar_model.hpp', 'src/avatar_model.cpp', 'src/avatar_service_types.hpp', 'src/avatar_service.hpp', 'src/avatar_service.cpp',
+    'src/queue_dispatch.hpp',
+    'src/runtime_hooks.inl', 'src/graphics_hooks.inl', 'src/graphics_state.hpp', 'src/graphics_state.cpp',
+    'src/avatar_renderer.hpp', 'src/native_backend.hpp',
+    'src/mod_settings.hpp', 'src/mod_settings.cpp', 'src/mod_settings_service.hpp', 'src/mod_settings_service.cpp',
+    'src/voice_setup.hpp', 'src/voice_setup.cpp',
+    'src/mod_input_state.hpp', 'src/mod_input_state.cpp', 'src/mod_input_win32.hpp', 'src/mod_input_win32.cpp',
+    'src/mod_menu.hpp', 'src/mod_menu.cpp', 'src/mod_menu_font.generated.inl', 'src/mod_menu_status.hpp',
+    'src/mod_menu_gpu.hpp', 'src/mod_menu_gpu.cpp', 'src/mod_overlay.hpp', 'src/mod_overlay.cpp', 'src/mod_present_lease.hpp',
+) + tuple('vendor/imgui/' + name for name in (
+    'README.md', 'SOURCE-PINS.json', 'BINARY-NOTICES.txt', 'LICENSE.txt',
+    'imgui.cpp', 'imgui_draw.cpp', 'imgui_tables.cpp', 'imgui_widgets.cpp', 'imgui.h', 'imgui_internal.h', 'imconfig.h',
+    'imstb_rectpack.h', 'imstb_textedit.h', 'imstb_truetype.h',
+    'backends/imgui_impl_vulkan.cpp', 'backends/imgui_impl_vulkan.h',
+    'misc/fonts/Roboto-Medium.ttf', 'misc/fonts/Apache-2.0.txt',
+))
 LOCAL_FILES = {
     **{name: 'portable/script/' + name for name in SCRIPT_NAMES},
     'README.txt': 'portable/docs/SCRIPT-LAUNCHER.txt',
@@ -28,10 +81,12 @@ LOCAL_FILES = {
     'SECURITY.md': 'portable/docs/SECURITY.md',
     'THIRD_PARTY_NOTICES.md': 'portable/docs/THIRD_PARTY_NOTICES.md',
     'LICENSE': 'LICENSE',
+    'MOD-SETTINGS.txt': 'portable/docs/VOICE-MENU-TEST.txt',
+    'notices/Dear-ImGui-fonts.txt': 'vendor/imgui/BINARY-NOTICES.txt',
     **{'notices/' + name: 'portable/notices/' + name for name in (
         'GCC-RUNTIME-EXCEPTION.txt', 'GPL-3.0.txt', 'LGPL-2.1.txt',
         'MinGW-w64-runtime.txt', 'ShroudForge-MIT.txt', 'TinyGLTF-MIT.txt',
-        'Vulkan-Headers-MIT.txt', 'nlohmann-json-MIT.txt', 'stb-image-MIT.txt',
+        'Vulkan-Headers-MIT.txt', 'nlohmann-json-MIT.txt', 'stb-image-MIT.txt', 'MinHook-BSD.txt',
     )},
 }
 
@@ -45,6 +100,23 @@ def encoded(value):
 
 
 class ScriptReleaseTests(unittest.TestCase):
+    def test_real_ui_source_font_provenance_and_binary_notices(self):
+        root = CLI.parents[1]
+        vendor = root / 'vendor/imgui'
+        pins = json.loads((vendor / 'SOURCE-PINS.json').read_bytes())
+        self.assertEqual(pins['revision'], 'f5befd2d29e66809cd1110a152e375a7f1981f06')
+        self.assertEqual(len(pins['sha256']), 15)
+        for name, digest in pins['sha256'].items():
+            self.assertEqual(sha((vendor / name).read_bytes()), digest, name)
+        font = (vendor / 'misc/fonts/Roboto-Medium.ttf').read_bytes()
+        generated = (root / 'src/mod_menu_font.generated.inl').read_text()
+        self.assertEqual(bytes(int(value, 16) for value in re.findall(r'0x([0-9a-f]{2})', generated)), font)
+        notices = (vendor / 'BINARY-NOTICES.txt').read_text()
+        for label in ('Omar Cornut', 'Tristan Grimmer', 'Sean Barrett', 'Google Inc.', 'Apache License'):
+            self.assertIn(label, notices)
+        self.assertIn((vendor / 'LICENSE.txt').read_text().strip(), notices)
+        self.assertIn((vendor / 'misc/fonts/Apache-2.0.txt').read_text().strip(), notices)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -110,6 +182,11 @@ class ScriptReleaseTests(unittest.TestCase):
                               text=True, encoding='utf-8', timeout=20)
 
     def rebuilt_inputs(self):
+        for name in VOICE_INPUTS + MENU_INPUTS:
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_bytes(('synthetic voice build input ' + name).encode())
         runtime = self.folder / 'rebuilt.dll'
         runtime.write_bytes(b'new synthetic native runtime')
         source = self.source / 'src/runtime_bridge.cpp'
@@ -117,8 +194,81 @@ class ScriptReleaseTests(unittest.TestCase):
         source.write_bytes(b'new synthetic runtime source\n')
         resource = self.source / 'portable/runtime.rc'
         resource.write_bytes(b'new synthetic version resource\n')
+        self.shader_bytes = {name: struct.pack('<6I', 0x07230203, 0x00010000, 0, 1, 0, n)
+                             for n, name in enumerate(('native_skinning.comp.spv', 'native_skinning.finalize.spv'))}
+        modules = []
+        for name, data in self.shader_bytes.items():
+            path = self.folder / name
+            path.write_bytes(data)
+            modules.append({'name': name, 'path': str(path), 'sha256': sha(data)})
+        self.shader_manifest = self.folder / 'rebuilt-shaders.json'
+        self.shader_manifest.write_bytes(encoded({'schema': 'enshrouded-vrm-rebuilt-shaders-v1', 'modules': modules}))
+        dependency=self.source/'vendor/oculus-lipsync/Win64';dependency.mkdir(parents=True,exist_ok=True)
+        from native_voice_fixture import stage_voice_library
+        stage_voice_library(dependency)
+        notice=self.source/'portable/notices/Oculus-LipSync.txt'
+        notice.write_bytes((CLI.parents[1]/'portable/notices/Oculus-LipSync.txt').read_bytes())
         return runtime, ['--runtime-dll', str(runtime), '--runtime-sha256', sha(runtime.read_bytes()),
-                         '--version', '0.1.1-preview']
+                         '--version', '0.1.1-preview', '--shader-manifest', str(self.shader_manifest)]
+
+    def test_rebuilt_runtime_carries_pinned_automatic_voice_dependency(self):
+        _,extra=self.rebuilt_inputs();result=self.run_cli(extra=extra)
+        self.assertEqual(result.returncode,0,result.stderr)
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertIn('Script-release/Runtime/OVRLipSync.dll',archive.namelist())
+            self.assertEqual(sha(archive.read('Script-release/Runtime/OVRLipSync.dll')),'f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7')
+            self.assertIn('Script-release/notices/Oculus-LipSync.txt',archive.namelist())
+
+    def test_modified_voice_dependency_is_refused(self):
+        _,extra=self.rebuilt_inputs();dependency=self.source/'vendor/oculus-lipsync/Win64/OVRLipSync.dll'
+        dependency.unlink();dependency.write_bytes(b'changed fixture dependency')
+        result=self.run_cli(extra=extra)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Oculus LipSync DLL SHA-256',result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rebuilt_runtime_requires_matching_shader_pair(self):
+        _, extra = self.rebuilt_inputs()
+        result = self.run_cli(extra=extra[:-2])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('shader manifest', result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_rebuilt_shader_pair_requires_exact_names_hashes_and_format(self):
+        _, extra = self.rebuilt_inputs()
+        original = json.loads(self.shader_manifest.read_bytes())
+        cases = []
+        wrong = json.loads(encoded(original)); wrong['modules'][0]['sha256'] = '0' * 64; cases.append(wrong)
+        wrong = json.loads(encoded(original)); del wrong['modules'][0]['sha256']; cases.append(wrong)
+        wrong = json.loads(encoded(original)); wrong['modules'][0]['name'] = 'avatar.vert.spv'; cases.append(wrong)
+        wrong = json.loads(encoded(original)); wrong['modules'] = wrong['modules'][:1]; cases.append(wrong)
+        wrong = json.loads(encoded(original)); wrong['modules'][1] = wrong['modules'][0]; cases.append(wrong)
+        wrong = json.loads(encoded(original)); wrong['modules'][0]['path'] = 'relative.spv'; cases.append(wrong)
+        for wrong in cases:
+            with self.subTest(manifest=wrong):
+                self.shader_manifest.write_bytes(encoded(wrong))
+                result = self.run_cli(extra=extra)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertFalse(self.output.exists())
+        bad_path = self.folder / original['modules'][0]['name']; bad_path.write_bytes(b'not a shader')
+        original['modules'][0]['sha256'] = sha(bad_path.read_bytes()); self.shader_manifest.write_bytes(encoded(original))
+        result = self.run_cli(extra=extra)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('SPIR-V', result.stderr)
+
+    def test_rebuilt_shader_pair_is_deterministic_and_omits_local_paths(self):
+        _, extra = self.rebuilt_inputs()
+        result = self.run_cli(extra=extra)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        second = self.folder / 'second-rebuilt.zip'
+        result = self.run_cli(output=second, extra=extra)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.output.read_bytes(), second.read_bytes())
+        with zipfile.ZipFile(self.output) as archive:
+            info = archive.read('Script-release/BUILD-INFO.json')
+            self.assertNotIn(str(self.folder).encode(), info)
+            self.assertNotIn(str(self.folder).replace('\\', '\\\\').encode(), info)
 
     def test_rebuilt_runtime_uses_fresh_hashes_version_and_source_pins(self):
         runtime, extra = self.rebuilt_inputs()
@@ -133,16 +283,22 @@ class ScriptReleaseTests(unittest.TestCase):
             self.assertTrue(info['runtimeRebuilt'])
             self.assertEqual(info['runtimeSha256'], sha(runtime.read_bytes()))
             self.assertEqual(info['scanStatus'], 'not-scanned')
+            self.assertEqual(info['rebuiltShaderModules'], {name: sha(data) for name, data in self.shader_bytes.items()})
+            for name, data in self.shader_bytes.items():
+                self.assertEqual(archive.read('Script-release/Runtime/shaders/' + name), data)
+                self.assertEqual(info['acceptedShaderModules'][name], sha(data))
             pins = {entry['path']: entry['sha256'] for entry in info['sourceInputs']}
             self.assertEqual(pins['src/runtime_bridge.cpp'], sha(b'new synthetic runtime source\n'))
             self.assertEqual(pins['portable/runtime.rc'], sha(b'new synthetic version resource\n'))
+            for name in VOICE_INPUTS + MENU_INPUTS:
+                self.assertEqual(pins.get(name), sha((self.source / name).read_bytes()), name)
             for name, data in self.preserved.items():
-                if not name.endswith('.dll'):
+                if not name.endswith('.dll') and name.rsplit('/', 1)[-1] not in self.shader_bytes:
                     self.assertEqual(archive.read('Script-release/' + name), data)
         receipt = json.loads(self.output.with_suffix('.receipt.json').read_bytes())
         self.assertTrue(receipt['runtimeRebuilt'])
         self.assertNotIn('Runtime/enshrouded_vrm_runtime.dll', receipt['preservedMembers'])
-        self.assertEqual(len(receipt['preservedMembers']), 16)
+        self.assertEqual(len(receipt['preservedMembers']), 14)
 
     def test_rebuilt_runtime_requires_matching_digest(self):
         _, extra = self.rebuilt_inputs()
@@ -190,7 +346,7 @@ class ScriptReleaseTests(unittest.TestCase):
             self.assertTrue(all(name.startswith('Script-release/') for name in archive.namelist()))
         expected = set(self.preserved) | set(self.local) | {'BUILD-INFO.json', 'release-manifest.json', 'SHA256SUMS.txt'}
         self.assertEqual(set(payload), expected)
-        self.assertEqual(len(payload), 39)
+        self.assertEqual(len(payload), 42)
         self.assertFalse(any(name.lower().endswith('.exe') for name in payload))
         for name, data in {**self.preserved, **self.local}.items():
             self.assertEqual(payload[name], data, name)
@@ -218,7 +374,7 @@ class ScriptReleaseTests(unittest.TestCase):
         self.assertEqual(receipt['scanStatus'], 'not-scanned')
         self.assertFalse(receipt['published'])
         self.assertEqual(set(receipt['preservedMembers']), set(self.preserved))
-        self.assertEqual(json.loads(result.stdout)['files'], 39)
+        self.assertEqual(json.loads(result.stdout)['files'], 42)
 
     def test_required_explicit_base_hash_cannot_be_omitted(self):
         result = subprocess.run([sys.executable, str(CLI), '--base-package', str(self.base),

@@ -6,6 +6,7 @@
 #include <set>
 #include <unordered_map>
 #include <sstream>
+#include <algorithm>
 
 namespace evrm {
 namespace {
@@ -113,7 +114,7 @@ void GraphicsState::image_destroyed(VkImage image) { std::lock_guard<std::mutex>
 void GraphicsState::view_created(VkImageView view,const VkImageViewCreateInfo& info) { std::lock_guard<std::mutex> guard(impl->mutex);auto copy=info;copy.pNext=nullptr;impl->views[view]=copy; }
 void GraphicsState::view_destroyed(VkImageView view) { std::lock_guard<std::mutex> guard(impl->mutex);impl->views.erase(view); }
 void GraphicsState::swapchain_created(VkSwapchainKHR swapchain,const VkSwapchainCreateInfoKHR& info) {
-    SwapchainState state;state.swapchain=swapchain;state.format=info.imageFormat;state.extent=info.imageExtent;
+    SwapchainState state;state.swapchain=swapchain;state.surface=info.surface;state.format=info.imageFormat;state.extent=info.imageExtent;
     state.usage=info.imageUsage;state.sharing_mode=info.imageSharingMode;
     if(info.queueFamilyIndexCount&&info.pQueueFamilyIndices)state.queue_families.assign(info.pQueueFamilyIndices,info.pQueueFamilyIndices+info.queueFamilyIndexCount);
     const auto get=reinterpret_cast<PFN_vkGetSwapchainImagesKHR>(impl->gdpa(impl->device,"vkGetSwapchainImagesKHR"));
@@ -236,6 +237,14 @@ SwapchainState GraphicsState::swapchain(VkSwapchainKHR swapchain) const {
     auto out=found->second;
     for(auto image:out.images){const auto owner=impl->owners.find(image);out.image_owners.push_back(owner==impl->owners.end()?VK_QUEUE_FAMILY_IGNORED:owner->second);}
     return out;
+}
+bool GraphicsState::swapchain_accessible(VkSwapchainKHR swapchain,std::uint32_t image,std::uint32_t family)const noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->mutex);const auto found=impl->swapchains.find(swapchain);
+        if(found==impl->swapchains.end()||image>=found->second.images.size())return false;
+        const auto& state=found->second;
+        if(state.sharing_mode==VK_SHARING_MODE_CONCURRENT)return std::find(state.queue_families.begin(),state.queue_families.end(),family)!=state.queue_families.end();
+        const auto owner=impl->owners.find(state.images[image]);return owner!=impl->owners.end()&&owner->second==family;
+    }catch(...){return false;}
 }
 
 }

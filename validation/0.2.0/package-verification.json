@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "runtimeSha256": "910ab2ccec93f3a386e2eca785883f061d8ece94c784cbfc2494ba1d56e52318",
+  "archiveSha256": "611d9c6311e222b38f093ad4f9d5befd1da039a8182f36850c7339533b0fcb32",
+  "archiveBytes": 18890841,
+  "files": 44,
+  "manifestPins": 42,
+  "sourcePins": 228,
+  "releaseSourcePins": 24,
+  "unchangedShaders": 13,
+  "deterministic": true,
+  "gameStarted": false,
+  "modelFreeCheck": true,
+  "privateSettingsPreserved": true
+}

@@ -1,82 +1,41 @@
-# EnshroudedVRM
+# EnshroudedVRM 0.2.0
 
 Play Enshrouded as your own VRM avatar. By **lightnill**.
 
-The mod uses GPU skinning to reduce CPU work when animating the avatar. This is
-an early Windows x64 preview. The replacement is visible only to you; multiplayer
-avatar support is planned but is not implemented. No avatars or game executables
-are bundled.
+This Windows x64 preview adds audio lip sync, an F8 mod menu, in-game avatar switching, whole-model shader presets and individual material overrides. The replacement is visible only to you. Multiplayer avatar synchronization is planned and is not implemented.
 
 ## Install and play
 
-1. Download the CMD package from the [current release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.2-preview).
-2. Extract the whole ZIP to a writable local folder outside the game directory.
-   The package-folder path must contain neither semicolons (;) nor percent (%) signs.
-3. Start Steam, then run **Launch-EnshroudedVRM.cmd**.
-4. Choose your own .vrm. Select enshrouded.exe only if automatic game detection
-   cannot find it. Review the paths, then type **Y**.
-5. After the first successful launch, use the generated **Play-EnshroudedVRM.cmd**
-   for subsequent launches. It uses the saved avatar/settings with no picking or typing.
+1. Download the ZIP from [version 0.2.0](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.2.0).
+2. Extract the entire ZIP to a writable local folder outside the game directory. The package-folder path must contain neither semicolons (;) nor percent (%) signs.
+3. Close Enshrouded, start Steam and run **Launch-EnshroudedVRM.cmd**. The game is detected automatically; a game-file picker appears only if detection fails. There is no avatar chooser or confirmation question at startup.
+4. Press **F8** in game. Use **Browse...** to choose a VRM or select one from the avatar list. You can switch models while playing. Until a valid avatar is selected, the original character remains visible.
+5. Use F8 for voice to viseme, audio source/device selection and appearance presets. The dark menu can be dragged by its title bar. Escape closes it.
 
-Offline play is the tested path. Close the game before changing avatars. Use
-**Launch-EnshroudedVRM.cmd** again to change the avatar or repair missing paths.
-Keep **Play-EnshroudedVRM.cmd** beside the other launcher files; it follows the
-package if moved, provided the saved game and avatar paths still exist.
-Starting through Steam alone runs
-the normal game. To uninstall, close the game and remove the extracted folder.
+The generated **Play-EnshroudedVRM.cmd** starts subsequent sessions immediately. Models and shader choices are remembered by the mod; an obsolete avatar path in old launcher settings does not block startup. A model import failure leaves the current avatar available and reports the error in F8.
 
-The game starts immediately. The launcher checks its first 30 seconds, then closes
-automatically; an early exit and its code are recorded without retrying the game.
-State/Logs retains the latest five attempts, including a game-log tail of at most
-256 KB for each. Older recognized attempts are removed on the next launch, and
-completed retained mod logs are trimmed to 1 MB. Keep State private.
+## Lip sync and appearance
 
-Windows 10/11 x64 with the built-in Windows PowerShell 5.1 is required. The scripts
-respect existing script policies and do not change security settings. Restrictive
-policies may prevent them from running. No administrator rights, Python or global
-installation is required for players.
+Voice to viseme starts **Off**. Enable it in F8 and choose **Game voice chat** or **Local microphone**. Game voice uses the game's outgoing audio and requires a session where the game's voice chat is active; it may produce no audio in Single Player. Local microphone also works offline. Its default follows the Windows default input, with a device picker available. Microphone access follows Windows privacy settings. Audio is processed locally; no recording is saved by the mod.
 
-The three readable launcher files are in [portable/script](portable/script).
-The required native Vulkan runtime DLL handles the in-game rendering. The package
-includes GPU skinning, lit rendering, spring motion, menu previews and held-item
-alignment.
+Adjust mouth strength, sensitivity and smoothing in the expandable mouth controls. Mouth motion uses the model's available expression shapes, so appearance varies by avatar. Silence closes the mouth through the supported neutral/silence path.
 
-Version 0.1.2 refines long-hair inertia, reduces running trail and keeps nearby
-sections together. Static pose preparation and idle GPU resources are reused to
-reduce processing overhead. See the [measurements](docs/performance/0.1.2-optimization.md)
-and [release notes](RELEASE-NOTES.md) for validation and limitations.
+Under **Appearance presets**, choose **Game lighting** or **Matte** for the whole model. Pick an individual material to override it. **Use model preset** removes that material's override; **Reset material overrides** removes all overrides on the current model. Explicit overrides remain when the whole preset changes.
 
-## Compatibility and limits
+Choices save automatically in private `State/avatar-settings.json`, keyed by model contents. Renaming an identical VRM keeps its profile; editing/re-exporting it creates a new identity. Up to 16 profiles are retained (oldest removed at the limit), with up to 256 overrides per profile. Saving normally follows a 300 ms background delay. Keep State private and leave a moment after the final edit before closing the game.
 
-Supports Steam build **26082781**, resource version **1273043**. Other executable
-builds are rejected. Supports VRM 0.x/1.x humanoid rigs within importer bounds.
-Large avatars can reduce FPS. Menu previews use alpha cutout for blended materials.
-Native armor fitting and multiplayer avatar synchronization are not included.
-Initial single-player checks passed with EML 0.2.0 and ShroudForge 1.7.5, each
-tested separately alongside VRM, including the tested Hands-Free Lantern 0.11.1
-scenario. See the [loader checks](docs/compatibility/loader-coexistence.md) and
-[lantern checks](docs/compatibility/hands-free-lantern.md) for scope. Installing
-both loaders together remains untested. The launcher leaves adjacent loader files
-alone. Executable changes still fail the exact-build check. Direct loader
-integration and graphics-layer discovery changes remain deferred.
+## Compatibility and startup
 
-Standard unfaded VRoid MToon `_FaceBrow_` materials use alpha cutout in the world
-to correct eyebrow shading. Other transparent materials retain world blending.
-This targeted compatibility rule does not implement full MToon shading.
-See [known issues](KNOWN-ISSUES.txt) and [release notes](RELEASE-NOTES.md).
+Windows 10/11 x64 and built-in Windows PowerShell 5.1 are required. The existing readable CMD/PowerShell bootstrap remains in 0.2.0; a signed EXE launcher is future work. No administrator rights, Python, global installation, execution-policy change or antivirus exclusion is required. Restrictive script policies may prevent startup. Starting through Steam alone runs the normal game.
 
-## Source, support and license
+Supports Steam build **26082781**, resource version **1273043**, and bounded VRM 0.x/1.x humanoid imports. Other game executable builds are rejected. Native armor fitting and multiplayer avatar synchronization are not included. Large avatars can reduce FPS. Full MToon shading is not implemented; Matte is an appearance preset, not a complete shader replacement.
 
-See [BUILDING.md](BUILDING.md) for runtime, fixture and release assembly steps.
-Source packages exclude private avatars, working data and game executables.
-Never attach private models, derived geometry or unredacted State/logs to issues.
+Prior separate coexistence checks used EML 0.2.0 and ShroudForge 1.7.5, including Hands-Free Lantern 0.11.1. These are earlier compatibility observations, not new 0.2.0 tests. Direct loader integration and combined-loader testing remain deferred. See [known issues](KNOWN-ISSUES.txt).
 
-Original code is **MIT**, Copyright (c) 2026 **lightnill**. Reuse with the copyright
-and license notice retained. Preserve [third-party notices](THIRD_PARTY_NOTICES.md).
-Game and avatar rights remain with their owners. This mod is unofficial and not
-affiliated with or endorsed by Keen Games.
+The launcher observes the first 30 seconds and keeps bounded startup diagnostics in State/Logs, without restarting or terminating the game. Keep the whole extracted package together. To uninstall, close the game and remove the extracted folder; game files and avatars are not modified.
 
-See [SECURITY.md](SECURITY.md) for behavior and the release's individual-file scan
-evidence. Scanner coverage varies by file type; platform approval is separate.
-Development included substantial AI-generated code under lightnill's direction
-and testing. No ValheimVRM code or assets are bundled.
+## Source, licenses and security
+
+See [BUILDING.md](BUILDING.md), [release notes](RELEASE-NOTES.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [security behavior](SECURITY.md). The package includes the separately licensed official Oculus LipSync runtime and its notices. Original code is MIT, Copyright (c) 2026 lightnill. No avatars, game executables, saves or private logs are bundled. This mod is unofficial and is not endorsed by Keen Games.
+
+Release scan evidence identifies exact file hashes, analysis times and engine coverage. Missing, unsupported or pending results are not clean scans; zero detections do not guarantee safety. Development included substantial AI-generated code under lightnill's direction and testing.

@@ -1,8 +1,10 @@
 #include "native_skinning_gpu.hpp"
 #include "native_prepare_contract.hpp"
+#include "mouth_deformation.hpp"
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 
@@ -99,6 +101,7 @@ struct NativeSkinningGpu::Impl {
 struct NativeSkinGpuAsset::Impl {
     std::shared_ptr<void> owner;std::shared_ptr<SkinContext> c;std::shared_ptr<const NativeSkinAsset> source;
     std::shared_ptr<SkinBuffer> vertices,indices,vertex_staging,index_staging;bool uploaded=false,recorded=false;
+    vrm::MouthStorageLayout mouth;
 };
 struct NativeSkinGpuGeometry::Impl {
     std::shared_ptr<void> owner;std::shared_ptr<const NativeSkinAsset> source;std::shared_ptr<SkinBuffer> output;
@@ -108,11 +111,18 @@ struct NativeSkinGpuFrame::Impl {
     std::shared_ptr<SkinBuffer> palettes,batches,palette_staging,batch_staging,status,uniform;
     std::shared_ptr<const NativeSkinGpuGeometry> geometry,previous;
     std::shared_ptr<SkinDescriptors> descriptors;
-    VkDescriptorSet set{};std::array<std::uint32_t,4> control{};bool recorded=false;
+    struct alignas(16) Control {
+        std::uint32_t vertices=0,batches=0,matrices=0,history=0;
+        std::uint32_t lookup=0,records=0,record_count=0,mouth=0;
+        std::array<float,4> weights0{},weights1{};
+    };
+    static_assert(sizeof(Control)==64&&offsetof(Control,weights0)==32&&offsetof(Control,weights1)==48,"Mouth skin control ABI");
+    VkDescriptorSet set{};Control control;bool recorded=false;
 };
 NativeSkinGpuAsset::NativeSkinGpuAsset(std::shared_ptr<Impl> p):impl(std::move(p)){}
 NativeSkinGpuAsset::~NativeSkinGpuAsset()=default;
 VkDescriptorBufferInfo NativeSkinGpuAsset::indices()const noexcept{return impl->indices->binding();}
+bool NativeSkinGpuAsset::mouth_available()const noexcept{return impl->mouth.valid;}
 NativeSkinGpuGeometry::NativeSkinGpuGeometry(std::shared_ptr<Impl> p):impl(std::move(p)){}
 NativeSkinGpuGeometry::~NativeSkinGpuGeometry()=default;
 VkDescriptorBufferInfo NativeSkinGpuGeometry::binding()const noexcept{return impl->output->binding();}
@@ -135,10 +145,19 @@ std::shared_ptr<NativeSkinGpuAsset> NativeSkinningGpu::asset(std::shared_ptr<con
     require(source&&bool(*source),"Invalid skin GPU asset");auto a=std::make_shared<NativeSkinGpuAsset::Impl>();a->owner=impl;a->c=impl->c;a->source=std::move(source);
     // Immutable uploads are not cached, but may reclaim retired frame memory
     // before enforcing the same aggregate allocation budget.
-    a->vertices=buffer(a->c,a->source->vertices.size()*64,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,&impl->buffers,false);
+    const auto prefix=a->source->vertices.size()*64;auto vertex_bytes=std::uint64_t(prefix);
+    if(a->source->mouth&&a->source->mouth_lookup.size()==a->source->vertices.size()){
+        const auto& data=*a->source->mouth;const auto mouth=vrm::mouth_storage_layout(a->source->vertices.size(),data.records.size(),data.records.capacity(),data.ranges.capacity());
+        if(mouth.valid&&mouth.source_bytes<=a->c->limits.maxStorageBufferRange){a->mouth=mouth;vertex_bytes=mouth.source_bytes;}
+    }
+    a->vertices=buffer(a->c,vertex_bytes,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,&impl->buffers,false);
     a->indices=buffer(a->c,a->source->layout->indices.size()*4,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,&impl->buffers,false);
     a->vertex_staging=buffer(a->c,a->vertices->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,&impl->buffers,false);a->index_staging=buffer(a->c,a->indices->bytes,false,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,&impl->buffers,false);
-    std::memcpy(a->vertex_staging->mapped,a->source->vertices.data(),static_cast<std::size_t>(a->vertices->bytes));std::memcpy(a->index_staging->mapped,a->source->layout->indices.data(),static_cast<std::size_t>(a->indices->bytes));
+    std::memcpy(a->vertex_staging->mapped,a->source->vertices.data(),prefix);std::memcpy(a->index_staging->mapped,a->source->layout->indices.data(),static_cast<std::size_t>(a->indices->bytes));
+    if(a->mouth.valid){auto* bytes=static_cast<unsigned char*>(a->vertex_staging->mapped);std::memset(bytes+prefix,0,std::size_t(vertex_bytes-prefix));
+        std::memcpy(bytes+a->mouth.lookup_offset,a->source->mouth_lookup.data(),a->source->mouth_lookup.size()*4);
+        const auto& records=a->source->mouth->records;for(std::size_t n=0;n<records.size();++n){auto* record=bytes+a->mouth.records_offset+n*128;
+            std::memcpy(record,records[n].position.data(),60);std::memcpy(record+60,records[n].normal.data(),60);}}
     return std::shared_ptr<NativeSkinGpuAsset>(new NativeSkinGpuAsset(std::move(a)));
 }
 void NativeSkinningGpu::upload(VkCommandBuffer command,const std::shared_ptr<NativeSkinGpuAsset>& asset){
@@ -150,7 +169,7 @@ void NativeSkinningGpu::upload(VkCommandBuffer command,const std::shared_ptr<Nat
 void NativeSkinningGpu::finish_upload(const std::shared_ptr<NativeSkinGpuAsset>& asset){
     require(asset&&asset->impl->owner==impl&&asset->impl->recorded&&!impl->c->uncertain(),"Skin upload completion ownership");asset->impl->uploaded=true;asset->impl->vertex_staging.reset();asset->impl->index_staging.reset();
 }
-std::shared_ptr<NativeSkinGpuFrame> NativeSkinningGpu::frame(const std::shared_ptr<NativeSkinGpuAsset>& asset,const NativeSkinPose& pose,VkDescriptorBufferInfo prepared,std::shared_ptr<const NativeSkinGpuGeometry> previous){
+std::shared_ptr<NativeSkinGpuFrame> NativeSkinningGpu::frame(const std::shared_ptr<NativeSkinGpuAsset>& asset,const NativeSkinPose& pose,VkDescriptorBufferInfo prepared,std::shared_ptr<const NativeSkinGpuGeometry> previous,const vrm::MouthWeights& mouth_weights){
     auto c=impl->c;require(!c->uncertain()&&asset&&asset->impl->owner==impl&&asset->impl->uploaded&&pose&&pose.asset==asset->impl->source&&prepared.buffer&&prepared.offset==0&&prepared.range>=224&&prepared.range!=VK_WHOLE_SIZE,"Skin frame ownership/layout");
     const auto count=pose.asset->vertices.size();require(count>0&&count<=2000000&&pose.batches.size()==pose.asset->nodes.size()&&pose.batches.size()<=2048&&pose.matrices.size()<=1048576&&(count+63)/64<=c->limits.maxComputeWorkGroupCount[0],"Skin frame dispatch limits");
     auto f=std::make_shared<NativeSkinGpuFrame::Impl>();f->owner=impl;f->c=c;f->asset=asset;
@@ -163,8 +182,13 @@ std::shared_ptr<NativeSkinGpuFrame> NativeSkinningGpu::frame(const std::shared_p
     auto g=std::make_shared<NativeSkinGpuGeometry::Impl>();g->owner=impl;g->source=pose.asset;g->output=buffer(c,count*44,true,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,cache);
     f->geometry=std::shared_ptr<NativeSkinGpuGeometry>(new NativeSkinGpuGeometry(std::move(g)));
     if(previous&&previous->impl->owner==impl&&previous->impl->source==pose.asset&&previous->binding().range==count*44)f->previous=std::move(previous);
-    f->control={static_cast<std::uint32_t>(count),static_cast<std::uint32_t>(pose.batches.size()),static_cast<std::uint32_t>(pose.matrices.size()),f->previous?1u:0u};
-    f->uniform=buffer(c,16,false,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,cache);std::memcpy(f->uniform->mapped,f->control.data(),16);
+    f->control.vertices=std::uint32_t(count);f->control.batches=std::uint32_t(pose.batches.size());f->control.matrices=std::uint32_t(pose.matrices.size());f->control.history=f->previous?1:0;
+    const auto& mouth=asset->impl->mouth;
+    const bool valid_weights=std::all_of(mouth_weights.begin(),mouth_weights.end(),[](float value){return std::isfinite(value)&&value>=0&&value<=1;});
+    const bool active=valid_weights&&std::any_of(mouth_weights.begin(),mouth_weights.end(),[](float value){return value>0;});
+    if(mouth.valid){f->control.lookup=mouth.lookup_offset;f->control.records=mouth.records_offset;f->control.record_count=std::uint32_t(pose.asset->mouth->records.size());
+        if(active&&pose.mouth_safe){f->control.mouth=1;for(unsigned n=0;n<4;++n)f->control.weights0[n]=mouth_weights[n];f->control.weights1[0]=mouth_weights[4];}}
+    f->uniform=buffer(c,sizeof(f->control),false,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,cache);std::memcpy(f->uniform->mapped,&f->control,sizeof(f->control));
     f->descriptors=descriptors(c,impl->set,impl->descriptor_packs);f->set=f->descriptors->set;
     const std::array<VkDescriptorBufferInfo,8> buffers{asset->impl->vertices->binding(),f->palettes->binding(),f->batches->binding(),f->previous?f->previous->binding():f->geometry->binding(),f->geometry->binding(),f->status->binding(),prepared,f->uniform->binding()};
     std::array<VkWriteDescriptorSet,8> writes{};for(unsigned i=0;i<8;++i){auto& w=writes[i];w=info<VkWriteDescriptorSet>(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);w.dstSet=f->set;w.dstBinding=i;w.descriptorType=i==7?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;w.descriptorCount=1;w.pBufferInfo=&buffers[i];}c->fn<PFN_vkUpdateDescriptorSets>("vkUpdateDescriptorSets")(c->device,writes.size(),writes.data(),0,nullptr);
@@ -176,7 +200,7 @@ void NativeSkinningGpu::record(VkCommandBuffer command,const std::shared_ptr<Nat
     auto copy=c->fn<PFN_vkCmdCopyBuffer>("vkCmdCopyBuffer");VkBufferCopy p{0,0,f.palettes->bytes},b{0,0,f.batches->bytes};copy(command,f.palette_staging->handle,f.palettes->handle,1,&p);copy(command,f.batch_staging->handle,f.batches->handle,1,&b);
     barrier(c,command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT);
     auto bind=c->fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline");bind(command,VK_PIPELINE_BIND_POINT_COMPUTE,impl->pipelines[0]);c->fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,impl->layout,0,1,&f.set,0,nullptr);
-    auto dispatch=c->fn<PFN_vkCmdDispatch>("vkCmdDispatch");dispatch(command,(f.control[0]+63)/64,1,1);
+    auto dispatch=c->fn<PFN_vkCmdDispatch>("vkCmdDispatch");dispatch(command,(f.control.vertices+63)/64,1,1);
     barrier(c,command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT);
     bind(command,VK_PIPELINE_BIND_POINT_COMPUTE,impl->pipelines[1]);dispatch(command,1,1,1);
     barrier(c,command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_HOST_BIT,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_HOST_READ_BIT);

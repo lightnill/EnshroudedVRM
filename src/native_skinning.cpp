@@ -1,4 +1,5 @@
 #include "native_skinning.hpp"
+#include "mouth_deformation.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -84,6 +85,23 @@ float outward(double v,bool high){
     v+=high?margin:-margin;require(std::isfinite(v)&&std::abs(v)<std::numeric_limits<float>::max(),"Skin bound exceeds float range");
     return std::nextafter(static_cast<float>(v),high?std::numeric_limits<float>::infinity():-std::numeric_limits<float>::infinity());
 }
+#include "native_mouth.inl"
+NativeSkinBounds node_blend_bounds(const NativeSkinNode& node,const NativeSkinBatch& batch,
+    const std::vector<vrm::Matrix>& matrices,const NativeSkinMouthNode* mouth){
+    NativeSkinBounds blend,mesh,source_bounds;
+    for(std::size_t j=0;j<node.joint_blend.size();++j)if(node.joint_blend[j].used){auto local=node.joint_blend[j];
+        if(mouth){const auto found=std::lower_bound(mouth->joints.begin(),mouth->joints.end(),std::uint32_t(j),[](const auto& value,std::uint32_t index){return value.joint<index;});
+            if(found!=mouth->joints.end()&&found->joint==j){point(local,found->bounds.low);point(local,found->bounds.high);}}
+        transformed(mesh,local,matrices.at(batch.base+j));point(source_bounds,local.low);point(source_bounds,local.high);}
+    if(mesh.used)for(unsigned axis=0;axis<3;++axis){
+        const std::array<double,4> ends{mesh.low[axis]*node.min_weight_sum,mesh.low[axis]*node.max_weight_sum,mesh.high[axis]*node.min_weight_sum,mesh.high[axis]*node.max_weight_sum};
+        mesh.low[axis]=*std::min_element(ends.begin(),ends.end());mesh.high[axis]=*std::max_element(ends.begin(),ends.end());
+    }
+    if(mesh.used){NativeSkinBounds model;transformed(model,mesh,batch.world);expanded(blend,model,deformation_error(source_bounds,batch.world,&node,matrices,batch.base));}
+    auto local=node.static_blend;if(mouth&&mouth->static_blend.used){point(local,mouth->static_blend.low);point(local,mouth->static_blend.high);}
+    if(local.used){NativeSkinBounds model;transformed(model,local,batch.world);expanded(blend,model,deformation_error(local,batch.world,nullptr,matrices,0));}
+    return blend;
+}
 }
 NativeSkinAsset make_native_skin_asset(const vrm::Avatar& avatar,const vrm::RetargetResult& pose)noexcept{
     try{
@@ -109,16 +127,16 @@ NativeSkinAsset make_native_skin_asset(const vrm::Avatar& avatar,const vrm::Reta
             out.nodes.push_back(std::move(node));
         }
         require(out.vertices.size()==layout->vertices.size()&&!out.nodes.empty()&&out.nodes.size()<=2048,"Skin layout mismatch");
-        out.layout=std::move(layout);return out;
+        out.layout=std::move(layout);compile_native_mouth(avatar,out);return out;
     }catch(const std::exception& e){NativeSkinAsset failed;failed.error=e.what();return failed;}catch(...){NativeSkinAsset failed;failed.error="Skin asset allocation failed";return failed;}
 }
-NativeSkinPose make_native_skin_pose(std::shared_ptr<const NativeSkinAsset> asset,const vrm::RetargetResult& pose)noexcept{
+static NativeSkinPose pack_native_skin_pose(std::shared_ptr<const NativeSkinAsset> asset,const vrm::RetargetResult& pose,bool include_mouth)noexcept{
     try{
         require(asset&&bool(*asset)&&bool(pose)&&pose.node_world.size()==asset->node_count&&pose.palettes.size()<=2048,"Invalid skin pose metadata");
         std::vector<vrm::Matrix> worlds;worlds.reserve(pose.node_world.size());for(const auto& m:pose.node_world)worlds.push_back(affine(m));
         std::vector<const vrm::SkinPalette*> palettes(asset->node_count,nullptr);
         for(const auto& p:pose.palettes){require(p.mesh_node>=0&&static_cast<std::size_t>(p.mesh_node)<palettes.size()&&!palettes[p.mesh_node],"Ambiguous skin palette");palettes[p.mesh_node]=&p;}
-        NativeSkinPose out;out.asset=asset;out.material_plan=asset->material_plan;out.batches.reserve(asset->nodes.size());NativeSkinBounds blend;
+        NativeSkinPose out;out.asset=asset;out.material_plan=asset->material_plan;out.batches.reserve(asset->nodes.size());out.mouth_safe=include_mouth;NativeSkinBounds blend,base_blend;
         std::size_t used=0;
         for(const auto& node:asset->nodes){NativeSkinBatch batch{};batch.world=worlds.at(node.node);batch.base=static_cast<std::uint32_t>(out.matrices.size());
             const auto* p=palettes[node.node];require(!node.skinned||p,"Missing skin palette");
@@ -126,19 +144,25 @@ NativeSkinPose make_native_skin_pose(std::shared_ptr<const NativeSkinAsset> asse
                 require(out.matrices.size()<=1048576-node.joints,"Skin matrix limit");batch.count=node.joints;
                 for(const auto& m:p->matrices)out.matrices.push_back(affine(m));
             }
-            NativeSkinBounds mesh,source_bounds;
-            for(std::size_t j=0;j<node.joint_blend.size();++j)if(node.joint_blend[j].used){require(p,"Missing blend palette");transformed(mesh,node.joint_blend[j],out.matrices[batch.base+j]);point(source_bounds,node.joint_blend[j].low);point(source_bounds,node.joint_blend[j].high);}
-            if(mesh.used)for(unsigned axis=0;axis<3;++axis){
-                const std::array<double,4> ends{mesh.low[axis]*node.min_weight_sum,mesh.low[axis]*node.max_weight_sum,mesh.high[axis]*node.min_weight_sum,mesh.high[axis]*node.max_weight_sum};
-                mesh.low[axis]=*std::min_element(ends.begin(),ends.end());mesh.high[axis]=*std::max_element(ends.begin(),ends.end());
-            }
-            if(mesh.used){NativeSkinBounds model;transformed(model,mesh,batch.world);expanded(blend,model,deformation_error(source_bounds,batch.world,&node,out.matrices,batch.base));}
-            if(node.static_blend.used){NativeSkinBounds model;transformed(model,node.static_blend,batch.world);expanded(blend,model,deformation_error(node.static_blend,batch.world,nullptr,out.matrices,0));}
+            const NativeSkinMouthNode* mouth=nullptr;
+            if(include_mouth){const auto n=std::uint32_t(out.batches.size());const auto found=std::lower_bound(asset->mouth_nodes.begin(),asset->mouth_nodes.end(),n,[](const auto& value,std::uint32_t index){return value.node<index;});
+                if(found!=asset->mouth_nodes.end()&&found->node==n){mouth=&*found;require(mouth_pose_safe(*mouth,node,batch,out.matrices),"Unsafe optional mouth pose");}}
+            const auto base=node_blend_bounds(node,batch,out.matrices,nullptr);
+            const auto shaped=mouth?node_blend_bounds(node,batch,out.matrices,mouth):base;
+            if(base.used){point(base_blend,base.low);point(base_blend,base.high);}
+            if(shaped.used){point(blend,shaped.low);point(blend,shaped.high);}
             out.batches.push_back(batch);
         }
         require(used==pose.palettes.size(),"Skin palette references inactive mesh");
-        if(out.material_plan.mixed){require(blend.used,"Missing blend bounds");for(unsigned axis=0;axis<3;++axis){out.material_plan.blend_min[axis]=outward(blend.low[axis],false);out.material_plan.blend_max[axis]=outward(blend.high[axis],true);}}
+        if(out.material_plan.mixed){require(blend.used&&base_blend.used,"Missing blend bounds");for(unsigned axis=0;axis<3;++axis){out.material_plan.blend_min[axis]=outward(blend.low[axis],false);out.material_plan.blend_max[axis]=outward(blend.high[axis],true);}}
+        out.base_blend_min=out.material_plan.blend_min;out.base_blend_max=out.material_plan.blend_max;
+        if(out.material_plan.mixed&&include_mouth)for(unsigned axis=0;axis<3;++axis){out.base_blend_min[axis]=outward(base_blend.low[axis],false);out.base_blend_max[axis]=outward(base_blend.high[axis],true);}
         return out;
     }catch(const std::exception& e){NativeSkinPose failed;failed.error=e.what();return failed;}catch(...){NativeSkinPose failed;failed.error="Skin pose allocation failed";return failed;}
+}
+NativeSkinPose make_native_skin_pose(std::shared_ptr<const NativeSkinAsset> asset,const vrm::RetargetResult& pose)noexcept{
+    const bool mouth=asset&&bool(asset->mouth);auto out=pack_native_skin_pose(asset,pose,mouth);
+    if(!out&&mouth)return pack_native_skin_pose(std::move(asset),pose,false);
+    return out;
 }
 }

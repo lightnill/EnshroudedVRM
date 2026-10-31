@@ -9,6 +9,12 @@
 #include "spring_frame.hpp"
 #include "native_instance_qualifiers.hpp"
 #include "native_tool_slots.hpp"
+#include "voice_inputs.hpp"
+#include "mouth_publication.hpp"
+#include "mod_settings_service.hpp"
+#include "fallback_diagnostics.hpp"
+#include "avatar_runtime.hpp"
+#include "avatar_switch_transaction.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -133,12 +139,9 @@ struct PlayerTrace {
     ~PlayerTrace(){finish("shutdown");}
 };
 }
-struct AvatarRenderer::Impl {
-    VkDevice device{};PFN_vkGetDeviceProcAddr gdpa{};PFN_vkSetDeviceLoaderData set_loader{};
-    VkPhysicalDeviceMemoryProperties memory{};
-    std::vector<VkQueueFamilyProperties> queue_properties;
-    std::mutex resource_mutex;
-    vrm::Avatar avatar;
+struct AvatarCpuModel {
+    std::shared_ptr<const PreparedAvatar> prepared;
+    const vrm::Avatar& avatar;
     std::unique_ptr<vrm::SpringBones> springs;
     std::unique_ptr<SecondaryHandContact> secondary_contact;
     SecondaryContactActivation secondary_activation;
@@ -170,36 +173,17 @@ struct AvatarRenderer::Impl {
     double spring_ms=0,spring_max_offset=0;
     unsigned spring_samples=0,spring_steps=0,spring_resets=0;
     const char* spring_error=nullptr;
-    std::unique_ptr<EnshroudedBridge> bridge;
-    std::filesystem::path shader_directory;
-    bool active=false,initialized=false;
-    bool native_mode=false,native_replacement=false,gpu_skinning=true;
+    bool native_replacement=false,gpu_skinning=true;
     std::shared_ptr<const vrm::Avatar> native_asset;
     std::shared_ptr<const NativeSkinAsset> native_skin_asset;
-    std::shared_ptr<const NativeAvatarPublication> publication;
-    float debug_offset=0.75f;
-    std::string last_error;
-    uint64_t frame_count=0,capture_sequence=0;
-    PlayerTrace player_trace;
-    std::array<double,5> timings{};
-    unsigned native_timing_count=0;
-    VkQueue queue{};uint32_t family=0;
-    VkCommandPool command_pool{};VkCommandBuffer command{};
-    Buffer vertices,indices,uniform;
-    std::vector<Draw> draws;std::size_t vertex_count=0;
-    std::vector<Image> textures;Image white,self_depth;
-    VkImageView scene_view{};VkImage scene_image{};
-    uint64_t scene_generation=0,current_swapchain_generation=0;
-    VkSampler depth_sampler{};std::vector<VkSampler> samplers;
-    VkDescriptorSetLayout descriptor_layout{};VkDescriptorPool descriptor_pool{};
-    std::vector<VkDescriptorSet> descriptor_sets;
-    VkPipelineLayout pipeline_layout{};VkPipeline opaque{},blend{};
-    VkShaderModule vertex_shader{},fragment_shader{};
-    VkRenderPass renderpass{};std::vector<VkImageView> swapchain_views;std::vector<VkFramebuffer> framebuffers;
-    VkSwapchainKHR current_swapchain{};VkFormat current_format{};VkExtent2D extent{};
-    template<class F> F function(const char* name) const {return reinterpret_cast<F>(gdpa(device,name));}
-#define V(name) function<PFN_##name>(#name)
-    void report(const std::string& error) {if(error!=last_error){log_event("avatar.unavailable "+error);last_error=error;}}
+    AvatarCpuModel(std::shared_ptr<const PreparedAvatar> value,bool replacement,bool gpu):
+        prepared(std::move(value)),avatar(*prepared->asset),native_replacement(replacement),gpu_skinning(gpu),
+        native_asset(prepared->asset),native_skin_asset(prepared->skin){
+        if(env(L"ENSHROUDED_VRM_SPRING_BONES")!=L"0"&&!avatar.spring_joints.empty())
+            springs=vrm::make_optional_springs(avatar,vrm::SpringMotion::Inertial);
+        if(springs&&!springs->ready())springs.reset();
+        if(replacement)secondary_contact=std::make_unique<SecondaryHandContact>(avatar);
+    }
     void apply_secondary_contact(vrm::RetargetResult&pose,const vrm::SourcePose&source,NativeAvatarPublication&candidate) noexcept {
         if(!native_replacement||!secondary_contact||!secondary_contact->ready())return;
         const auto started=std::chrono::steady_clock::now();
@@ -258,23 +242,31 @@ struct AvatarRenderer::Impl {
             spring_samples=spring_steps=spring_resets=0;spring_ms=spring_max_offset=0;
         }
     }
-    std::shared_ptr<NativeAvatarPublication> build_native_view(const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation) {
+    std::shared_ptr<NativeAvatarPublication> build_native_view(const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation,
+        EnshroudedBridge& bridge,const MouthSnapshot& current_mouth,float mouth_strength,float debug_offset,
+        std::array<double,5>& timings,PlayerTrace* trace=nullptr,bool* source_valid=nullptr) {
+        if(source_valid)*source_valid=false;
         const auto started=std::chrono::steady_clock::now();
-        const auto frame=bridge->read_player_frame(snapshot);if(!frame)throw std::runtime_error(frame.error);
+        const auto frame=bridge.read_player_frame(snapshot);if(!frame)throw std::runtime_error(frame.error);
         const auto identified=std::chrono::steady_clock::now();
         vrm::RetargetOptions options;options.align_rest_directions=true;
         if(avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
         options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=avatar.nodes[avatar.humanoid.at("head")].world[13];
+        if(!std::isfinite(options.source_rest_height)||options.source_rest_height<=0)throw std::runtime_error("Source rest height unavailable");
         const auto source=snapshot.buffers.at("instances").binding.buffer;
+        if(!source)throw std::runtime_error("Native instance source unavailable");
+        if(source_valid)*source_valid=true;
         auto pose=retarget_pose(frame.source_pose,options,reinterpret_cast<std::uintptr_t>(source));if(!pose)throw std::runtime_error("Retarget: "+pose.error);
         apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height,reinterpret_cast<std::uintptr_t>(source));
         const auto posed=std::chrono::steady_clock::now();
         auto publication=std::make_shared<NativeAvatarPublication>();publication->asset=native_asset;
+        if(const auto menu=avatar_runtime_snapshot();menu&&menu->fingerprint==prepared->fingerprint)publication->appearance=menu->appearance;
         publication->serial=serial;publication->presentation_serial=presentation;publication->published_milliseconds=snapshot.captured_milliseconds;
         publication->source_buffer_epoch=snapshot.source_epoch;
         publication->height_scale=options.source_rest_height/options.avatar_rest_height;
         publication->basis_xz=avatar.version==vrm::VrmVersion::V0?-1.f:1.f;publication->diagnostic_x=debug_offset;
         publication->tool_hands=make_tool_hand_corrections(avatar,frame.source_pose,pose,publication->height_scale,publication->basis_xz);
+        if(source_valid)*source_valid=false;
         const auto instances=snapshot.buffers.find("instances");if(instances==snapshot.buffers.end())throw std::runtime_error("Native instance metadata unavailable");
         for(const auto& part:frame.parts) {
             const auto offset=std::size_t(part.instance_id)*128+112;
@@ -289,6 +281,7 @@ struct AvatarRenderer::Impl {
             publication->source_instances=reinterpret_cast<std::uintptr_t>(instances->second.binding.buffer);
             publication->source_instance_offset=instances->second.binding.offset;publication->source_instance_range=instances->second.binding.range;
         }
+        if(source_valid)*source_valid=true;
         apply_secondary_contact(pose,frame.source_pose,*publication);
         if(gpu_skinning){
             if(!native_skin_asset){
@@ -304,12 +297,55 @@ struct AvatarRenderer::Impl {
             if(!*geometry)throw std::runtime_error("Native geometry: "+geometry->error);
             publication->geometry=std::move(geometry);
         }
-        player_trace.sample(serial,frame,pose,avatar);
+        apply_native_mouth_weights(*publication,current_mouth,mouth_strength,gpu_skinning);
+        if(trace)trace->sample(serial,frame,pose,avatar);
         const auto finished=std::chrono::steady_clock::now();
         const auto ms=[](auto a,auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
         timings[2]+=ms(started,identified);timings[3]+=ms(identified,posed);timings[4]+=ms(posed,finished);
         return publication;
     }
+};
+struct AvatarRenderer::Impl {
+    VkDevice device{};PFN_vkGetDeviceProcAddr gdpa{};PFN_vkSetDeviceLoaderData set_loader{};
+    VkPhysicalDeviceMemoryProperties memory{};
+    std::vector<VkQueueFamilyProperties> queue_properties;
+    std::mutex resource_mutex;
+    std::unique_ptr<AvatarCpuModel> model,staged_model;
+    AvatarCandidatePtr staged;
+    std::string staged_failure;
+    bool staged_gpu_ready=false;
+    std::shared_ptr<const NativeAvatarPublication> staged_publication;
+    std::unique_ptr<EnshroudedBridge> bridge;
+    std::filesystem::path shader_directory;
+    bool active=false,initialized=false;
+    bool native_mode=false,native_replacement=false,gpu_skinning=true;
+    std::shared_ptr<const NativeAvatarPublication> publication;
+    MouthSnapshot current_mouth;
+    float mouth_strength=.85f;
+    float debug_offset=0.75f;
+    std::string last_error;
+    FallbackEpisodes pose_gaps;
+    uint64_t frame_count=0,capture_sequence=0;
+    PlayerTrace player_trace;
+    std::array<double,5> timings{};
+    unsigned native_timing_count=0;
+    VkQueue queue{};uint32_t family=0;
+    VkCommandPool command_pool{};VkCommandBuffer command{};
+    Buffer vertices,indices,uniform;
+    std::vector<Draw> draws;std::size_t vertex_count=0;
+    std::vector<Image> textures;Image white,self_depth;
+    VkImageView scene_view{};VkImage scene_image{};
+    uint64_t scene_generation=0,current_swapchain_generation=0;
+    VkSampler depth_sampler{};std::vector<VkSampler> samplers;
+    VkDescriptorSetLayout descriptor_layout{};VkDescriptorPool descriptor_pool{};
+    std::vector<VkDescriptorSet> descriptor_sets;
+    VkPipelineLayout pipeline_layout{};VkPipeline opaque{},blend{};
+    VkShaderModule vertex_shader{},fragment_shader{};
+    VkRenderPass renderpass{};std::vector<VkImageView> swapchain_views;std::vector<VkFramebuffer> framebuffers;
+    VkSwapchainKHR current_swapchain{};VkFormat current_format{};VkExtent2D extent{};
+    template<class F> F function(const char* name) const {return reinterpret_cast<F>(gdpa(device,name));}
+#define V(name) function<PFN_##name>(#name)
+    void report(const std::string& error) {if(error!=last_error){log_event("avatar.unavailable "+error);last_error=error;}}
     uint32_t memory_type(uint32_t bits,VkMemoryPropertyFlags flags) {
         for(uint32_t i=0;i<memory.memoryTypeCount;++i)if((bits&(1u<<i))&&(memory.memoryTypes[i].propertyFlags&flags)==flags)return i;
         throw std::runtime_error("No compatible avatar memory type");
@@ -395,8 +431,8 @@ struct AvatarRenderer::Impl {
     }
     void create_geometry() {
         std::vector<uint32_t> all_indices;
-        for(std::size_t n=0;n<avatar.nodes.size();++n)if(avatar.nodes[n].active&&avatar.nodes[n].mesh>=0) {
-            const auto& mesh=avatar.meshes[avatar.nodes[n].mesh];
+        for(std::size_t n=0;n<model->avatar.nodes.size();++n)if(model->avatar.nodes[n].active&&model->avatar.nodes[n].mesh>=0) {
+            const auto& mesh=model->avatar.meshes[model->avatar.nodes[n].mesh];
             for(std::size_t p=0;p<mesh.primitives.size();++p) {
                 const auto& primitive=mesh.primitives[p];draws.push_back({n,p,vertex_count,all_indices.size(),primitive.indices.size(),primitive.material});
                 vertex_count+=primitive.vertices.size();all_indices.insert(all_indices.end(),primitive.indices.begin(),primitive.indices.end());
@@ -416,7 +452,7 @@ struct AvatarRenderer::Impl {
             {4,VK_DESCRIPTOR_TYPE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr}}};
         VkDescriptorSetLayoutCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;info.bindingCount=bindings.size();info.pBindings=bindings.data();
         check(V(vkCreateDescriptorSetLayout)(device,&info,nullptr,&descriptor_layout),"avatar descriptor layout");
-        const uint32_t count=static_cast<uint32_t>(avatar.materials.size()+1);
+        const uint32_t count=static_cast<uint32_t>(model->avatar.materials.size()+1);
         const std::array<VkDescriptorPoolSize,3> sizes{{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,count*2},{VK_DESCRIPTOR_TYPE_SAMPLER,count*2}}};
         VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
         check(V(vkCreateDescriptorPool)(device,&pool,nullptr,&descriptor_pool),"avatar descriptor pool");
@@ -425,8 +461,8 @@ struct AvatarRenderer::Impl {
         check(V(vkAllocateDescriptorSets)(device,&allocation,descriptor_sets.data()),"avatar descriptor sets");
         samplers.resize(count);depth_sampler=make_sampler(nullptr,true);
         for(uint32_t i=0;i<count;++i) {
-            const auto texture=i<avatar.materials.size()?avatar.materials[i].base_texture:-1;
-            const auto* t=texture>=0?&avatar.textures[texture]:nullptr;samplers[i]=make_sampler(t);
+            const auto texture=i<model->avatar.materials.size()?model->avatar.materials[i].base_texture:-1;
+            const auto* t=texture>=0?&model->avatar.textures[texture]:nullptr;samplers[i]=make_sampler(t);
             const auto image=t?textures[t->image].view:white.view;
             const VkDescriptorBufferInfo buffer{uniform.handle,0,sizeof(FrameConstants)};
             const std::array<VkDescriptorImageInfo,4> images{{{VK_NULL_HANDLE,image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},{samplers[i],VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED},
@@ -502,9 +538,9 @@ struct AvatarRenderer::Impl {
         VkCommandBufferAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;allocation.commandPool=command_pool;allocation.commandBufferCount=1;allocation.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         check(V(vkAllocateCommandBuffers)(device,&allocation,&command),"avatar command buffer");
         if(set_loader)check(set_loader(device,command),"avatar loader data");
-        create_geometry();textures.resize(avatar.images.size());
-        std::set<int> used_images;for(const auto& material:avatar.materials)if(material.base_texture>=0)used_images.insert(avatar.textures[material.base_texture].image);
-        for(int image:used_images)upload_texture(textures[image],avatar.images[image]);
+        create_geometry();textures.resize(model->avatar.images.size());
+        std::set<int> used_images;for(const auto& material:model->avatar.materials)if(material.base_texture>=0)used_images.insert(model->avatar.textures[material.base_texture].image);
+        for(int image:used_images)upload_texture(textures[image],model->avatar.images[image]);
         const vrm::Image white_pixels{1,1,{255,255,255,255}};upload_texture(white,white_pixels);
         scene_view=create_view(depth.image,depth.format,VK_IMAGE_ASPECT_DEPTH_BIT);scene_image=depth.image;scene_generation=depth.generation;create_descriptors();
         auto make_shader=[&](const char* name,VkShaderModule& shader){const auto code=shader_file(shader_directory/name);VkShaderModuleCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;info.codeSize=code.size()*4;info.pCode=code.data();check(V(vkCreateShaderModule)(device,&info,nullptr,&shader),"avatar shader module");};
@@ -514,7 +550,7 @@ struct AvatarRenderer::Impl {
     void skin_vertices(const vrm::RetargetResult& pose,const vrm::Matrix& actor) {
         auto* output=static_cast<GpuVertex*>(vertices.mapped);
         for(const auto& draw:draws) {
-            const auto& node=avatar.nodes[draw.node];const auto& primitive=avatar.meshes[node.mesh].primitives[draw.primitive];
+            const auto& node=model->avatar.nodes[draw.node];const auto& primitive=model->avatar.meshes[node.mesh].primitives[draw.primitive];
             const vrm::SkinPalette* palette=nullptr;if(primitive.skinned)for(const auto& candidate:pose.palettes)if(candidate.mesh_node==static_cast<int>(draw.node)){palette=&candidate;break;}
             if(primitive.skinned&&!palette)throw std::runtime_error("Missing avatar skin palette");
             for(std::size_t i=0;i<primitive.vertices.size();++i) {
@@ -532,9 +568,9 @@ struct AvatarRenderer::Impl {
     void render(const VkPresentInfoKHR& present,const SwapchainState& swapchain,const SceneDepth& depth,const PlayerFrame& frame,const vrm::RetargetResult& pose,bool& consumed) {
         auto actor=frame.actor_world;
         const auto source_height=frame.source_pose.rest.at("head")[13];
-        const auto avatar_height=avatar.nodes[avatar.humanoid.at("head")].world[13];
+        const auto avatar_height=model->avatar.nodes[model->avatar.humanoid.at("head")].world[13];
         const auto scale=source_height/avatar_height;if(!std::isfinite(scale)||scale<0.1f||scale>10)throw std::runtime_error("Unsupported avatar height");
-        const vrm::Matrix basis=avatar.version==vrm::VrmVersion::V1?vrm::Matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}:vrm::Matrix{-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+        const vrm::Matrix basis=model->avatar.version==vrm::VrmVersion::V1?vrm::Matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}:vrm::Matrix{-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
         actor=product(actor,basis);for(int c=0;c<3;++c)for(int r=0;r<3;++r)actor[c*4+r]*=scale;actor[12]+=debug_offset;
         skin_vertices(pose,actor);
         const auto mvp=product(frame.camera_stable_world_to_clip,actor);FrameConstants constants{};
@@ -555,9 +591,9 @@ struct AvatarRenderer::Impl {
         for(int pass=0;pass<2;++pass) {
             V(vkCmdBindPipeline)(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pass?blend:opaque);
             for(const auto& draw:draws) {
-                const vrm::Material fallback{};const auto& material=draw.material>=0?avatar.materials[draw.material]:fallback;
+                const vrm::Material fallback{};const auto& material=draw.material>=0?model->avatar.materials[draw.material]:fallback;
                 const bool transparent=material.alpha==vrm::AlphaMode::Blend;if(transparent!=(pass==1))continue;
-                const auto set=descriptor_sets[draw.material>=0?static_cast<std::size_t>(draw.material):avatar.materials.size()];
+                const auto set=descriptor_sets[draw.material>=0?static_cast<std::size_t>(draw.material):model->avatar.materials.size()];
                 V(vkCmdBindDescriptorSets)(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline_layout,0,1,&set,0,nullptr);
                 MaterialConstants parameters{};std::copy(material.base_color.begin(),material.base_color.end(),parameters.color);parameters.cutoff=material.alpha_cutoff;
                 parameters.alpha=material.alpha==vrm::AlphaMode::Mask?1:transparent?2:0;parameters.unlit=material.unlit?1:0;
@@ -592,44 +628,105 @@ struct AvatarRenderer::Impl {
 #undef V
 };
 AvatarRenderer::AvatarRenderer(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr gipa,PFN_vkGetDeviceProcAddr gdpa,PFN_vkSetDeviceLoaderData set_loader):impl(std::make_unique<Impl>()) {
-    const auto path=env(L"ENSHROUDED_VRM_MODEL");if(path.empty())return;
+    const auto path=env(L"ENSHROUDED_VRM_MODEL");
+    // A configured launch may start without an avatar. F8 and saved service
+    // preferences choose it later; unrelated Vulkan clients stay dormant.
+    if(path.empty()&&env(L"ENSHROUDED_VRM_PROFILE").empty())return;
     impl->device=device;impl->gdpa=gdpa;impl->set_loader=set_loader;
     const auto get_memory=reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(gipa(instance,"vkGetPhysicalDeviceMemoryProperties"));get_memory(physical,&impl->memory);
     const auto get_queues=reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(gipa(instance,"vkGetPhysicalDeviceQueueFamilyProperties"));
     uint32_t queue_count=0;get_queues(physical,&queue_count,nullptr);impl->queue_properties.resize(queue_count);get_queues(physical,&queue_count,impl->queue_properties.data());impl->queue_properties.resize(queue_count);
-    auto loaded=vrm::load_vrm(std::filesystem::path(path));if(!loaded)throw std::runtime_error("Avatar import: "+loaded.error);impl->avatar=std::move(loaded.avatar);
-    if(env(L"ENSHROUDED_VRM_SPRING_BONES")!=L"0"&&!impl->avatar.spring_joints.empty()) {
-        impl->springs=vrm::make_optional_springs(impl->avatar,vrm::SpringMotion::Inertial);
-        if(!impl->springs)log_event("avatar.spring-disabled allocation failure");
-        else if(!impl->springs->ready()){log_event_lazy([&]{return "avatar.spring-disabled "+impl->springs->error();});impl->springs.reset();}
-        else log_event_lazy([&]{return "avatar.spring-ready motion=inertial-world joints="+std::to_string(impl->springs->joint_count())+" colliders="+std::to_string(impl->avatar.spring_colliders.size());});
-    }
     impl->bridge=std::make_unique<EnshroudedBridge>(std::filesystem::path(env(L"ENSHROUDED_VRM_PROFILE")),std::filesystem::path(env(L"ENSHROUDED_VRM_CATALOG")),narrow(env(L"ENSHROUDED_VRM_VERIFIED_BUILD")));
     if(!impl->bridge->ready())throw std::runtime_error("Game pose profile: "+impl->bridge->error());
     impl->shader_directory=std::filesystem::path(env(L"ENSHROUDED_VRM_SHADERS"));
     const auto offset=env(L"ENSHROUDED_VRM_DEBUG_OFFSET");if(!offset.empty())impl->debug_offset=std::stof(offset);
-    impl->active=true;log_event("avatar.cpu-ready title="+impl->avatar.title+" vertices="+std::to_string(impl->avatar.vertex_count));
     impl->native_replacement=env(L"ENSHROUDED_VRM_NATIVE_REPLACEMENT")==L"1";
     impl->native_mode=env(L"ENSHROUDED_VRM_NATIVE_ADDITIVE")==L"1"||impl->native_replacement;
     impl->gpu_skinning=env(L"ENSHROUDED_VRM_GPU_SKINNING")!=L"0";
+    std::shared_ptr<const PreparedAvatar> initial;
+    if(auto* service=avatar_runtime_service())initial=service->active();
+    if(!initial&&!path.empty()){const auto loaded=load_prepared_avatar(std::filesystem::path(path).u8string());
+        if(loaded)initial=loaded.model;else log_event_lazy([&]{return "avatar.initial-import-failed "+loaded.error;});}
+    if(initial)impl->model=std::make_unique<AvatarCpuModel>(initial,impl->native_replacement,impl->gpu_skinning);
+    impl->active=bool(initial)||impl->native_mode;
+    if(initial){log_event_lazy([&]{return "avatar.cpu-ready title="+initial->name+" vertices="+std::to_string(initial->asset->vertex_count);});
+        for(const auto& warning:initial->asset->warnings)log_event("avatar.limitation "+warning);}
     if(impl->native_mode)log_event(impl->gpu_skinning?"avatar.skinning mode=gpu":"avatar.skinning mode=cpu-comparison");
-    if(impl->native_mode)impl->native_asset=std::make_shared<const vrm::Avatar>(impl->avatar);
-    if(impl->native_replacement) {
-        impl->secondary_contact=std::make_unique<SecondaryHandContact>(impl->avatar);
-        log_event(impl->secondary_contact->ready()?"avatar.secondary-contact-ready":"avatar.secondary-contact-disabled unsupported arm chain/constraints");
-    }
-    for(const auto& warning:impl->avatar.warnings)log_event("avatar.limitation "+warning);
+    initialize_avatar_runtime(std::move(initial));
 }
 AvatarRenderer::~AvatarRenderer()=default;
 bool AvatarRenderer::enabled() const{return impl->active;}
 std::shared_ptr<const NativeAvatarPublication> AvatarRenderer::native_publication()const noexcept {
-    try {std::lock_guard<std::mutex> resources(impl->resource_mutex);return impl->publication;}catch(...){return{};}
+    try {std::lock_guard<std::mutex> resources(impl->resource_mutex);
+        const auto menu=avatar_runtime_snapshot();
+        if(impl->model&&menu&&menu->fingerprint==impl->model->prepared->fingerprint)
+            return native_publication_appearance(impl->publication,menu->appearance);
+        return impl->publication;
+    }catch(...){return{};}
+}
+std::shared_ptr<const PreparedAvatar> AvatarRenderer::prepared_model()const noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);return impl->model?impl->model->prepared:nullptr;}catch(...){return {};}
+}
+bool AvatarRenderer::stage_candidate(const AvatarCandidatePtr& candidate,bool ready,std::string& error)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);
+        impl->staged_publication.reset();impl->staged_gpu_ready=ready;
+        if(!candidate){impl->staged.reset();impl->staged_model.reset();impl->staged_failure.clear();return true;}
+        if(!impl->native_mode||!impl->gpu_skinning){error="Live switching requires native GPU rendering";return false;}
+        if(!impl->staged||impl->staged->generation!=candidate->generation||impl->staged->model!=candidate->model){
+            auto model=std::make_unique<AvatarCpuModel>(candidate->model,impl->native_replacement,true);
+            impl->staged=candidate;impl->staged_model=std::move(model);impl->staged_failure.clear();
+        }
+        if(!impl->staged_failure.empty()){error=impl->staged_failure;return false;}
+        return true;
+    }catch(const std::exception& failure){try{error=failure.what();}catch(...){}return false;}catch(...){return false;}
+}
+bool AvatarRenderer::commit_candidate(const AvatarCandidate& candidate,std::uint64_t epoch)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);
+        if(!impl->staged||impl->staged->generation!=candidate.generation||impl->staged->model!=candidate.model||
+            !impl->staged_gpu_ready||!impl->staged_model||!impl->staged_failure.empty()||!avatar_switch_pose_matches(impl->staged_publication,*candidate.model,epoch,GetTickCount64()))return false;
+        impl->model.swap(impl->staged_model);impl->publication.swap(impl->staged_publication);
+        impl->staged.reset();impl->staged_gpu_ready=false;impl->active=true;return true;
+    }catch(...){return false;}
 }
 bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& present,GpuProbe& probe,GraphicsState& graphics,bool& consumed,uint64_t source_buffer_epoch) noexcept {
     consumed=false;if(!enabled()||present.swapchainCount!=1)return false;
     try {
         std::lock_guard<std::mutex> resources(impl->resource_mutex);
         const auto previous=impl->publication;
+        impl->staged_publication.reset();
+        GpuSnapshot snapshot;
+        FallbackCaptureMetadata capture_facts;
+        FallbackPoseDiagnostics pose_diagnostics;
+        auto outcome=track_fallback_outcome([&](bool success,const char* phase){
+            if(!impl->native_mode)return;
+            if(!success&&!pose_diagnostics.failed())pose_diagnostics.record(capture_facts,phase,impl->last_error.c_str());
+            const auto now=GetTickCount64();
+            const auto emit=[&](const FallbackEvent& event,const FallbackCaptureMetadata& facts,const char* failed_phase,const char* reason){
+                if(!event.emit)return;
+                log_event_lazy([&]{
+                const bool recovered=!pose_diagnostics.failed();
+                return std::string(recovered?"avatar-fallback.pose-recovered":"avatar-fallback.pose-gap")+
+                    " episode="+std::to_string(event.episode)+" failures="+std::to_string(event.failures)+" gap-ms="+std::to_string(event.elapsed_ms)+
+                    " suppressed-episodes="+std::to_string(event.suppressed_episodes)+" phase="+failed_phase+
+                    " reason="+reason+" roles="+std::to_string(facts.roles)+" view="+std::to_string(facts.view_index)+
+                    " publication="+std::to_string(bool(impl->publication))+" partial="+std::to_string(success&&pose_diagnostics.failed())+
+                    " retained-views="+std::to_string(pose_diagnostics.retained_views)+
+                    " async="+std::to_string(facts.asynchronous)+" pending="+std::to_string(probe.async_frame_scheduled(queue))+
+                    " epoch="+std::to_string(source_buffer_epoch)+" captured-epoch="+std::to_string(facts.source_epoch)+
+                    " previous-epoch="+std::to_string(previous?previous->source_buffer_epoch:0)+
+                    " previous-age-ms="+std::to_string(previous&&now>=previous->published_milliseconds?now-previous->published_milliseconds:UINT64_MAX)+
+                    " captured-age-ms="+std::to_string(facts.captured_milliseconds&&now>=facts.captured_milliseconds?now-facts.captured_milliseconds:UINT64_MAX)+
+                    " previous-serial="+std::to_string(previous?previous->serial:0)+fallback_event_summary(event);
+                });
+            };
+            if(pose_diagnostics.failed())for(unsigned n=0;n<pose_diagnostics.count;++n){const auto& failure=pose_diagnostics.failures[n];
+                emit(impl->pose_gaps.failure(now,1ull<<failure.capture.view_index,failure.reason.data()),failure.capture,failure.phase,failure.reason.data());}
+            else emit(impl->pose_gaps.recovery(now),capture_facts,phase,"none");
+        });
+        try {
+        outcome.phase="presentation";
+        impl->current_mouth=selected_voice_mouth_snapshot();
+        impl->mouth_strength=mod_settings_snapshot().strength/100.f;
         if(impl->native_mode)impl->publication.reset();
         const auto capture_sequence=++impl->capture_sequence;
         uint32_t family=0;
@@ -647,53 +744,74 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
         auto limits=impl->bridge->readback_limits();
         const bool capture_anchor=probe.player_anchor_capture_enabled();
         if(capture_anchor)limits["player_anchor"]=2048;
-        GpuSnapshot snapshot;
         const auto hold=[&](const std::shared_ptr<const NativeAvatarPublication>& source){
+            if(!impl->model)return std::shared_ptr<NativeAvatarPublication>{};
             std::uint64_t owner=0,observed=0;
             const auto raw=source?read_native_hand_contact_mode(*source,GetTickCount64(),owner,&observed):SecondaryHandContactMode::None;
-            if(source)impl->motion(source->source_instances).contact.observe(raw,source->published_milliseconds,observed,owner,source_buffer_epoch);
+            if(source)impl->model->motion(source->source_instances).contact.observe(raw,source->published_milliseconds,observed,owner,source_buffer_epoch);
             auto value=hold_native_contact_publication(source,source_buffer_epoch,GetTickCount64(),impl->frame_count+1,raw,owner,
                 [](const vrm::Avatar&asset,const vrm::RetargetResult&baseline){return std::make_shared<NativeAvatarPose>(make_native_avatar_pose(asset,baseline));});
             if(!value)return std::shared_ptr<NativeAvatarPublication>{};
             auto result=std::make_shared<NativeAvatarPublication>(*value);result->additional_views.clear();
-            result->serial=++impl->frame_count;result->presentation_serial=capture_sequence;return result;
+            result->serial=++impl->frame_count;result->presentation_serial=capture_sequence;
+            apply_native_mouth_weights(*result,impl->current_mouth,impl->mouth_strength,impl->gpu_skinning);++pose_diagnostics.retained_views;return result;
         };
         if(impl->native_mode&&source_buffer_epoch&&!capture_anchor) {
+            outcome.phase="async-capture";
             probe.configure_async(queue,limits);
             snapshot=probe.poll_async(queue);
+            capture_facts.observe(snapshot);
             if(snapshot.asynchronous&&snapshot.source_epoch!=source_buffer_epoch)snapshot={};
             if(snapshot.buffers.empty()&&probe.async_frame_scheduled(queue)) {
                 if(auto held=retain_native_publication_views({},previous,hold)){
-                    impl->publication=std::move(held);return true;
+                    impl->publication=std::move(held);outcome.phase="held-pending";outcome.succeeded=true;return true;
                 }
                 impl->report("Buffered pose pending; no current pose to hold");return false;
             }
         }
         if(snapshot.buffers.empty()) {
+            outcome.phase="sync-capture";
             const auto sampled_ms=GetTickCount64();
             snapshot=probe.readback(queue,limits,false,present.waitSemaphoreCount,present.pWaitSemaphores,&consumed);
             snapshot.source_epoch=source_buffer_epoch;snapshot.captured_milliseconds=sampled_ms;
+            capture_facts.observe(snapshot);
         }
         const auto copied=std::chrono::steady_clock::now();
         if(capture_anchor)probe.capture_snapshot(snapshot,capture_sequence);
         if(impl->native_mode){
+            outcome.phase="view-budget";
             if(snapshot.additional_views.size()>3)throw std::runtime_error("Native view budget exceeded");
             auto children=std::move(snapshot.additional_views);snapshot.additional_views.clear();
             std::vector<GpuSnapshot> views;views.push_back(std::move(snapshot));
             for(auto& child:children){if(!child.additional_views.empty())throw std::runtime_error("Nested native views");views.push_back(std::move(child));}
-            std::shared_ptr<NativeAvatarPublication> root;
+            std::shared_ptr<NativeAvatarPublication> root,staged_root;
             std::set<std::uint64_t> sources;
+            unsigned view_index=0;
             for(auto& view:views){
+                bool candidate_source_valid=false;
                 if(!view.asynchronous)view.source_epoch=source_buffer_epoch;
                 if(!view.captured_milliseconds)view.captured_milliseconds=views.front().captured_milliseconds;
+                capture_facts.observe(view,view_index++);
                 try{
-                    const auto source=reinterpret_cast<std::uintptr_t>(view.buffers.at("instances").binding.buffer);
+                    outcome.phase="view-admission";
+                    const auto source=native_view_instance_source(view);
                     if(!sources.insert(source).second)throw std::runtime_error("Duplicate native view allocation");
                     if(view.source_epoch!=source_buffer_epoch)throw std::runtime_error("Native view source epoch changed");
-                    auto publication=impl->build_native_view(view,++impl->frame_count,capture_sequence);
-                    if(!root)root=std::move(publication);else root->additional_views.push_back(std::move(publication));
-                }catch(const std::exception& error){impl->report("View pose: "+std::string(error.what()));}
+                    outcome.phase="view-pose";
+                    if(impl->model){auto publication=impl->model->build_native_view(view,++impl->frame_count,capture_sequence,
+                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace);
+                        if(!root)root=std::move(publication);else root->additional_views.push_back(std::move(publication));}
+                }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what());impl->report("View pose: "+std::string(error.what()));}
+                if(impl->staged_gpu_ready&&impl->staged_model&&view.source_epoch==source_buffer_epoch){
+                    try{const auto source=native_view_instance_source(view);(void)source;
+                        auto candidate=impl->staged_model->build_native_view(view,++impl->frame_count,capture_sequence,
+                            *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&candidate_source_valid);
+                        if(!staged_root)staged_root=std::move(candidate);else staged_root->additional_views.push_back(std::move(candidate));
+                    }catch(const std::exception& error){if(candidate_source_valid)impl->staged_failure=std::string("Model cannot use the current game pose: ")+error.what();}
+                }
             }
+            impl->staged_publication=std::move(staged_root);
+            outcome.phase="retain-views";
             impl->publication=retain_native_publication_views(root,previous,[&](const auto& view){
                 return sources.count(view->source_instances)?std::shared_ptr<NativeAvatarPublication>{}:hold(view);
             });
@@ -705,8 +823,9 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
                 for(auto value:impl->timings)detail+=std::to_string(value/impl->native_timing_count)+",";
                 log_event(detail);impl->timings={};impl->native_timing_count=0;}
             if(impl->frame_count<=4||impl->frame_count%300==0)log_event("avatar.native-pose-published count="+std::to_string(impl->frame_count)+" views="+std::to_string(1+impl->publication->additional_views.size()));
-            impl->last_error.clear();return true;
+            impl->last_error.clear();outcome.succeeded=true;return true;
         }
+        if(!impl->model)return false;
         const auto frame=impl->bridge->read_player_frame(snapshot);if(!frame){impl->report(frame.error);return false;}
         const auto identified=std::chrono::steady_clock::now();
         if(!impl->native_mode) {
@@ -716,10 +835,10 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
             impl->replace_scene_depth(depth);
         }
         vrm::RetargetOptions options;options.align_rest_directions=true;
-        if(impl->avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
-        options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=impl->avatar.nodes[impl->avatar.humanoid.at("head")].world[13];
-        auto pose=impl->retarget_pose(frame.source_pose,options);if(!pose){impl->report("Retarget: "+pose.error);return false;}
-        impl->apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height);
+        if(impl->model->avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+        options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=impl->model->avatar.nodes[impl->model->avatar.humanoid.at("head")].world[13];
+        auto pose=impl->model->retarget_pose(frame.source_pose,options);if(!pose){impl->report("Retarget: "+pose.error);return false;}
+        impl->model->apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height);
         const auto posed=std::chrono::steady_clock::now();
 
         auto rendering_present=present;
@@ -730,10 +849,21 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
         const std::array<double,5> elapsed{ms(started,finished),ms(started,copied),ms(copied,identified),ms(identified,posed),ms(posed,finished)};
         for(std::size_t i=0;i<elapsed.size();++i)impl->timings[i]+=elapsed[i];
         ++impl->frame_count;if(impl->frame_count==1||impl->frame_count%300==0)log_event("avatar.frame-rendered count="+std::to_string(impl->frame_count)+" source-joints="+std::to_string(frame.observed_joint_count)+" parts="+std::to_string(frame.parts.size()));
-        impl->player_trace.sample(impl->frame_count,frame,pose,impl->avatar);
+        impl->player_trace.sample(impl->frame_count,frame,pose,impl->model->avatar);
         if(impl->frame_count%300==0){std::string detail="avatar.timing-ms total,readback,identify,retarget,render=";for(auto value:impl->timings)detail+=std::to_string(value/300)+",";log_event(detail);impl->timings={};}
         impl->last_error.clear();return true;
+        }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what());impl->report(error.what());impl->active=false;return false;}
+        catch(...){pose_diagnostics.record(capture_facts,outcome.phase,"Unknown renderer failure");impl->report("Unknown renderer failure");impl->active=false;return false;}
     }catch(const std::exception& error){impl->report(error.what());impl->active=false;return false;}catch(...){impl->report("Unknown renderer failure");impl->active=false;return false;}
+}
+ModMouthSupport AvatarRenderer::mouth_support()const noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);
+        if(!impl->active||!impl->model||!impl->model->avatar.vertex_count)return ModMouthSupport::NoAvatar;
+        if(!impl->native_mode||!impl->gpu_skinning)return ModMouthSupport::Unavailable;
+        if(!impl->model->avatar.mouth)return ModMouthSupport::NoShapes;
+        if(impl->model->native_skin_asset&&!impl->model->native_skin_asset->mouth)return ModMouthSupport::Unavailable;
+        return impl->model->avatar.mouth->available==31?ModMouthSupport::Ready:ModMouthSupport::Partial;
+    }catch(...){return ModMouthSupport::Unavailable;}
 }
 void AvatarRenderer::native_image_destroyed(VkImage image) noexcept {
     try {

@@ -1,6 +1,8 @@
 #pragma once
 #include "native_state.hpp"
 #include "native_publication.hpp"
+#include "avatar_service.hpp"
+#include "native_avatar_assets.hpp"
 #include <vulkan/vk_layer.h>
 #include <filesystem>
 #include <mutex>
@@ -33,6 +35,7 @@ public:
     NativeClipPipelines* clipping() noexcept;
     NativeBufferMemory* buffer_memory() noexcept;
     NativeImageMemory* image_memory() noexcept;
+    bool mouth_gpu_unavailable()const noexcept;
     // Host source construction and native destroy/free use the same mutex.
     // try_only is for nonblocking coordination; the ordinary hook waits.
     std::unique_lock<std::mutex> native_source_guard(bool try_only=false);
@@ -40,6 +43,8 @@ public:
     void test_owner(std::shared_ptr<const NativeBackendTestOwner>) noexcept;
 #endif
     void publish(VkQueue,std::uint32_t family,std::shared_ptr<const NativeAvatarPublication>,std::uint64_t source_buffer_epoch=0)noexcept;
+    NativeAvatarUploadState prepare_model(VkQueue,std::uint32_t,const AvatarCandidatePtr&)noexcept;
+    bool activate_model(const AvatarCandidate&,bool(*)(void*,std::uint64_t)noexcept,void*)noexcept;
     void pipeline_layout_created(VkPipelineLayout,const VkPipelineLayoutCreateInfo&)noexcept;
     void pipeline_layout_destroyed(VkPipelineLayout)noexcept;
     void command_begin(VkCommandBuffer,const VkCommandBufferBeginInfo&)noexcept;

@@ -1,0 +1,40 @@
+{
+  "nativeSdkVersion": "29.0.0",
+  "dllVersion": "1.61.0",
+  "nativeDownload": "https://securecdn-den2-1.oculus.com/binaries/download/?id=4458030927545142",
+  "nativeArchiveSha256": "e9fd4c39b877a57837c855f03e1c2ca22e1681bb503c3593eec2cbce5e8e3e0d",
+  "bindingDownload": "https://securecdn-den2-1.oculus.com/binaries/download/?id=3760833650692932",
+  "bindingArchiveSha256": "c706de1f3ab449fff438a59ee441842b08edb47d7a0a8312bff23db65883b280",
+  "documentation": "https://developers.meta.com/vr/documentation/native/audio-ovrlipsync-native/",
+  "license": "See LICENSE.txt, sdk-license.txt and audio-license.txt; separate proprietary SDK license, not project MIT.",
+  "files": [
+    {
+      "path": "audio-license.txt",
+      "sha256": "288d5e2e46259be33e4699c2e45ab90f806ad2bba9e0e6de5fd5f68e58ec3890"
+    },
+    {
+      "path": "LICENSE.txt",
+      "sha256": "8f7309a2e328e1ad5e2f96af63cbd9b9303b6dfc39f4ea66fcef432e1360ede3"
+    },
+    {
+      "path": "OVRLipSync.cs",
+      "sha256": "e3fcb5e1721c93870485d1b7938bfb41328a28cc2f73b1cff2bbc88f84ab8be1"
+    },
+    {
+      "path": "OVRLipSync.h",
+      "sha256": "6d91a06861b03f2b441d0becd4e9c1343563a9613e0531fa9d7ee81060bbdd43"
+    },
+    {
+      "path": "sdk-license.txt",
+      "sha256": "0149e52ba5cde59e6894684f2d8611fddfbd53e189890bb167b5d0a9bb9825a2"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.txt",
+      "sha256": "0a094d608394381aded4ef2449815e89694eccbdce3188017013db4d89ea22bd"
+    },
+    {
+      "path": "Win64/OVRLipSync.dll",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7"
+    }
+  ]
+}

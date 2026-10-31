@@ -1,3 +1,9 @@
+## 0.2.0 source and runtime
+
+Before running the full developer suite, manually acquire the external public speech test input described in [tests/fixtures/README.md](tests/fixtures/README.md). The audio is not redistributed in GitHub source or the player ZIP. Its provenance, MIT license and required SHA-256 are supplied; the SDK test checks the hash before use.
+
+Build the runtime with `build.ps1 -Target Bridge -PortableRelease`. Set the compiler, Vulkan-header and DXC paths for your local toolchain. Runtime and release source pins in BUILD-INFO.json identify exact bytes; no private development paths or state are required. The official Oculus LipSync Windows DLL is obtained separately using vendor/oculus-lipsync/PROVENANCE.json and its supplied license terms; it is distributed in the player ZIP with its notices. Do not replace it with an unverified download.
+
 # Building EnshroudedVRM
 
 Original code is MIT, Copyright (c) 2026 lightnill. Retain LICENSE and the

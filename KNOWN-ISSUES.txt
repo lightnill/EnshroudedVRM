@@ -1,3 +1,8 @@
+0.2.0: Only the local avatar is replaced. Multiplayer synchronization is not implemented.
+Game voice may be inactive in Single Player; choose Local microphone for offline lip sync.
+A short avatar fallback may still occur around focus changes or stale game pose data.
+The CMD/PowerShell bootstrap remains; F8 controls models, voice and appearance.
+
 Preview coverage and limitations
 
 Windows 10/11 x64 and the validated Steam executable only:

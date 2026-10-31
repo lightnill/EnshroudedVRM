@@ -288,7 +288,7 @@ bool capture_native_owner(const NativeOwnerMemory& memory,const NativeOwnerImage
 }
 bool revalidate_native_owner(const NativeOwnerMemory& memory,NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
     if(stats){*stats={};stats->phase=Phase::submission_verify;stats->failure_location=Location::validation;stats->guard_total=candidate.guards.size();}
-    why.clear();try{need(image_identity(candidate.image)&&candidate.native_buffer&&candidate.native_buffer_bytes&&candidate.entity&&candidate.entity_id&&!candidate.models.empty()&&candidate.models.size()<=24&&!candidate.guards.empty(),"invalid native owner candidate");Reader m(memory,limits,stats);m.verify(candidate.guards);return true;
+    why.clear();try{need(image_identity(candidate.image)&&candidate.native_buffer&&candidate.native_buffer_bytes&&candidate.entity&&candidate.entity_id&&!candidate.models.empty()&&candidate.models.size()<=24&&!candidate.guards.empty(),"invalid native owner candidate");Reader m(memory,limits,stats);m.verify(candidate.guards.view());return true;
     }catch(const Rejected& failure){reason_set(why,failure.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"owner revalidation allocation/internal failure");}candidate={};return false;
 }
 namespace {

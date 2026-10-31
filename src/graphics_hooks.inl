@@ -6,6 +6,7 @@
     X(vkDestroyImageView) \
     X(vkCreateSwapchainKHR) \
     X(vkDestroySwapchainKHR) \
+    X(vkAcquireNextImageKHR) X(vkAcquireNextImage2KHR) \
     X(vkCreateRenderPass) \
     X(vkCreateRenderPass2) \
     X(vkCreateRenderPass2KHR) \
@@ -111,15 +112,33 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSw
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
     const auto result = next(device, info, allocator, swapchain);
     if (result == VK_SUCCESS) observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.swapchain_created(*swapchain, *info); });
+    if(result==VK_SUCCESS&&info&&swapchain&&state->overlay&&state->graphics){
+        const bool eligible=info->imageArrayLayers==1&&!(info->flags&VK_SWAPCHAIN_CREATE_PROTECTED_BIT_KHR)&&info->imageColorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR&&info->preTransform==VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+        state->overlay->swapchain_created(state->graphics->swapchain(*swapchain),surface_window(state->parent,info->surface),eligible);
+    }
     return result;
 }
 EVRM_EXPORT void VKAPI_CALL vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* allocator) {
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkDestroySwapchainKHR>(state, "vkDestroySwapchainKHR");
     if (!next) return;
+    AllQueueLocks queues(state);
+    if(state->overlay)state->overlay->swapchain_destroyed(swapchain);
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.swapchain_destroyed(swapchain); });
     if (state->avatar) state->avatar->native_swapchain_destroyed(swapchain);
     next(device, swapchain, allocator);
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkAcquireNextImageKHR(VkDevice device,VkSwapchainKHR swapchain,uint64_t timeout,VkSemaphore semaphore,VkFence fence,uint32_t* index){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkAcquireNextImageKHR>(state,"vkAcquireNextImageKHR");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto result=next(device,swapchain,timeout,semaphore,fence,index);
+    if(state->overlay&&index&&(result==VK_SUCCESS||result==VK_SUBOPTIMAL_KHR))state->overlay->acquired(swapchain,*index,result);
+    return result;
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkAcquireNextImage2KHR(VkDevice device,const VkAcquireNextImageInfoKHR* info,uint32_t* index){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkAcquireNextImage2KHR>(state,"vkAcquireNextImage2KHR");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto result=next(device,info,index);
+    if(state->overlay&&info&&info->deviceMask==1&&index&&(result==VK_SUCCESS||result==VK_SUBOPTIMAL_KHR))state->overlay->acquired(info->swapchain,*index,result);
+    return result;
 }
 EVRM_EXPORT VkResult VKAPI_CALL vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo* info, const VkAllocationCallbacks* allocator, VkRenderPass* pass) {
     const auto state = device_state(device);

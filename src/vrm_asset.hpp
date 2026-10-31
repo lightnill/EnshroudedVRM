@@ -1,9 +1,11 @@
 #pragma once
+#include "mouth_data.hpp"
 
 #include <array>
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -95,6 +97,8 @@ struct Avatar {
     std::vector<SpringCollider> spring_colliders;
     std::vector<SpringJoint> spring_joints;
     std::map<std::string, int> humanoid;
+    std::shared_ptr<const MouthData> mouth;
+    std::string mouth_limitation="No mouth shapes";
     std::size_t vertex_count = 0, triangle_count = 0;
 };
 
@@ -113,6 +117,8 @@ struct ImportLimits {
     std::size_t vertices = 2'000'000, indices = 6'000'000;
     // Bounded original storage validation, separate from retained render data.
     std::size_t source_vertex_visits = 16'000'000;
+    std::size_t mouth_bindings=max_mouth_bindings,mouth_records=max_mouth_records;
+    std::size_t mouth_source_vertex_visits=max_mouth_source_visits,mouth_ranges=max_mouth_ranges;
     std::size_t nodes = 2048, joints_per_skin = 512;
     int image_dimension = 8192;
 };

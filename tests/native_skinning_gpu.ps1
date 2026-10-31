@@ -23,7 +23,7 @@ foreach($taskStage in @(@('cs_skin','native_skinning.comp.spv'),@('cs_finalize',
     & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' $taskStage[0] (Join-Path $taskProject 'shaders/native_skinning.hlsl') '-Fo' (Join-Path $OutputDirectory $taskStage[1])
     if($LASTEXITCODE -ne 0){throw 'Skin shader compilation failed'}
 }
-$taskSources=@('native_skinning_gpu.cpp','native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp')|ForEach-Object{Join-Path $taskProject ('src/'+$_)}
+$taskSources=@('native_skinning_gpu.cpp','native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp','mouth_deformation.cpp')|ForEach-Object{Join-Path $taskProject ('src/'+$_)}
 $taskFixtures=if($Fixture -eq 'GPU'){@('native_skinning_gpu')}elseif($Fixture -eq 'Reuse'){@('native_skinning_gpu_reuse')}else{@('native_skinning_gpu','native_skinning_gpu_reuse')}
 foreach($taskName in $taskFixtures){
     $taskExe=Join-Path $OutputDirectory ($taskName+'.exe')

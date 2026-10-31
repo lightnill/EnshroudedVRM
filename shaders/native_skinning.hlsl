@@ -7,7 +7,11 @@
 [[vk::binding(4,0)]] RWByteAddressBuffer outputVertices;
 [[vk::binding(5,0)]] RWByteAddressBuffer result;
 [[vk::binding(6,0)]] RWByteAddressBuffer preparedFrame;
-struct Control { uint vertices, batchCount, matrixCount, useHistory; };
+struct Control {
+    uint vertices,batchCount,matrixCount,useHistory;
+    uint mouthLookup,mouthRecords,mouthRecordCount,mouthEnabled;
+    float4 mouthWeights0,mouthWeights1;
+};
 // Private UBO avoids disturbing the game's push-constant state.
 [[vk::binding(7,0)]] ConstantBuffer<Control> control;
 
@@ -43,6 +47,28 @@ bool inverseTransposeDirection(Affine m,float3 n,out float3 normal){
     normal=normalize(cofactor)*(determinant<0?-1.f:1.f);
     return finite3(normal);
 }
+bool deformMouth(uint vertex,uint sourceBytes,inout float3 position,inout float3 normal){
+    if(control.mouthEnabled==0u)return true;
+    if(control.mouthEnabled!=1u||control.mouthLookup!=control.vertices*64u||control.mouthRecordCount==0u||control.mouthRecordCount>98304u)return false;
+    uint expectedRecords=(control.mouthLookup+control.vertices*4u+15u)&~15u;
+    if(control.mouthRecords!=expectedRecords||control.mouthRecords>sourceBytes||
+       control.mouthRecordCount>(sourceBytes-control.mouthRecords)/128u||sourceBytes-control.mouthRecords!=control.mouthRecordCount*128u)return false;
+    float weights[5]={control.mouthWeights0.x,control.mouthWeights0.y,control.mouthWeights0.z,control.mouthWeights0.w,control.mouthWeights1.x};
+    [unroll]for(uint n=0;n<5u;++n)if(!isfinite(weights[n])||weights[n]<0.f||weights[n]>1.f)return false;
+    uint record=sources.Load(control.mouthLookup+vertex*4u);
+    if(record==0xffffffffu)return true;
+    if(record>=control.mouthRecordCount)return false;
+    uint at=control.mouthRecords+record*128u;float3 baseNormal=normal;
+    [unroll]for(uint n=0;n<5u;++n){
+        float3 delta=asfloat(sources.Load3(at+n*12u)),normalDelta=asfloat(sources.Load3(at+60u+n*12u));
+        if(!finite3(delta)||!finite3(normalDelta))return false;
+        position+=delta*weights[n];normal+=normalDelta*weights[n];
+    }
+    if(!finite3(position)||!finite3(normal))return false;
+    float scale=largest(normal);
+    normal=scale>0.f?normalize(normal/scale):baseNormal;
+    return finite3(normal);
+}
 [numthreads(64,1,1)]
 void cs_skin(uint3 thread:SV_DispatchThreadID){
     uint i=thread.x;if(i>=control.vertices)return;
@@ -54,11 +80,16 @@ void cs_skin(uint3 thread:SV_DispatchThreadID){
     history.GetDimensions(historyBytes);outputVertices.GetDimensions(outputBytes);
     if(control.vertices>2000000u||i>=sourceBytes/64u||i>=outputBytes/44u||
         control.batchCount>batchBytes/80u||control.matrixCount>paletteBytes/64u){reject(1);return;}
+    // Appended data never counts as additional immutable source vertices, even
+    // when the mouth is disabled and no optional lookup/delta read is needed.
+    if((control.mouthLookup!=0u&&control.mouthLookup!=control.vertices*64u)||
+       (control.mouthLookup==0u&&sourceBytes!=control.vertices*64u)){reject(256);return;}
     uint at=i*64u,batch=sources.Load(at+56),flags=sources.Load(at+60);
     if(batch>=control.batchCount||flags>1u){reject(2);return;}
     float3 position=asfloat(sources.Load3(at)),normal=asfloat(sources.Load3(at+12));
     float2 uv=asfloat(sources.Load2(at+24));
     if(!finite3(position)||!finite3(normal)||!all(isfinite(uv))){reject(4);return;}
+    if(!deformMouth(i,sourceBytes,position,normal)){reject(256);return;}
     Affine world;if(!loadAffine(batches,batch*80u,world)){reject(8);return;}
     Affine transform=world;
     if(flags!=0){

@@ -1,0 +1,1719 @@
+{
+  "version": "0.2.0",
+  "recordedAtUtc": "2026-10-31T01:09:01.419363+00:00",
+  "scope": "44 extracted player-package files and the player ZIP; generated evidence/checksum attachments are outside this table",
+  "targets": 45,
+  "newFileSubmissions": 17,
+  "existingExactHashReports": 28,
+  "maliciousDetections": 0,
+  "suspiciousDetections": 0,
+  "bitdefenderIssues": 0,
+  "bitdefenderUnscannedObjects": 0,
+  "privateAssetsUploaded": false,
+  "caveats": [
+    "Zero detections are not a guarantee of safety.",
+    "Unsupported engines, failures and timeouts are coverage gaps, not clean results.",
+    "Existing reports retain their original analysis dates.",
+    "The ZIP analysis-operation endpoint returned temporary503; its current exact-file report supplies the stated results/date."
+  ],
+  "files": [
+    {
+      "path": "Avatars/README.txt",
+      "sha256": "ff84e739107995d8b0113a6a3ce9473390b3ddf5df3c914bf2e99c7113407f99",
+      "bytes": 382,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:56.919611+00:00",
+        "endedAtUtc": "2026-10-31T00:55:57.211612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-28T04:42:46Z",
+        "retrievedAt": "2026-10-31T00:40:11.404659+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/ff84e739107995d8b0113a6a3ce9473390b3ddf5df3c914bf2e99c7113407f99",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "BUILD-INFO.json",
+      "sha256": "7190858d4df841bb97045712c629f6b1943dc2cde789bbe2bcd02acce6d3263e",
+      "bytes": 40286,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:57.216612+00:00",
+        "endedAtUtc": "2026-10-31T00:55:57.508112+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:57:51+00:00",
+        "retrievedAt": "2026-10-31T01:03:16.568350+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/7190858d4df841bb97045712c629f6b1943dc2cde789bbe2bcd02acce6d3263e",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "Compatibility/catalog.json",
+      "sha256": "e5fde08eedd6baba93c9a201b151db64eaf9449d527ba2ced7512521142716ba",
+      "bytes": 5479664,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:57.517111+00:00",
+        "endedAtUtc": "2026-10-31T00:55:57.915612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:53Z",
+        "retrievedAt": "2026-10-31T00:40:13.863501+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/e5fde08eedd6baba93c9a201b151db64eaf9449d527ba2ced7512521142716ba",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Compatibility/profile.json",
+      "sha256": "407ab56c696ac97c4b50cd6f1c8824097981c8a50a200b1e0ebd94dc1c6f455c",
+      "bytes": 41737,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:57.926111+00:00",
+        "endedAtUtc": "2026-10-31T00:55:58.212612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:56Z",
+        "retrievedAt": "2026-10-31T00:40:12.898688+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/407ab56c696ac97c4b50cd6f1c8824097981c8a50a200b1e0ebd94dc1c6f455c",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "KNOWN-ISSUES.txt",
+      "sha256": "687c54a2049446b21ba253bc438f5146944533988683abd46ed4fc48b32c7846",
+      "bytes": 6992,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:58.217612+00:00",
+        "endedAtUtc": "2026-10-31T00:55:58.512113+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:58:22+00:00",
+        "retrievedAt": "2026-10-31T01:03:58.975646+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/687c54a2049446b21ba253bc438f5146944533988683abd46ed4fc48b32c7846",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "Launch-EnshroudedVRM.cmd",
+      "sha256": "44e84e6eabd724689a7601de5db099e14e719ba8473e33fa33e59adb5797d977",
+      "bytes": 592,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:58.518613+00:00",
+        "endedAtUtc": "2026-10-31T00:55:58.815112+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:58:30+00:00",
+        "retrievedAt": "2026-10-31T01:03:55.901657+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/44e84e6eabd724689a7601de5db099e14e719ba8473e33fa33e59adb5797d977",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "Launch-EnshroudedVRM.ps1",
+      "sha256": "1d61edbad8ad0cd8791d94878f9c9f35ea94ca71782b4a6a6ab8acf9172a4d4c",
+      "bytes": 5017,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:58.820612+00:00",
+        "endedAtUtc": "2026-10-31T00:55:59.134612+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:58:44+00:00",
+        "retrievedAt": "2026-10-31T01:03:56.759688+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 58,
+          "harmless": 0,
+          "timeout": 3,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/1d61edbad8ad0cd8791d94878f9c9f35ea94ca71782b4a6a6ab8acf9172a4d4c",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "launcher_core.psm1",
+      "sha256": "23845c84e5626ab01c1194fd53eccafcf5e8c59f605069a79e5e2699ab3e4b31",
+      "bytes": 40228,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:59.141113+00:00",
+        "endedAtUtc": "2026-10-31T00:55:59.489611+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:58:53+00:00",
+        "retrievedAt": "2026-10-31T01:03:58.144008+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/23845c84e5626ab01c1194fd53eccafcf5e8c59f605069a79e5e2699ab3e4b31",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "c8bcc4c0c6954eb01800e0569421e644c57f93376a92182bb18c62537e35bcb1",
+      "bytes": 1087,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:59.495611+00:00",
+        "endedAtUtc": "2026-10-31T00:55:59.780112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-28T04:42:45Z",
+        "retrievedAt": "2026-10-31T00:40:43.196975+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/c8bcc4c0c6954eb01800e0569421e644c57f93376a92182bb18c62537e35bcb1",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "MOD-SETTINGS.txt",
+      "sha256": "ebe646815790544665c230ddaad69fe5de715f1bf8b88885bf5798fd9e93f6cb",
+      "bytes": 721,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:55:59.787111+00:00",
+        "endedAtUtc": "2026-10-31T00:56:00.076614+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:59:03+00:00",
+        "retrievedAt": "2026-10-31T01:04:04.156243+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/ebe646815790544665c230ddaad69fe5de715f1bf8b88885bf5798fd9e93f6cb",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "notices/Dear-ImGui-fonts.txt",
+      "sha256": "6aaa921092f06c31d3569d2437ab4f69c67f31bd49feca55914ae379201e2957",
+      "bytes": 15127,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:00.083612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:00.375611+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:59:11+00:00",
+        "retrievedAt": "2026-10-31T01:04:01.792145+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/6aaa921092f06c31d3569d2437ab4f69c67f31bd49feca55914ae379201e2957",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "notices/GCC-RUNTIME-EXCEPTION.txt",
+      "sha256": "90077ba306ee9d8ed966cab1b4abd69b6e728acf08777283cc50283cd9503fa6",
+      "bytes": 3397,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:00.382111+00:00",
+        "endedAtUtc": "2026-10-31T00:56:00.672611+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2024-08-06T22:00:22Z",
+        "retrievedAt": "2026-10-31T00:40:41.551468+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 65,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 13
+        },
+        "coverage": {
+          "engines": 79,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/90077ba306ee9d8ed966cab1b4abd69b6e728acf08777283cc50283cd9503fa6",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/GPL-3.0.txt",
+      "sha256": "81cbae84a29ce7e770bf2bc7b178e50bda0ce8de6067aba661b0bc7b05b562f8",
+      "bytes": 35821,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:00.678611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:00.970112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-24T16:55:39Z",
+        "retrievedAt": "2026-10-31T00:40:44.767351+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/81cbae84a29ce7e770bf2bc7b178e50bda0ce8de6067aba661b0bc7b05b562f8",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/LGPL-2.1.txt",
+      "sha256": "090f8eb6ba63e72887c1f89b009fb1656cfda02d83b6e9805b20468520a5d77f",
+      "bytes": 26936,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:00.978112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:01.273112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-09-11T22:53:59Z",
+        "retrievedAt": "2026-10-31T00:40:47.311541+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 59,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 73,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/090f8eb6ba63e72887c1f89b009fb1656cfda02d83b6e9805b20468520a5d77f",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/MinGW-w64-runtime.txt",
+      "sha256": "8211dccca73dd4078d50ce7fa535b329f1c13edf6b54aa590131549f880ca0b8",
+      "bytes": 15403,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:01.280112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:01.566612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-17T14:26:36Z",
+        "retrievedAt": "2026-10-31T00:40:45.783084+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/8211dccca73dd4078d50ce7fa535b329f1c13edf6b54aa590131549f880ca0b8",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/MinHook-BSD.txt",
+      "sha256": "d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8",
+      "bytes": 4365,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:01.574112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:01.860112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-24T01:45:22Z",
+        "retrievedAt": "2026-10-31T00:40:49.950528+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/nlohmann-json-MIT.txt",
+      "sha256": "417d1dc998f6ee3d40db4e38ae909ee6c28259d36e733fb118ec84acba775c39",
+      "bytes": 1421,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:01.868112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:02.153612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-26T22:03:12Z",
+        "retrievedAt": "2026-10-31T00:40:54.784408+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/417d1dc998f6ee3d40db4e38ae909ee6c28259d36e733fb118ec84acba775c39",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/Oculus-LipSync.txt",
+      "sha256": "860d2843070e9cf4a75b27d6efb3b3952be96fd0d3c72c840187becd95da7b03",
+      "bytes": 75521,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:02.161113+00:00",
+        "endedAtUtc": "2026-10-31T00:56:02.454112+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:59:21+00:00",
+        "retrievedAt": "2026-10-31T01:04:00.639021+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/860d2843070e9cf4a75b27d6efb3b3952be96fd0d3c72c840187becd95da7b03",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "notices/ShroudForge-MIT.txt",
+      "sha256": "6e92f324737f2638f7ca8440aaa08c45897d4c32ea07c68a853ea46d560f4a0b",
+      "bytes": 1089,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:02.461112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:02.745612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-26T22:03:13Z",
+        "retrievedAt": "2026-10-31T00:40:53.770287+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/6e92f324737f2638f7ca8440aaa08c45897d4c32ea07c68a853ea46d560f4a0b",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/stb-image-MIT.txt",
+      "sha256": "4be6a99e816a7e197fcad539240c09713d4c887967eb81a07e52b47ecc33f873",
+      "bytes": 1082,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:02.754112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:03.042612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2024-07-10T14:18:37Z",
+        "retrievedAt": "2026-10-31T00:40:51.398764+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 62,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 3,
+          "type-unsupported": 13
+        },
+        "coverage": {
+          "engines": 78,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/4be6a99e816a7e197fcad539240c09713d4c887967eb81a07e52b47ecc33f873",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/TinyGLTF-MIT.txt",
+      "sha256": "95d94609b88df9d8d162e01b3f985c226c8d612b003ef85de74c5f45a6f5327b",
+      "bytes": 1133,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:03.050613+00:00",
+        "endedAtUtc": "2026-10-31T00:56:03.338112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2022-11-11T09:20:45Z",
+        "retrievedAt": "2026-10-31T00:40:57.219697+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 15
+        },
+        "coverage": {
+          "engines": 76,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/95d94609b88df9d8d162e01b3f985c226c8d612b003ef85de74c5f45a6f5327b",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "notices/Vulkan-Headers-MIT.txt",
+      "sha256": "aeaee01d2c00f0a9bef734ea415aaec662d1ed615970bf50eeb6ebeb2897b9f7",
+      "bytes": 1101,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:03.347111+00:00",
+        "endedAtUtc": "2026-10-31T00:56:03.640112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-26T22:03:13Z",
+        "retrievedAt": "2026-10-31T00:40:59.715100+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 59,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 1,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/aeaee01d2c00f0a9bef734ea415aaec662d1ed615970bf50eeb6ebeb2897b9f7",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "README.txt",
+      "sha256": "81acf14b57f90c421b43142c105c8a2406cf05a4ad228c7d07a0c01905e6d3d1",
+      "bytes": 5061,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:03.647612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:03.939612+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:59:29+00:00",
+        "retrievedAt": "2026-10-31T01:04:03.164949+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 58,
+          "harmless": 0,
+          "timeout": 3,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/81acf14b57f90c421b43142c105c8a2406cf05a4ad228c7d07a0c01905e6d3d1",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "release-manifest.json",
+      "sha256": "ac3d839c71faab6a9d51ea0236115a9bf0ae0b2d2d0c5e43e7b978136994a8b4",
+      "bytes": 6189,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:03.947112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:04.233111+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:59:36+00:00",
+        "retrievedAt": "2026-10-31T01:04:06.864998+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/ac3d839c71faab6a9d51ea0236115a9bf0ae0b2d2d0c5e43e7b978136994a8b4",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "RELEASE-NOTES.md",
+      "sha256": "a4e9ad9bed41d7e177a2fced46f7401a13e74d5c9959e46ff5ae975fdaf2f4f7",
+      "bytes": 1797,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:04.241613+00:00",
+        "endedAtUtc": "2026-10-31T00:56:04.524611+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T00:59:44+00:00",
+        "retrievedAt": "2026-10-31T01:04:08.178266+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/a4e9ad9bed41d7e177a2fced46f7401a13e74d5c9959e46ff5ae975fdaf2f4f7",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "Runtime/enshrouded_vrm_layer.json",
+      "sha256": "abda7999811e9d1bc7ee39194fb15cfcd7dda3129a33dffc57052e5d372f609b",
+      "bytes": 301,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:04.533111+00:00",
+        "endedAtUtc": "2026-10-31T00:56:04.819613+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:59Z",
+        "retrievedAt": "2026-10-31T00:41:05.125171+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/abda7999811e9d1bc7ee39194fb15cfcd7dda3129a33dffc57052e5d372f609b",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/enshrouded_vrm_runtime.dll",
+      "sha256": "910ab2ccec93f3a386e2eca785883f061d8ece94c784cbfc2494ba1d56e52318",
+      "bytes": 9264699,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:04.833112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:05.177613+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T01:02:07+00:00",
+        "retrievedAt": "2026-10-31T01:04:05.968360+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 71,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 4
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/910ab2ccec93f3a386e2eca785883f061d8ece94c784cbfc2494ba1d56e52318",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "Runtime/OVRLipSync.dll",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "bytes": 40471800,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:05.215612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:05.519612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-09-07T19:12:50Z",
+        "retrievedAt": "2026-10-31T00:30:38.701424+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 70,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 4
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar.frag.spv",
+      "sha256": "704fdc4847962217d246760ad3117263e59f5c1e5e93a98d1546a4179899c5bb",
+      "bytes": 3824,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:05.562111+00:00",
+        "endedAtUtc": "2026-10-31T00:56:05.851611+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:51:34Z",
+        "retrievedAt": "2026-10-31T00:41:03.867233+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/704fdc4847962217d246760ad3117263e59f5c1e5e93a98d1546a4179899c5bb",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar.vert.spv",
+      "sha256": "f35c23585ef3baf3b01dbe7bce4c73a2af844f73c198a3f4d4779994466c718a",
+      "bytes": 1476,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:05.861611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:06.149112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:52:19Z",
+        "retrievedAt": "2026-10-31T00:41:07.735042+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 58,
+          "harmless": 0,
+          "timeout": 2,
+          "confirmed-timeout": 1,
+          "failure": 1,
+          "type-unsupported": 13
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "failure",
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/f35c23585ef3baf3b01dbe7bce4c73a2af844f73c198a3f4d4779994466c718a",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar_native.pull.gbuffer.spv",
+      "sha256": "1b327877445b6e17cd0a6e9838373c8bc7b22f12991c154e764abb5bef850e33",
+      "bytes": 8444,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:06.157611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:06.444113+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:52:22Z",
+        "retrievedAt": "2026-10-31T00:41:06.515305+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/1b327877445b6e17cd0a6e9838373c8bc7b22f12991c154e764abb5bef850e33",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar_native.pull.oit.spv",
+      "sha256": "18468e1d8b1795bcb80c44555e654f7476df3aee6a9b9a69a2aa3d54cdbef097",
+      "bytes": 7892,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:06.455113+00:00",
+        "endedAtUtc": "2026-10-31T00:56:06.740612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:52:25Z",
+        "retrievedAt": "2026-10-31T00:41:10.297210+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 58,
+          "harmless": 0,
+          "timeout": 2,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/18468e1d8b1795bcb80c44555e654f7476df3aee6a9b9a69a2aa3d54cdbef097",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar_native.pull.vert.spv",
+      "sha256": "16c0709e1a3e5e1801b8e43cc0821a37d38b0d74af7b6087fb1477baba03072b",
+      "bytes": 4940,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:06.749611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:07.036112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:53:24Z",
+        "retrievedAt": "2026-10-31T00:41:08.914890+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 53,
+          "harmless": 0,
+          "timeout": 7,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/16c0709e1a3e5e1801b8e43cc0821a37d38b0d74af7b6087fb1477baba03072b",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar_native.pull.visibility.spv",
+      "sha256": "29338d2b9632841ba81c766172ba496e0b55785ac0ec16fed12f7f34d86900dd",
+      "bytes": 2576,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:07.046112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:07.333611+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:53:56Z",
+        "retrievedAt": "2026-10-31T00:41:14.252427+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/29338d2b9632841ba81c766172ba496e0b55785ac0ec16fed12f7f34d86900dd",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar_native.shadow.frag.spv",
+      "sha256": "4e66ffdd9056442ecaf63a8f26ddffdcd4f4e94313b312470295819a46898977",
+      "bytes": 2800,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:07.344611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:07.630112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:53:59Z",
+        "retrievedAt": "2026-10-31T00:41:12.895574+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 59,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 1,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/4e66ffdd9056442ecaf63a8f26ddffdcd4f4e94313b312470295819a46898977",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/avatar_native.shadow.vert.spv",
+      "sha256": "dad8cc89dd79ae76a9d4531821f80c0cda4ed2bd241e4f97c825f3c7834647a5",
+      "bytes": 4844,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:07.639611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:07.926612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:02Z",
+        "retrievedAt": "2026-10-31T00:41:15.005083+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/dad8cc89dd79ae76a9d4531821f80c0cda4ed2bd241e4f97c825f3c7834647a5",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/native_menu_prepare.comp.spv",
+      "sha256": "91a24b1aae443d60f399240eb51d198673dd29edeb903ab837ba8d4174a9416c",
+      "bytes": 411436,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:07.937612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:08.225612+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:08Z",
+        "retrievedAt": "2026-10-31T00:41:11.841068+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 59,
+          "harmless": 0,
+          "timeout": 1,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/91a24b1aae443d60f399240eb51d198673dd29edeb903ab837ba8d4174a9416c",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/native_prepare.comp.spv",
+      "sha256": "e52c2ce9054abdb66b933a58bb361fe4044e46103b6b9909bafe0096f49795f1",
+      "bytes": 409548,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:08.237612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:08.532112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:20Z",
+        "retrievedAt": "2026-10-31T00:41:18.029049+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/e52c2ce9054abdb66b933a58bb361fe4044e46103b6b9909bafe0096f49795f1",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/native_skinning.comp.spv",
+      "sha256": "e038aa2e119d3e2f82fc881df50ec0102f9d0fa2fc474684e93763e22a2fa619",
+      "bytes": 24496,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:08.542112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:08.828612+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T01:02:12+00:00",
+        "retrievedAt": "2026-10-31T01:04:10.815436+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/e038aa2e119d3e2f82fc881df50ec0102f9d0fa2fc474684e93763e22a2fa619",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "Runtime/shaders/native_skinning.finalize.spv",
+      "sha256": "e8675edd8de96e5ae7a0594ae2bed29aa6650f5cce932bf5edfb7f9d6c7082fd",
+      "bytes": 1148,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:08.839112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:09.129112+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:26Z",
+        "retrievedAt": "2026-10-31T00:41:19.253337+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/e8675edd8de96e5ae7a0594ae2bed29aa6650f5cce932bf5edfb7f9d6c7082fd",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "Runtime/shaders/native_volume_snapshot.comp.spv",
+      "sha256": "a0d207e8e92e3bba89f2f78a63951d178f171479a44f990d49f7b829928d92f3",
+      "bytes": 1460,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:09.140112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:09.424611+00:00"
+      },
+      "virusTotal": {
+        "source": "existing exact-hash report",
+        "analysisDate": "2026-10-27T00:54:32Z",
+        "retrievedAt": "2026-10-31T00:41:17.327697+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 60,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 1,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "confirmed-timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/a0d207e8e92e3bba89f2f78a63951d178f171479a44f990d49f7b829928d92f3",
+        "newSubmission": false
+      }
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "d2da1caed62ff0473b297af3014c14dd556fb944d1da7e7a1bb9b52e4518e2a4",
+      "bytes": 4306,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:09.449112+00:00",
+        "endedAtUtc": "2026-10-31T00:56:09.750112+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T01:02:16+00:00",
+        "retrievedAt": "2026-10-31T01:04:13.243879+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/d2da1caed62ff0473b297af3014c14dd556fb944d1da7e7a1bb9b52e4518e2a4",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "SHA256SUMS.txt",
+      "sha256": "90ee9fc5bc1e85e9c1c9b5c9a7416e831d4dc1e9dcece40c7fa17045db25d381",
+      "bytes": 4099,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:09.761612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:10.052112+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T01:02:20+00:00",
+        "retrievedAt": "2026-10-31T01:04:14.978413+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/90ee9fc5bc1e85e9c1c9b5c9a7416e831d4dc1e9dcece40c7fa17045db25d381",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "b7a95847b169e9b18aa0ef270bc64c8a04e305e02c5be27f13c4eeec2a221680",
+      "bytes": 5211,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:10.061612+00:00",
+        "endedAtUtc": "2026-10-31T00:56:10.350611+00:00"
+      },
+      "virusTotal": {
+        "source": "new registered analysis",
+        "analysisDate": "2026-10-31T01:02:25+00:00",
+        "retrievedAt": "2026-10-31T01:04:13.809853+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 61,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 14
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/b7a95847b169e9b18aa0ef270bc64c8a04e305e02c5be27f13c4eeec2a221680",
+        "newSubmission": true
+      }
+    },
+    {
+      "path": "release-assets/EnshroudedVRM-0.2.0.zip",
+      "sha256": "611d9c6311e222b38f093ad4f9d5befd1da039a8182f36850c7339533b0fcb32",
+      "bytes": 18890841,
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true,
+        "signatureVersion": "7.101757",
+        "startedAtUtc": "2026-10-31T00:56:10.374611+00:00",
+        "endedAtUtc": "2026-10-31T00:56:10.662111+00:00"
+      },
+      "virusTotal": {
+        "source": "new submission; current exact-hash report; operation endpoint returned temporary 503",
+        "analysisDate": "2026-10-31T01:02:43Z",
+        "retrievedAt": "2026-10-31T01:06:24.450218+00:00",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 58,
+          "harmless": 0,
+          "timeout": 10,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 7
+        },
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/611d9c6311e222b38f093ad4f9d5befd1da039a8182f36850c7339533b0fcb32",
+        "newSubmission": true
+      }
+    }
+  ]
+}

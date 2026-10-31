@@ -3,6 +3,7 @@
 #include "native_skinning.hpp"
 #include "tool_grip.hpp"
 #include "secondary_hand_contact.hpp"
+#include "avatar_appearance.hpp"
 #include <memory>
 #include <array>
 
@@ -12,6 +13,8 @@ struct NativeSecondaryContactBaseline {
     std::array<ToolHandCorrection,2> hands;
 };
 struct NativeAvatarPublication {
+    std::shared_ptr<const AvatarAppearance> appearance;
+    vrm::MouthWeights mouth_weights{};
     std::shared_ptr<const vrm::Avatar> asset;
     std::shared_ptr<const NativeAvatarPose> geometry;
     std::shared_ptr<const NativeSkinPose> skinning;
@@ -30,6 +33,15 @@ struct NativeAvatarPublication {
     std::uint64_t secondary_owner=0;
     std::vector<std::shared_ptr<const NativeAvatarPublication>> additional_views;
 };
+inline std::shared_ptr<const NativeAvatarPublication> native_publication_appearance(
+    const std::shared_ptr<const NativeAvatarPublication>& root,const std::shared_ptr<const AvatarAppearance>& appearance){
+    if(!root||root->appearance==appearance)return root;
+    if(root->additional_views.size()>3)return {};
+    auto next=std::make_shared<NativeAvatarPublication>(*root);next->appearance=appearance;next->additional_views.clear();
+    for(const auto& child:root->additional_views){if(!child||!child->additional_views.empty()||child->asset!=root->asset)return {};
+        next->additional_views.push_back(native_publication_appearance(child,appearance));}
+    return next;
+}
 inline std::shared_ptr<const NativeAvatarPublication> native_publication_view(
     const std::shared_ptr<const NativeAvatarPublication>& root,std::uint64_t instances){
     if(!root||root->additional_views.size()>3)return {};

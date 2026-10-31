@@ -10,7 +10,8 @@
     X(vkResetDescriptorPool) X(vkDestroyDescriptorPool) \
     X(vkUpdateDescriptorSets) X(vkCreateDescriptorUpdateTemplate) \
     X(vkDestroyDescriptorUpdateTemplate) X(vkUpdateDescriptorSetWithTemplate) \
-    X(vkCmdBindDescriptorSets) X(vkGetDeviceQueue) X(vkGetDeviceQueue2) X(vkQueueWaitIdle)
+    X(vkCmdBindDescriptorSets) X(vkGetDeviceQueue) X(vkGetDeviceQueue2) X(vkQueueWaitIdle) \
+    X(vkResetFences) X(vkDestroyFence)
 
 EVRM_EXPORT VkResult VKAPI_CALL vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* info,
                                                const VkAllocationCallbacks* allocator, VkBuffer* buffer) {
@@ -275,6 +276,7 @@ EVRM_EXPORT void VKAPI_CALL vkGetDeviceQueue(VkDevice device, uint32_t family, u
     if (queue && *queue) observe(state, [&](evrm::GpuProbe& probe) { probe.queue_observed(*queue, family); });
     if (queue && *queue) {
         queue_mutex(state, *queue);
+        {std::lock_guard<std::mutex> guard(state->queue_table_mutex);state->queue_families[*queue]=family;}
         observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.queue_observed(*queue, family); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().queue_known(*queue, family); });
     }
@@ -287,9 +289,20 @@ EVRM_EXPORT void VKAPI_CALL vkGetDeviceQueue2(VkDevice device, const VkDeviceQue
     if (queue && *queue && !info->flags && !info->pNext) observe(state, [&](evrm::GpuProbe& probe) { probe.queue_observed(*queue, info->queueFamilyIndex); });
     if (queue && *queue) {
         queue_mutex(state, *queue);
+        if(info&&!info->flags&&!info->pNext){std::lock_guard<std::mutex> guard(state->queue_table_mutex);state->queue_families[*queue]=info->queueFamilyIndex;}
         observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.queue_observed(*queue, info->queueFamilyIndex); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().queue_known(*queue, info->queueFamilyIndex); });
     }
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkResetFences(VkDevice device,uint32_t count,const VkFence* fences){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkResetFences>(state,"vkResetFences");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    if(state->overlay&&fences)for(unsigned n=0;n<count;++n)state->overlay->fence_changing(fences[n],false);
+    return next(device,count,fences);
+}
+EVRM_EXPORT void VKAPI_CALL vkDestroyFence(VkDevice device,VkFence fence,const VkAllocationCallbacks* allocator){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkDestroyFence>(state,"vkDestroyFence");if(!next)return;
+    if(state->overlay)state->overlay->fence_changing(fence,true);
+    next(device,fence,allocator);
 }
 EVRM_EXPORT VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
     const auto state = device_state(queue);

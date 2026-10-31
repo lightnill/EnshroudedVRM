@@ -1,14 +1,21 @@
 #define VK_NO_PROTOTYPES
+#define VK_USE_PLATFORM_WIN32_KHR
 #include "runtime_log.hpp"
 #include "gpu_probe.hpp"
 #include "graphics_state.hpp"
 #include "avatar_renderer.hpp"
+#include "avatar_runtime.hpp"
+#include "avatar_device_request.hpp"
 #include "device_features.hpp"
 #include "command_trace_runtime.hpp"
 #include "deferred_runtime.hpp"
 #include "native_backend.hpp"
 #include "native_clip_pipelines.hpp"
 #include "native_buffer_memory.hpp"
+#include "voice_inputs.hpp"
+#include "mod_settings_service.hpp"
+#include "mod_overlay.hpp"
+#include "queue_dispatch.hpp"
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 
@@ -32,6 +39,8 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyInstance(VkInstance, const VkAllocationCall
 EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice, const VkDeviceCreateInfo*, const VkAllocationCallbacks*, VkDevice*);
 EVRM_EXPORT void VKAPI_CALL vkDestroyDevice(VkDevice, const VkAllocationCallbacks*);
 EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue, const VkPresentInfoKHR*);
+EVRM_EXPORT VkResult VKAPI_CALL vkCreateWin32SurfaceKHR(VkInstance,const VkWin32SurfaceCreateInfoKHR*,const VkAllocationCallbacks*,VkSurfaceKHR*);
+EVRM_EXPORT void VKAPI_CALL vkDestroySurfaceKHR(VkInstance,VkSurfaceKHR,const VkAllocationCallbacks*);
 
 namespace {
 struct InstanceState {
@@ -40,12 +49,15 @@ struct InstanceState {
     PFN_GetPhysicalDeviceProcAddr get_physical_proc{};
     PFN_vkDestroyInstance destroy{};
     uint32_t api_version = VK_API_VERSION_1_0;
+    std::mutex surface_mutex;
+    std::unordered_map<VkSurfaceKHR,HWND> surfaces;
 };
 struct DeviceState {
     VkDevice handle{};
     PFN_vkGetDeviceProcAddr get_proc{};
     PFN_vkDestroyDevice destroy{};
     PFN_vkQueuePresentKHR present{};
+    std::shared_ptr<InstanceState> parent;
     std::atomic<uint64_t> frame_count{0};
     std::shared_ptr<evrm::GpuProbe> probe;
     std::shared_ptr<evrm::GraphicsState> graphics;
@@ -53,6 +65,7 @@ struct DeviceState {
     std::shared_ptr<evrm::CommandTraceRuntime> trace;
     std::shared_ptr<evrm::DeferredRenderingRuntime> deferred;
     std::shared_ptr<evrm::NativeBackend> native;
+    std::shared_ptr<evrm::ModOverlay> overlay;
     std::array<VkQueueFlags, 64> deferred_family_flags{};
     std::atomic<uint64_t> deferred_releases{0};
     std::atomic<uint32_t> native_layout_notices{0},native_pipeline_layout_notices{0};
@@ -63,6 +76,7 @@ struct DeviceState {
     std::unordered_map<VkCommandPool, uint32_t> trace_pools;
     std::mutex queue_table_mutex;
     std::map<VkQueue, std::shared_ptr<std::recursive_mutex>> queue_mutexes;
+    std::map<VkQueue,std::uint32_t> queue_families;
 };
 std::mutex state_mutex;
 std::unordered_map<void*, std::shared_ptr<InstanceState>> instances;
@@ -189,6 +203,14 @@ struct AllQueueLocks {
         for (const auto& item : state->queue_mutexes) locks.emplace_back(*item.second);
     }
 };
+HWND surface_window(const std::shared_ptr<InstanceState>& state,VkSurfaceKHR surface)noexcept {
+    try{if(!state)return nullptr;std::lock_guard<std::mutex> guard(state->surface_mutex);const auto found=state->surfaces.find(surface);return found==state->surfaces.end()?nullptr:found->second;}
+    catch(...){return nullptr;}
+}
+std::uint32_t presentation_family(const std::shared_ptr<DeviceState>& state,VkQueue queue)noexcept {
+    try{std::lock_guard<std::mutex> guard(state->queue_table_mutex);const auto found=state->queue_families.find(queue);return found==state->queue_families.end()?UINT32_MAX:found->second;}
+    catch(...){return UINT32_MAX;}
+}
 
 void log_device_capabilities(const std::shared_ptr<InstanceState>& parent, VkPhysicalDevice physical,
                              const VkDeviceCreateInfo& info,
@@ -301,6 +323,19 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyInstance(VkInstance instance, const VkAlloc
     evrm::log_event("instance.destroyed");
 }
 
+EVRM_EXPORT VkResult VKAPI_CALL vkCreateWin32SurfaceKHR(VkInstance instance,const VkWin32SurfaceCreateInfoKHR* info,const VkAllocationCallbacks* allocator,VkSurfaceKHR* surface){
+    const auto state=instance_state(instance);if(!state)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto next=reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(state->get_proc(instance,"vkCreateWin32SurfaceKHR"));if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto result=next(instance,info,allocator,surface);
+    if(result==VK_SUCCESS&&info&&surface)try{std::lock_guard<std::mutex> guard(state->surface_mutex);state->surfaces[*surface]=info->hwnd;}catch(...){}
+    return result;
+}
+EVRM_EXPORT void VKAPI_CALL vkDestroySurfaceKHR(VkInstance instance,VkSurfaceKHR surface,const VkAllocationCallbacks* allocator){
+    const auto state=instance_state(instance);if(!state)return;
+    const auto next=reinterpret_cast<PFN_vkDestroySurfaceKHR>(state->get_proc(instance,"vkDestroySurfaceKHR"));if(!next)return;
+    try{std::lock_guard<std::mutex> guard(state->surface_mutex);state->surfaces.erase(surface);}catch(...){}
+    next(instance,surface,allocator);
+}
 EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
     VkPhysicalDevice physical, const VkDeviceCreateInfo* info, const VkAllocationCallbacks* allocator, VkDevice* device) {
     if (!info || !device) return VK_ERROR_INITIALIZATION_FAILED;
@@ -321,10 +356,15 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
     try {
         auto state = std::make_shared<DeviceState>();
         state->handle = *device;
+        state->parent=parent;
         state->get_proc = next_get_proc;
         state->destroy = next_destroy;
         state->present = reinterpret_cast<PFN_vkQueuePresentKHR>(next_get_proc(*device, "vkQueuePresentKHR"));
         state->graphics = std::make_shared<evrm::GraphicsState>(*device, next_get_proc);
+        try{
+            if(evrm::mod_menu_device_supported(*info))state->overlay=std::make_shared<evrm::ModOverlay>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,true);
+            else evrm::log_event("mod-menu.unavailable reason=present-completion-feature");
+        }catch(...){evrm::log_event("mod-menu.initialization-unavailable");}
         try {
             wchar_t enabled[4]{};
             if (GetEnvironmentVariableW(L"ENSHROUDED_VRM_DEFER_RENDERING_PROOF", enabled, 4) == 1 && enabled[0] == L'1') {
@@ -381,6 +421,8 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
             devices.emplace(dispatch_key(*device), std::move(state));
         }
         evrm::log_event("device.created");
+        evrm::initialize_voice_inputs();
+        evrm::initialize_mod_settings_service();
         return result;
     } catch (...) {
         if (next_destroy) next_destroy(*device, allocator);
@@ -397,6 +439,7 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationC
         std::lock_guard<std::mutex> guard(state_mutex);
         devices.erase(dispatch_key(device));
     }
+    state->overlay.reset();
     state->native.reset();
     state->avatar.reset();
     state->probe.reset();
@@ -408,28 +451,73 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationC
 EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* info) {
     const auto state = device_state(queue);
     if (!state || !state->present) return VK_ERROR_INITIALIZATION_FAILED;
-    const auto mutex = queue_mutex(state, queue);
-    std::lock_guard<std::recursive_mutex> queue_guard(*mutex);
+    evrm::service_voice_inputs();
+    evrm::QueueDispatch queue_guard([&]{return queue_mutex(state,queue);},[&]{return state->overlay?presentation_family(state,queue):UINT32_MAX;});
     const auto frame = state->frame_count.fetch_add(1) + 1;
     bool consumed = false;
+    const bool retry=info&&state->overlay&&state->overlay->retries_present(*info);
     bool native_pose_complete = false;
+    evrm::AvatarCandidatePtr avatar_candidate;
+    auto* avatar_service=evrm::avatar_runtime_service();
+    if(!retry&&state->native&&state->avatar&&state->probe&&avatar_service){
+        uint32_t family=UINT32_MAX;
+        if(state->probe->queue_family(queue,family)){
+            avatar_candidate=evrm::avatar_device_request(*avatar_service,state->avatar->prepared_model());
+            const auto upload=state->native->prepare_model(queue,family,avatar_candidate);
+            std::string error;
+            if(!state->avatar->stage_candidate(avatar_candidate,upload==evrm::NativeAvatarUploadState::Ready,error)&&avatar_candidate)
+                avatar_service->fail_candidate(avatar_candidate->generation,error.empty()?"Could not prepare model motion":error);
+            else if(upload==evrm::NativeAvatarUploadState::Failed&&avatar_candidate)
+                avatar_service->fail_candidate(avatar_candidate->generation,"Could not prepare model graphics; current avatar kept");
+        }
+    }
     const auto native_buffer_epoch=state->native?state->native->state().buffer_epoch():0;
-    if (info && state->avatar && state->probe && state->graphics)
+    if (!retry && info && state->avatar && state->probe && state->graphics)
         native_pose_complete=state->avatar->before_present(queue, *info, *state->probe, *state->graphics, consumed,native_buffer_epoch);
-    if (state->native && state->avatar && state->probe) {
+    if(!retry&&avatar_candidate&&avatar_service&&state->native&&state->avatar){
+        struct Activation {evrm::NativeBackend* backend;evrm::AvatarRenderer* renderer;const evrm::AvatarCandidate* candidate=nullptr;};
+        Activation activation{state->native.get(),state->avatar.get()};
+        const auto commit=[](void* raw,const evrm::AvatarCandidate& candidate)noexcept{
+            auto& item=*static_cast<Activation*>(raw);item.candidate=&candidate;
+            return item.backend->activate_model(candidate,[](void* value,std::uint64_t epoch)noexcept{
+                auto& item=*static_cast<Activation*>(value);return item.renderer->commit_candidate(*item.candidate,epoch);
+            },&item);
+        };
+        const auto activation_started=std::chrono::steady_clock::now();
+        if(evrm::activate_avatar_device(*avatar_service,avatar_candidate,commit,&activation)){
+            native_pose_complete=true;
+            const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-activation_started).count();
+            evrm::log_event_lazy([&]{return "avatar-switch.activation-ms generation="+std::to_string(avatar_candidate->generation)+" elapsed="+std::to_string(elapsed);});
+        }
+    }
+    if (!retry && state->native && state->avatar && state->probe) {
         uint32_t family=UINT32_MAX;
         const auto publication=native_pose_complete?state->avatar->native_publication():nullptr;
         if(state->probe->queue_family(queue,family))state->native->publish(queue,family,publication,publication?publication->source_buffer_epoch:0);
     }
-    if (info && (!state->avatar || !state->avatar->enabled()))
+    if (!retry && info && (!state->avatar || !state->avatar->enabled()))
         observe(state, [&](evrm::GpuProbe& probe) { probe.capture(queue, frame, false,
             consumed ? 0 : info->waitSemaphoreCount, consumed ? nullptr : info->pWaitSemaphores, &consumed); });
     VkPresentInfoKHR actual{};
     if (consumed) { actual = *info; actual.waitSemaphoreCount = 0; actual.pWaitSemaphores = nullptr; }
+    evrm::ModOverlayPresentation menu;
+    const VkPresentInfoKHR* presenting=consumed?&actual:info;
+    if(info&&state->overlay){
+        const auto family=queue_guard.family;
+        const bool accessible=state->graphics&&info->swapchainCount==1&&info->pSwapchains&&info->pImageIndices&&state->graphics->swapchain_accessible(info->pSwapchains[0],info->pImageIndices[0],family);
+        evrm::ModMenuStatus status;status.voice=evrm::selected_voice_mouth_snapshot().activity;status.starting=evrm::selected_voice_starting();status.save_failed=evrm::mod_settings_save_failed();
+        status.avatar=evrm::avatar_runtime_snapshot();
+        status.microphone=evrm::local_microphone_state();status.microphones=evrm::local_microphone_devices();
+        if(state->avatar)status.mouth=state->avatar->mouth_support();
+        if(state->native&&state->native->mouth_gpu_unavailable())status.mouth=evrm::ModMouthSupport::Unavailable;
+        state->overlay->before_present(queue,family,*info,consumed,accessible,status,menu);presenting=menu.view();
+    }
     observe(state, [&](evrm::GpuProbe& probe) { probe.finish_frame(); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.finish_frame(frame); });
     const auto present_started=std::chrono::steady_clock::now();
-    const auto result = state->present(queue, consumed ? &actual : info);
+    const auto result=menu.stop==VK_SUCCESS?state->present(queue,presenting):menu.stop;
+    if(info&&state->overlay&&menu.stop==VK_SUCCESS)state->overlay->presented(menu,result);
+    evrm::poll_voice_inputs(GetTickCount64());
     try{if(state->native){
         double average=-1;
         {std::lock_guard<std::mutex> timing_guard(state->present_timing_mutex);
@@ -459,6 +547,8 @@ EVRM_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance insta
     if (std::strcmp(name, "vkDestroyDevice") == 0) return as_proc(vkDestroyDevice);
     const auto state = instance_state(instance);
     if (!state) return nullptr;
+    if(!std::strcmp(name,"vkCreateWin32SurfaceKHR")&&state->get_proc(instance,name))return as_proc(vkCreateWin32SurfaceKHR);
+    if(!std::strcmp(name,"vkDestroySurfaceKHR")&&state->get_proc(instance,name))return as_proc(vkDestroySurfaceKHR);
 #define EVRM_INSTANCE_HOOK(name_) if (std::strcmp(name, #name_) == 0 && state->get_proc(instance, name)) return as_proc(name_);
     EVRM_DEVICE_HOOK_NAMES(EVRM_INSTANCE_HOOK)
     EVRM_GRAPHICS_HOOK_NAMES(EVRM_INSTANCE_HOOK)

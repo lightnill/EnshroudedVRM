@@ -1,13 +1,14 @@
 // Retain only referenced vertices. Stream every original attribute row so bad
 // discarded positions/weights/joints still reject, without full source arrays.
 void build_meshes(const tinygltf::Model&model,const Json&doc,Avatar&avatar,const ImportLimits&limits){
+    MouthImporter mouth(model,doc,avatar,limits);std::size_t mesh_index=0;
     struct BindingSummary {std::size_t count=0;std::uint16_t max_joint=0;};
     std::vector<std::vector<BindingSummary>> bindings;
     std::size_t source_visits=0;bool morphs=false,repaired_uvs=false,reconstructed_normals=false;
     constexpr auto absent=std::numeric_limits<std::uint32_t>::max();
     for(const auto&source:model.meshes){
         for(double w:source.weights)require(w==0,"Nonzero default morph weights are not implemented");
-        Mesh mesh;std::vector<BindingSummary> mesh_bindings;
+        Mesh mesh;std::vector<BindingSummary> mesh_bindings;std::size_t primitive_index=0;
         for(const auto&p:source.primitives){
             require(p.mode==-1||p.mode==4,"Only triangle primitives are supported");
             require(p.extensions.empty(),"Compressed/extended mesh primitives are not implemented");
@@ -98,9 +99,10 @@ void build_meshes(const tinygltf::Model&model,const Json&doc,Avatar&avatar,const
                 });
             }
             reconstructed_normals=repair_primitive_normals(primitive)||reconstructed_normals;
+            mouth.primitive(mesh_index,primitive_index++,p,remap);
             morphs=morphs||!p.targets.empty();mesh.primitives.push_back(std::move(primitive));mesh_bindings.push_back(binding);
         }
-        avatar.meshes.push_back(std::move(mesh));bindings.push_back(std::move(mesh_bindings));
+        avatar.meshes.push_back(std::move(mesh));bindings.push_back(std::move(mesh_bindings));++mesh_index;
     }
     bool drawable=false;std::size_t binding_visits=0;std::set<std::pair<int,int>> validated_bindings;
     for(std::size_t i=0;i<avatar.nodes.size();++i){
@@ -122,5 +124,6 @@ void build_meshes(const tinygltf::Model&model,const Json&doc,Avatar&avatar,const
     require(drawable&&avatar.vertex_count>0&&avatar.triangle_count>0,"No drawable VRM geometry");
     if(reconstructed_normals)avatar.warnings.push_back("Reconstructed missing or invalid mesh normals from triangle geometry.");
     if(repaired_uvs)avatar.warnings.push_back("Nonfinite UV coordinates replaced with a finite fallback; texture placement may differ.");
-    if(morphs)avatar.warnings.push_back("Expressions and morph targets are deferred; base geometry imported.");
+    mouth.finish(avatar);
+    if(morphs)avatar.warnings.push_back(avatar.mouth?"Only standard mouth morphs are supported; other expressions are deferred.":"Expressions and morph targets are deferred; base geometry imported.");
 }

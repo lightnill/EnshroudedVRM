@@ -1,7 +1,7 @@
 #include <windows.h>
 1 VERSIONINFO
- FILEVERSION 0,1,2,0
- PRODUCTVERSION 0,1,2,0
+ FILEVERSION 0,2,0,0
+ PRODUCTVERSION 0,2,0,0
  FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
  FILEFLAGS VS_FF_PRERELEASE
  FILEOS VOS_NT_WINDOWS32
@@ -13,12 +13,12 @@ BEGIN
   BEGIN
    VALUE "CompanyName", "lightnill\0"
    VALUE "FileDescription", "Enshrouded VRM local avatar Vulkan runtime\0"
-   VALUE "FileVersion", "0.1.2-preview\0"
+   VALUE "FileVersion", "0.2.0\0"
    VALUE "InternalName", "enshrouded_vrm_runtime\0"
    VALUE "LegalCopyright", "Copyright (c) 2026 lightnill; third-party notices included\0"
    VALUE "OriginalFilename", "enshrouded_vrm_runtime.dll\0"
    VALUE "ProductName", "Enshrouded VRM\0"
-   VALUE "ProductVersion", "0.1.2-preview\0"
+   VALUE "ProductVersion", "0.2.0\0"
   END
  END
  BLOCK "VarFileInfo"

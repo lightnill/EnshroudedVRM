@@ -3,6 +3,7 @@
 #include "gpu_probe.hpp"
 #include "native_submit.hpp"
 #include "gpu_probe_capture_frames.hpp"
+#include "fallback_diagnostics.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -205,6 +206,7 @@ struct GpuProbe::Impl {
     VkQueue async_queue{};std::map<std::string,std::size_t> async_limits;
     bool async_disabled=false,async_frame=false;
     uint64_t async_sequence=0,async_enqueued=0,async_decoded=0,async_pending_polls=0,async_skipped=0,async_rejected=0,async_observed=0;
+    FallbackEpisodes async_gaps;
     void resolve_command(VkQueue,VkCommandBuffer,std::vector<SubmittedDraw>&,std::size_t first=0,bool at_boundary=false);
     CapturePlan make_plan(VkQueue,const std::map<std::string,std::size_t>&,const std::vector<SubmittedDraw>&,bool);
     CapturePlan make_single_plan(VkQueue,const std::map<std::string,std::size_t>&,const std::vector<SubmittedDraw>&,bool);

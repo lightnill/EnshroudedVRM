@@ -3,12 +3,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <bcrypt.h>
+#endif
 
 namespace evrm::detail {
 using Sha256Digest=std::array<std::uint8_t,32>;
 // Private byte fingerprint helper. SHA-256 operates on big-endian message
 // words; all input access is byte-wise so module alignment is not required.
-inline Sha256Digest sha256(const void* data,std::size_t size) noexcept {
+inline Sha256Digest sha256_portable(const void* data,std::size_t size) noexcept {
     static constexpr std::uint32_t constants[]={
         0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
         0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -44,5 +54,38 @@ inline Sha256Digest sha256(const void* data,std::size_t size) noexcept {
     for(unsigned i=0;i<8;++i)tail[padded-1-i]=static_cast<std::uint8_t>(bits>>(i*8));
     block(tail);if(padded==128)block(tail+64);
     Sha256Digest result{};for(unsigned i=0;i<32;++i)result[i]=static_cast<std::uint8_t>(state[i/4]>>(24-(i%4)*8));return result;
+}
+#if defined(_WIN32)
+inline bool try_sha256_windows(const void* data,std::size_t size,Sha256Digest& out)noexcept {
+    if(size>UINT32_MAX)return false;
+    using Hash=NTSTATUS(WINAPI*)(BCRYPT_ALG_HANDLE,PUCHAR,ULONG,PUCHAR,ULONG,PUCHAR,ULONG);
+    static const Hash hash=[]()noexcept{
+        // Keep this one module reference for the lifetime of the cached function.
+        // Never search the working directory or PATH, or change global policy.
+        const auto module=LoadLibraryExW(L"bcrypt.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
+        Hash result=nullptr;if(module){const auto raw=GetProcAddress(module,"BCryptHash");
+            static_assert(sizeof raw==sizeof result);std::memcpy(&result,&raw,sizeof result);}
+        return result;
+    }();
+    if(!hash)return false;
+    Sha256Digest result{};
+    const auto status=hash(BCRYPT_SHA256_ALG_HANDLE,nullptr,0,
+        const_cast<PUCHAR>(static_cast<const unsigned char*>(data)),static_cast<ULONG>(size),result.data(),static_cast<ULONG>(result.size()));
+    if(status<0)return false;
+    out=result;return true;
+}
+#endif
+using Sha256Provider=bool(*)(const void*,std::size_t,Sha256Digest&)noexcept;
+inline Sha256Digest sha256_with_provider(const void* data,std::size_t size,Sha256Provider provider)noexcept {
+    Sha256Digest result{};
+    if(size>=1024&&size<=UINT32_MAX&&provider&&provider(data,size,result))return result;
+    return sha256_portable(data,size);
+}
+inline Sha256Digest sha256(const void* data,std::size_t size)noexcept {
+#if defined(_WIN32)
+    return sha256_with_provider(data,size,&try_sha256_windows);
+#else
+    return sha256_portable(data,size);
+#endif
 }
 }

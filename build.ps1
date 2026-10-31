@@ -57,14 +57,43 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Native volume snapshot shader compilation failed.' }
         $taskSources = @('runtime_bridge.cpp','device_features.cpp','command_trace.cpp','command_trace_runtime.cpp','deferred_rendering.cpp','deferred_runtime.cpp','gpu_probe.cpp','graphics_state.cpp','avatar_renderer.cpp','enshrouded_bridge.cpp','vrm_asset.cpp','retarget.cpp','spring_bones.cpp','tool_grip.cpp','secondary_hand_contact.cpp','native_tool_slots.cpp','native_tool_slot_target.cpp','native_tool_slots_runtime.cpp','native_visual_slot_write.cpp','native_tool_call_patch.cpp','native_avatar_pose.cpp','native_state.cpp','native_draw.cpp','native_backend.cpp','native_owner.cpp','native_owner_process.cpp','native_clip_shader.cpp','native_clip_pipelines.cpp','native_buffer_memory.cpp','native_body_coverage.cpp','native_body_selection.cpp','native_instance_qualifiers.cpp','native_oit_window.cpp','native_transparency_trace.cpp','native_image_memory.cpp','native_material_plan.cpp','native_volume_snapshot.cpp','native_oit_draw.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/' + $_) }
         $taskSources += @('native_skinning.cpp','native_skinning_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += Join-Path $taskProjectRoot 'src/mouth_deformation.cpp'
+        $taskSources += @('local_voice_observation.cpp','local_voice_copy.cpp','local_voice_observer.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('voice_clock.cpp','voice_stream.cpp','voice_features.cpp','voice_profiles.cpp','voice_analyser.cpp','voice_automatic.cpp','voice_worker.cpp','voice_profile_io.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('voice_setup.cpp','mod_settings.cpp','mod_settings_service.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('microphone_backend.cpp','microphone_source.cpp','voice_inputs.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('avatar_settings.cpp','avatar_model.cpp','avatar_service.cpp','avatar_runtime.cpp','native_avatar_assets.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('mod_input_state.cpp','mod_input_win32.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('mod_menu.cpp','mod_menu_gpu.cpp','mod_overlay.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskFlags+=('-I'+(Join-Path $taskProjectRoot 'vendor/imgui'))
+        foreach($taskGuiSource in @('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp','backends/imgui_impl_vulkan.cpp')){
+            $taskGuiObject=Join-Path $OutputDirectory ('gui-'+[IO.Path]::GetFileNameWithoutExtension($taskGuiSource)+'.o')
+            $taskGuiFlags=@('-std=c++17','-O2','-fstack-protector-strong','-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES',('-I'+$VulkanIncludeDirectory),('-I'+(Join-Path $taskProjectRoot 'vendor/imgui')))
+            if($PortableRelease){$taskGuiFlags+=('-ffile-prefix-map='+$taskWorkspaceRoot+'=.')}
+            & $taskCompiler @taskGuiFlags '-c' (Join-Path $taskProjectRoot ('vendor/imgui/'+$taskGuiSource)) '-o' $taskGuiObject
+            if($LASTEXITCODE -ne 0){throw 'Pinned UI dependency compilation failed'}
+            $taskSources+=$taskGuiObject
+        }
+        # Keep pinned upstream C in its own warning policy; project C++ remains Werror.
+        foreach($taskHookSource in @('buffer','hook','trampoline','hde/hde64')){
+            $taskHookObject=Join-Path $OutputDirectory ('minhook-'+[IO.Path]::GetFileName($taskHookSource)+'.o')
+            $taskHookFlags=@('-std=c11','-O2','-fstack-protector-strong')
+            if($PortableRelease){$taskHookFlags+=('-ffile-prefix-map='+$taskWorkspaceRoot+'=.')}
+            & (Join-Path $CompilerDirectory 'gcc.exe') @taskHookFlags '-c' (Join-Path $taskProjectRoot ('vendor/minhook/src/'+$taskHookSource+'.c')) '-o' $taskHookObject
+            if($LASTEXITCODE -ne 0){throw 'MinHook source compilation failed'}
+            $taskSources+=$taskHookObject
+        }
         if($PortableRelease){
             $taskResourceObject=Join-Path $OutputDirectory 'runtime-resource.o'
             & (Join-Path $CompilerDirectory 'windres.exe') (Join-Path $taskProjectRoot 'portable/runtime.rc') '-O' 'coff' '-o' $taskResourceObject
             if($LASTEXITCODE -ne 0){throw 'Runtime release metadata compilation failed'}
             $taskSources+=$taskResourceObject
         }
-        & $taskCompiler @taskFlags '-shared' @taskSources '-lkernel32' '-lonecore' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll')
+        & $taskCompiler @taskFlags '-shared' @taskSources '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll')
         if ($LASTEXITCODE -ne 0) { throw "Bridge compilation failed: $LASTEXITCODE" }
+        $taskVoiceSdk = Join-Path $taskProjectRoot 'vendor/oculus-lipsync/Win64/OVRLipSync.dll'
+        if ((Get-FileHash -LiteralPath $taskVoiceSdk -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7') { throw 'Official voice detector pin mismatch' }
+        Copy-Item -LiteralPath $taskVoiceSdk -Destination (Join-Path $OutputDirectory 'OVRLipSync.dll') -Force
         Copy-Item -LiteralPath (Join-Path $taskProjectRoot 'enshrouded_vrm_layer.json') -Destination $OutputDirectory -Force
     }
     if ($Target -eq 'All' -or $Target -eq 'Test') {
@@ -83,7 +112,7 @@ try {
             @{Name='native_tool_pose_window';Sources=@();Flags=@()},
             @{Name='tool_grip';Sources=@('tool_grip.cpp');Flags=@()},
             @{Name='secondary_hand_contact';Sources=@('secondary_hand_contact.cpp','tool_grip.cpp');Flags=@()},
-            @{Name='native_contact_hold';Sources=@('native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp');Flags=@()},
+            @{Name='native_contact_hold';Sources=@('native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp','mouth_deformation.cpp');Flags=@()},
             @{Name='native_tool_slots';Sources=@('native_tool_slots.cpp');Flags=@()},
             @{Name='native_tool_slot_target';Sources=@('native_tool_slot_target.cpp');Flags=@()},
             @{Name='native_tool_call_patch';Sources=@('native_tool_call_patch.cpp');Flags=@()},
@@ -225,7 +254,7 @@ try {
         if($LASTEXITCODE -ne 0){throw 'Native view publication test compilation failed.'}
         & $taskViewExe
         if($LASTEXITCODE -ne 0){throw 'Native view publication tests failed.'}
-        $taskSkinSources=@('native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp')|ForEach-Object{Join-Path $taskProjectRoot ('src/'+$_)}
+        $taskSkinSources=@('native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp','mouth_deformation.cpp')|ForEach-Object{Join-Path $taskProjectRoot ('src/'+$_)}
         $taskSkinExe=Join-Path $OutputDirectory 'native_skinning_tests.exe'
         & $taskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/native_skinning.cpp') @taskSkinSources '-o' $taskSkinExe
         if($LASTEXITCODE -ne 0){throw 'Native skin packing compilation failed.'}

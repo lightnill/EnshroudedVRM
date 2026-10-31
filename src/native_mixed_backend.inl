@@ -167,7 +167,7 @@
     }
     void make_oit_sets(Bundle& b) {
         if(b.oit_pool||!b.volume_snapshot||!b.oit_calls.empty())throw std::runtime_error("Mixed OIT descriptors already constructed");
-        const auto count=static_cast<std::uint32_t>(b.assets->asset->materials.size()+1);
+        const auto count=static_cast<std::uint32_t>(b.assets->avatar()->materials.size()+1);
         const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,4*count},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,2*count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,3*count},{VK_DESCRIPTOR_TYPE_SAMPLER,2*count}}};
         VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
         checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&b.oit_pool),"Mixed OIT descriptor pool");
@@ -179,8 +179,9 @@
             const std::array<VkDescriptorBufferInfo,6> buffers={{{b.frame->handle,0,sizeof(NativePreparedFrame)},{b.materials->handle,b.material_stride*i,sizeof(NativeMaterial)},
                 vertex_binding(b),index_binding(b),
                 {b.frame->handle,native_oit_constants_offset,2320},{b.frame->handle,native_oit_forward_offset,96}}};
-            const std::array<VkDescriptorImageInfo,5> images={{{VK_NULL_HANDLE,b.assets->images[b.assets->image_for_material[i]]->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                {b.assets->samplers[i],VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED},outputs[0],outputs[1],{volume_sampler,VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED}}};
+            const auto sampled=b.assets->material(i);
+            const std::array<VkDescriptorImageInfo,5> images={{{VK_NULL_HANDLE,sampled.imageView,sampled.imageLayout},
+                {sampled.sampler,VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED},outputs[0],outputs[1],{volume_sampler,VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED}}};
             std::array<VkWriteDescriptorSet,11> writes{};
             for(unsigned j=0;j<11;++j){auto& w=writes[j];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=sets[i];w.dstBinding=j;w.descriptorCount=1;
                 if(j==1||j==2||j>=8){w.descriptorType=(j==2||j==10)?VK_DESCRIPTOR_TYPE_SAMPLER:VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;w.pImageInfo=&images[j==1?0:j==2?1:j-6];}

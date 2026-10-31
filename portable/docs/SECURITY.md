@@ -45,7 +45,7 @@ Release checksums identify exact bytes; they are not a signature or proof of saf
 The native runtime is unsigned. Individual-file reports and coverage are recorded
 outside the package so publishing scan evidence does not change the scanned bytes.
 Unsupported engines, failures and timeouts are coverage gaps, not clean verdicts.
-Version 0.1.2 rebuilds the runtime and changes launcher/document/archive bytes.
+Version 0.2.0 rebuilds the runtime and changes launcher/document/archive bytes.
 Previous scan records identify only their original exact bytes. Use the new
 release's verification record for current coverage; do not infer a clean verdict
 for changed files from an earlier release's reports.
@@ -54,3 +54,14 @@ Report exact versions, file hashes and detection names at
 https://github.com/lightnill/EnshroudedVRM/issues . Do not attach private avatars,
 derived geometry or unredacted logs. Do not disable antivirus or signature checks.
 Nexus performs its own checks; individual scan results do not establish its approval.
+
+## Voice and settings in 0.2.0
+
+Audio lip sync is opt-in. Game voice observes local outgoing voice blocks; the
+offline option opens the Windows default or explicitly chosen capture device.
+Analysis stays in process. The mod does not save audio recordings or send extra
+viseme data over the network. The game's own voice/network behavior is separate.
+Model loading and shader preferences use local files and background workers.
+F8 stores bounded model/material preferences in State/avatar-settings.json.
+The bundled official Oculus LipSync DLL is separately licensed; retain its notices.
+Scan reports are provided beside the release and state exact hashes/coverage.

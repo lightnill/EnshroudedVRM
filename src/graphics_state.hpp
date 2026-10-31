@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <memory>
 #include <vector>
+#include <cstdint>
 
 namespace evrm {
 struct SceneDepth {
@@ -20,6 +21,7 @@ struct SceneDepth {
 };
 struct SwapchainState {
     VkSwapchainKHR swapchain{};
+    VkSurfaceKHR surface{};
     VkFormat format{};
     VkExtent2D extent{};
     uint64_t generation = 0;
@@ -70,6 +72,7 @@ public:
     void submitted2(VkQueue, uint32_t, const VkSubmitInfo2*);
     SceneDepth scene_depth() const;
     SwapchainState swapchain(VkSwapchainKHR) const;
+    bool swapchain_accessible(VkSwapchainKHR,std::uint32_t image,std::uint32_t family)const noexcept;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

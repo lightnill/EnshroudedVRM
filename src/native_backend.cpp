@@ -1,5 +1,6 @@
 #define VK_NO_PROTOTYPES
 #include "native_backend.hpp"
+#include "fallback_diagnostics.hpp"
 #include "native_draw.hpp"
 #include "native_prepare_contract.hpp"
 #include "native_submit.hpp"
@@ -14,6 +15,8 @@
 #include "native_transparency_trace.hpp"
 #include "native_material_plan.hpp"
 #include "native_skinning_gpu.hpp"
+#include "native_avatar_material.hpp"
+#include "mouth_publication.hpp"
 #include "native_volume_snapshot.hpp"
 #include "native_oit_draw.hpp"
 #include "runtime_log.hpp"
@@ -90,15 +93,6 @@ struct CompatibleLayout {
     explicit CompatibleLayout(Context& c):context(c){}
     ~CompatibleLayout(){if(handle&&!context.uncertain)F(vkDestroyPipelineLayout)(context.device,handle,nullptr);}
 };
-struct AssetGpu {
-    Context& context;std::shared_ptr<const vrm::Avatar> asset;
-    std::shared_ptr<NativeSkinGpuAsset> skin;
-    std::vector<std::unique_ptr<PrivateImage>> images;std::vector<VkSampler> samplers;std::vector<uint32_t> image_for_material;
-    explicit AssetGpu(Context& c):context(c){}
-    ~AssetGpu(){if(!context.uncertain)for(auto sampler:samplers)if(sampler)F(vkDestroySampler)(context.device,sampler,nullptr);}
-};
-struct alignas(16) NativeMaterial {float base[4]{},emissive[4]{},surface[4]{};uint32_t instance[4]{};float alpha[4]{};};
-static_assert(sizeof(NativeMaterial)==80,"Native material ABI");
 // No Bundle reference: commands retain one previous immutable emission without
 // retaining its predecessor, descriptors, or native source resources.
 struct SubmittedHistory {
@@ -113,7 +107,7 @@ struct SubmittedHistory {
     float probe_mode=0;
 };
 struct Bundle {
-    Context& context;std::shared_ptr<const NativeAvatarPublication> pose;std::shared_ptr<AssetGpu> assets;
+    Context& context;std::shared_ptr<const NativeAvatarPublication> pose;std::shared_ptr<NativeAvatarGpuAssets> assets;
     std::unique_ptr<PrivateBuffer> control,vertices,indices,materials;
     std::shared_ptr<NativeSkinGpuFrame> skin;
     std::shared_ptr<PrivateBuffer> frame;
@@ -215,15 +209,11 @@ bool same_selection(const SubmittedHistory& previous,const Bundle& current){
     return previous.pose&&current.pose&&previous.pose->parts==current.pose->parts&&
         same_native_menu_owner(previous.menu_owner,current.menu_owner);
 }
-bool publication_material_plan(const NativeAvatarPublication& publication,NativeMaterialPlan& out){
-    if(publication.skinning){
-        if(!*publication.skinning||publication.geometry!=publication.skinning->asset->layout)return false;
-        out=publication.skinning->material_plan;return out.failure==NativeMaterialPlanFailure::none;
-    }
-    return publication.asset&&publication.geometry&&make_native_material_plan(*publication.asset,*publication.geometry,out);
+bool publication_material_plan(const NativeAvatarPublication& publication,NativeMaterialPlan& out,bool gpu_mouth=true){
+    return native_mouth_material_plan(publication,gpu_mouth,out);
 }
 VkDescriptorBufferInfo vertex_binding(const Bundle& b){return b.skin?b.skin->geometry()->binding():VkDescriptorBufferInfo{b.vertices->handle,0,b.vertices->size};}
-VkDescriptorBufferInfo index_binding(const Bundle& b){return b.skin?b.assets->skin->indices():VkDescriptorBufferInfo{b.indices->handle,0,b.indices->size};}
+VkDescriptorBufferInfo index_binding(const Bundle& b){return b.skin?b.assets->skin()->indices():VkDescriptorBufferInfo{b.indices->handle,0,b.indices->size};}
 }
 
 struct NativeBackend::Impl {
@@ -361,7 +351,7 @@ struct NativeBackend::Impl {
     unsigned transparency_selection_attempts=0;
     bool transparency_output_ready=false;
     std::map<VkPipelineLayout,std::shared_ptr<CompatibleLayout>> layouts;
-    std::shared_ptr<const NativeAvatarPublication> latest;std::shared_ptr<AssetGpu> assets;
+    std::shared_ptr<const NativeAvatarPublication> latest;std::shared_ptr<NativeAvatarGpuAssets> assets;
     std::shared_ptr<const NativeAvatarPublication> view_publications;
     std::shared_ptr<const NativeAvatarPublication> publication_for(VkBuffer source)const {
         return replacement?native_publication_view(view_publications,reinterpret_cast<std::uintptr_t>(source)):latest;
@@ -389,7 +379,9 @@ struct NativeBackend::Impl {
         else observe_ownership_source(r,metadata.observed_buffer_binding(state,2,
             coverage.kind==NativeBodyCoverageKind::clip?coverage.instance_binding:coverage.transform_binding));
     }
-    std::unique_ptr<NativeSkinningGpu> skinning_gpu;
+    std::shared_ptr<NativeSkinningGpu> skinning_gpu;
+    std::unique_ptr<NativeAvatarAssetStager> asset_stager;
+    std::uint64_t hot_generation=0;
     NativeBufferBinding latest_source;
     VkDescriptorSetLayout draw_set{},prepare_set{};VkPipelineLayout draw_layout{},prepare_layout{};VkPipeline prepare_pipeline{};
     VkShaderModule menu_prepare_shader{};VkPipeline menu_prepare_pipeline{};
@@ -401,12 +393,13 @@ struct NativeBackend::Impl {
     std::unique_ptr<NativeOitDrawPipelines> oit_pipelines;
     NativeVolumeSnapshotCapabilities snapshot_caps;std::vector<std::uint32_t> snapshot_words;
     bool mixed_initialized=false,mixed_failed=false;
-    VkCommandPool upload_pool{};VkCommandBuffer upload_command{};VkFence upload_fence{};
     VkQueue queue{};uint32_t family=UINT32_MAX;bool initialized=false,disabled=false,independent_blend=false,partially_bound=false;std::string last_reason;uint64_t permits=0;
     VkResult last_submit_error=VK_ERROR_UNKNOWN;
     unsigned completion_notices=0,completion_observations=0;
     std::uint64_t submission_declines=0;
     unsigned submission_decline_samples=0;
+    FallbackEpisodes submission_gaps;
+    FallbackEpisodes completion_gaps;
     std::uint64_t shadow_probe_draws=0;
     uint32_t completion_cpu=0,completion_gpu=0;
     uint32_t completion_checkpoint=0,completion_mask=0;
@@ -421,6 +414,13 @@ struct NativeBackend::Impl {
         std::array<uint32_t,4> gpu{};
         std::memcpy(gpu.data(),static_cast<const unsigned char*>(b.frame->mapped)+offsetof(NativePreparedFrame,control),sizeof gpu);
         ++history_completed;if(gpu[0]==1)++history_gpu_committed;if(gpu[0]==1&&gpu[1]==1)++history_gpu_valid;
+        const auto event=gpu[0]==1?completion_gaps.recovery(GetTickCount64()):completion_gaps.failure(GetTickCount64(),
+            1u|(!gpu[1]?2u:0u)|(!gpu[2]?4u:0u)|(!gpu[3]?8u:0u),"gpu-commit-declined");
+        if(event.emit)log_event_lazy([&]{return std::string(gpu[0]==1?"avatar-fallback.gpu-recovered":"avatar-fallback.gpu-gap")+
+            " episode="+std::to_string(event.episode)+" failures="+std::to_string(event.failures)+" gap-ms="+std::to_string(event.elapsed_ms)+
+            " suppressed-episodes="+std::to_string(event.suppressed_episodes)+" pose="+std::to_string(b.pose->serial)+
+            " cpu-permit="+std::to_string(b.data.permit[0])+" controls="+std::to_string(gpu[0])+","+std::to_string(gpu[1])+","+
+            std::to_string(gpu[2])+","+std::to_string(gpu[3])+" completion="+completion+fallback_event_summary(event);});
         if(b.skin&&b.skin->status_after_completion()!=0)try{log_event("native-skinning.rejected status="+std::to_string(b.skin->status_after_completion())+" pose-serial="+std::to_string(b.pose->serial));}catch(...){}
         if(history_completed<=4||history_completed%300==0)try {
             std::string menu_diagnostic;
@@ -818,63 +818,10 @@ struct NativeBackend::Impl {
         pipeline.stage.module=menu_prepare_shader;pipeline.stage.pName="cs_prepare";
         checked(F(vkCreateComputePipelines)(context.device,VK_NULL_HANDLE,1,&pipeline,nullptr,&menu_prepare_pipeline),"Native menu prepare pipeline");
     }
-    std::shared_ptr<AssetGpu> upload(const std::shared_ptr<const vrm::Avatar>& avatar) {
-        if(avatar->materials.size()>4096||avatar->images.size()>4096)throw std::runtime_error("Native material budget");
-        if(!upload_pool) {
-            VkCommandPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;pool.queueFamilyIndex=family;pool.flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-            checked(F(vkCreateCommandPool)(context.device,&pool,nullptr,&upload_pool),"Native upload pool");
-            VkCommandBufferAllocateInfo allocate{};allocate.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;allocate.commandPool=upload_pool;allocate.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;allocate.commandBufferCount=1;
-            checked(F(vkAllocateCommandBuffers)(context.device,&allocate,&upload_command),"Native upload command");if(set_loader)checked(set_loader(context.device,upload_command),"Native upload loader data");
-            VkFenceCreateInfo fence{};fence.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;checked(F(vkCreateFence)(context.device,&fence,nullptr,&upload_fence),"Native upload fence");
-        }
-        auto out=std::make_shared<AssetGpu>(context);out->asset=avatar;
-        std::vector<const vrm::Image*> pixels;vrm::Image white{1,1,{255,255,255,255}};pixels.push_back(&white);
-        std::map<int,uint32_t> source_images;
-        for(const auto& material:avatar->materials)if(material.base_texture>=0){const auto& tex=avatar->textures.at(static_cast<size_t>(material.base_texture));if(!source_images.count(tex.image)){source_images[tex.image]=static_cast<uint32_t>(pixels.size());pixels.push_back(&avatar->images.at(static_cast<size_t>(tex.image)));}}
-        std::vector<std::unique_ptr<PrivateBuffer>> staging;
-        checked(F(vkResetCommandPool)(context.device,upload_pool,0),"Native upload reset");
-        VkCommandBufferBeginInfo begin{};begin.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        checked(F(vkBeginCommandBuffer)(upload_command,&begin),"Native upload begin");
-        if(latest&&latest->skinning){
-            if(!skinning_gpu)skinning_gpu=std::make_unique<NativeSkinningGpu>(context.device,context.get,context.memory,limits,shader_directory,&context.uncertain);
-            out->skin=skinning_gpu->asset(latest->skinning->asset);skinning_gpu->upload(upload_command,out->skin);
-        }
-        for(const auto* image:pixels) {
-            if(image->width<=0||image->height<=0||image->rgba.size()!=static_cast<size_t>(image->width)*image->height*4)throw std::runtime_error("Native texture dimensions");
-            auto target=std::make_unique<PrivateImage>(context);
-            VkImageCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;info.imageType=VK_IMAGE_TYPE_2D;info.format=VK_FORMAT_R8G8B8A8_SRGB;info.extent={static_cast<uint32_t>(image->width),static_cast<uint32_t>(image->height),1};
-            info.mipLevels=info.arrayLayers=1;info.samples=VK_SAMPLE_COUNT_1_BIT;info.tiling=VK_IMAGE_TILING_OPTIMAL;info.usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT;
-            checked(F(vkCreateImage)(context.device,&info,nullptr,&target->image),"Native texture");VkMemoryRequirements req{};F(vkGetImageMemoryRequirements)(context.device,target->image,&req);
-            VkMemoryAllocateInfo allocate{};allocate.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;allocate.allocationSize=req.size;allocate.memoryTypeIndex=context.memory_type(req.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-            checked(F(vkAllocateMemory)(context.device,&allocate,nullptr,&target->memory),"Native texture memory");checked(F(vkBindImageMemory)(context.device,target->image,target->memory,0),"Native texture bind");
-            VkImageViewCreateInfo view{};view.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;view.image=target->image;view.viewType=VK_IMAGE_VIEW_TYPE_2D;view.format=info.format;view.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
-            checked(F(vkCreateImageView)(context.device,&view,nullptr,&target->view),"Native texture view");
-            auto buffer=make_buffer(context,image->rgba.size(),VK_BUFFER_USAGE_TRANSFER_SRC_BIT);std::memcpy(buffer->mapped,image->rgba.data(),image->rgba.size());
-            VkImageMemoryBarrier barrier{};barrier.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.image=target->image;barrier.subresourceRange=view.subresourceRange;
-            F(vkCmdPipelineBarrier)(upload_command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,1,&barrier);
-            VkBufferImageCopy copy{};copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=info.extent;
-            F(vkCmdCopyBufferToImage)(upload_command,buffer->handle,target->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
-            barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;barrier.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;barrier.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            F(vkCmdPipelineBarrier)(upload_command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,nullptr,0,nullptr,1,&barrier);
-            out->images.push_back(std::move(target));staging.push_back(std::move(buffer));
-        }
-        const auto wrap=[](int x){return x==33071?VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:x==33648?VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:VK_SAMPLER_ADDRESS_MODE_REPEAT;};
-        for(size_t i=0;i<=avatar->materials.size();++i) {
-            const auto index=i<avatar->materials.size()?avatar->materials[i].base_texture:-1;const auto* tex=index>=0?&avatar->textures.at(static_cast<size_t>(index)):nullptr;
-            VkSamplerCreateInfo sampler{};sampler.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;sampler.magFilter=tex&&tex->mag_filter==9728?VK_FILTER_NEAREST:VK_FILTER_LINEAR;
-            sampler.minFilter=tex&&(tex->min_filter==9728||tex->min_filter==9984||tex->min_filter==9986)?VK_FILTER_NEAREST:VK_FILTER_LINEAR;
-            sampler.addressModeU=tex?wrap(tex->wrap_s):VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;sampler.addressModeV=tex?wrap(tex->wrap_t):VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;sampler.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-            VkSampler handle{};checked(F(vkCreateSampler)(context.device,&sampler,nullptr,&handle),"Native sampler");out->samplers.push_back(handle);out->image_for_material.push_back(tex?source_images.at(tex->image):0);
-        }
-        checked(F(vkEndCommandBuffer)(upload_command),"Native upload end");checked(F(vkResetFences)(context.device,1,&upload_fence),"Native upload fence reset");
-        VkSubmitInfo submit{};submit.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;submit.commandBufferCount=1;submit.pCommandBuffers=&upload_command;
-        const auto submitted=F(vkQueueSubmit)(queue,1,&submit,upload_fence);
-        if(submitted!=VK_SUCCESS){context.uncertain=submitted!=VK_ERROR_DEVICE_LOST;if(context.uncertain&&clips)clips->quarantine();checked(submitted,"Native upload submit");}
-        const auto completed=F(vkWaitForFences)(context.device,1,&upload_fence,VK_TRUE,10'000'000'000ull);
-        if(completed!=VK_SUCCESS){context.uncertain=completed!=VK_ERROR_DEVICE_LOST;if(context.uncertain&&clips)clips->quarantine();checked(completed,"Native upload completion");}
-        if(out->skin)skinning_gpu->finish_upload(out->skin);
-        return out;
+    void ensure_asset_stager(){
+        if(asset_stager)return;
+        if(!skinning_gpu)skinning_gpu=std::make_shared<NativeSkinningGpu>(context.device,context.get,context.memory,limits,shader_directory,&context.uncertain);
+        asset_stager=std::make_unique<NativeAvatarAssetStager>(context.device,context.get,set_loader,context.memory,skinning_gpu,&context.uncertain);
     }
     bool source_current(const NativeBufferBinding& source) const {
         return metadata.live(source)&&(!(replacement||partially_bound)||
@@ -892,8 +839,8 @@ struct NativeBackend::Impl {
         const auto bundle_started=std::chrono::steady_clock::now();
         if(replacement)latest=view_publications;
         const auto extent=std::to_string(recording.pass.extent.width)+"x"+std::to_string(recording.pass.extent.height);
-        if(!initialized||!latest||!assets||latest->asset!=assets->asset||context.uncertain||commands.size()>512){
-            notice("context-lifecycle extent="+extent+" initialized="+std::to_string(initialized)+" pose="+std::to_string(static_cast<bool>(latest))+" assets="+std::to_string(static_cast<bool>(assets))+" same-asset="+std::to_string(latest&&assets&&latest->asset==assets->asset)+" uncertain="+std::to_string(context.uncertain)+" commands="+std::to_string(commands.size()),"context-lifecycle-"+extent);return{};}
+        if(!initialized||!latest||!assets||latest->asset!=assets->avatar()||context.uncertain||commands.size()>512){
+            notice("context-lifecycle extent="+extent+" initialized="+std::to_string(initialized)+" pose="+std::to_string(static_cast<bool>(latest))+" assets="+std::to_string(static_cast<bool>(assets))+" same-asset="+std::to_string(latest&&assets&&latest->asset==assets->avatar())+" uncertain="+std::to_string(context.uncertain)+" commands="+std::to_string(commands.size()),"context-lifecycle-"+extent);return{};}
         size_t active=0;each_recording([&](VkCommandBuffer,const Recording& item){if(item.bundle)++active;});if(active>=16){notice("context-bundle-budget active="+std::to_string(active));return{};}
         const auto graphics=metadata.bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS),compute=metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);
         if(!graphics.valid||graphics.pipeline.kind!=NativePipelineKind::visibility||!compute.valid||!compatible(graphics)||!compatible(compute)){
@@ -907,7 +854,7 @@ struct NativeBackend::Impl {
             if(!latest){report("no current publication for this native view allocation");return{};}
         }
         auto bundle=std::make_shared<Bundle>(context);bundle->pose=latest;bundle->assets=assets;bundle->compute_restore=compatible(compute);bundle->first_pass=recording.pass;
-        if(!publication_material_plan(*latest,bundle->material_plan)){report("native material partition declined");return{};}
+        if(!publication_material_plan(*latest,bundle->material_plan,assets&&assets->skin()&&assets->skin()->mouth_available())){report("native material partition declined");return{};}
         if(bundle->material_plan.mixed&&!replacement){report("mixed path requires shared replacement commit");return{};}
         bundle->instances=metadata.buffer_binding(graphics,2,4);bundle->culled=metadata.buffer_binding(graphics,2,5);bundle->vis_camera=metadata.buffer_binding(graphics,1,4);
         bundle->indirect=metadata.buffer(recording.first_indirect);bundle->counts=metadata.buffer(recording.first_count);bundle->arena=metadata.buffer(bundle->vis_camera.info.buffer);
@@ -994,14 +941,14 @@ struct NativeBackend::Impl {
             bundle->indices=make_buffer(context,latest->geometry->indices.size()*4,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             if(bundle->vertices->size>limits.maxStorageBufferRange||bundle->indices->size>limits.maxStorageBufferRange)return{};
             std::memcpy(bundle->vertices->mapped,latest->geometry->vertices.data(),static_cast<size_t>(bundle->vertices->size));std::memcpy(bundle->indices->mapped,latest->geometry->indices.data(),static_cast<size_t>(bundle->indices->size));
-        }else if(!skinning_gpu||!assets->skin){report("GPU skin asset unavailable");return{};}
+        }else if(!skinning_gpu||!assets->skin()){report("GPU skin asset unavailable");return{};}
         const auto alignment=std::max<VkDeviceSize>(16,limits.minUniformBufferOffsetAlignment);const auto stride=(sizeof(NativeMaterial)+alignment-1)/alignment*alignment;
         bundle->material_stride=stride;
-        const auto material_count=assets->asset->materials.size()+1;bundle->materials=make_buffer(context,stride*material_count,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        const auto material_count=assets->avatar()->materials.size()+1;bundle->materials=make_buffer(context,stride*material_count,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         const auto probe_mode=artifact_mode(GetTickCount64());
         bundle->probe_mode=probe_mode;
         const auto previous=history_for(bundle->instances.info.buffer,recording.pass.extent);
-        if(previous&&previous->pose&&previous->frame&&previous->pose->asset==latest->asset&&
+        if(previous&&previous->pose&&previous->frame&&previous->pose->asset==latest->asset&&previous->pose->appearance==latest->appearance&&
            (latest->presentation_serial?
                 previous->pose->presentation_serial&&previous->pose->presentation_serial<UINT64_MAX&&previous->pose->presentation_serial+1==latest->presentation_serial:
                 previous->pose->serial<UINT64_MAX&&previous->pose->serial+1==latest->serial)&&
@@ -1019,7 +966,7 @@ struct NativeBackend::Impl {
                     std::copy_n(previous->pose->geometry->vertices[i].position,3,vertices[i].previous_position);
             }
         }
-        if(latest->skinning)bundle->skin=skinning_gpu->frame(assets->skin,*latest->skinning,{bundle->frame->handle,0,bundle->frame->size},bundle->previous?bundle->previous->geometry:nullptr);
+        if(latest->skinning)bundle->skin=skinning_gpu->frame(assets->skin(),*latest->skinning,{bundle->frame->handle,0,bundle->frame->size},bundle->previous?bundle->previous->geometry:nullptr,latest->mouth_weights);
         try {
             bundle->emission=std::make_shared<SubmittedHistory>();bundle->emission->frame=bundle->frame;
             if(bundle->skin)bundle->emission->geometry=bundle->skin->geometry();
@@ -1027,12 +974,9 @@ struct NativeBackend::Impl {
             bundle->emission->extent=recording.pass.extent;bundle->emission->probe_mode=probe_mode;
         }catch(...){bundle->emission.reset();} // Optional history cannot abandon a visible bundle.
         for(size_t i=0;i<material_count;++i) {
-            const vrm::Material fallback{};const auto& source=i<assets->asset->materials.size()?assets->asset->materials[i]:fallback;NativeMaterial material{};
-            std::copy(source.base_color.begin(),source.base_color.end(),material.base);material.surface[1]=.35f;material.surface[3]=1;
-            material.instance[0]=latest->parts[0][3];material.instance[3]=1;material.alpha[0]=source.alpha_cutoff;material.alpha[1]=source.alpha==vrm::AlphaMode::Mask?1.f:source.alpha==vrm::AlphaMode::Blend?2.f:0.f;
-            if(bundle->menu_cutout&&source.alpha==vrm::AlphaMode::Blend){material.alpha[0]=.5f;material.alpha[1]=1.f;}
-            material.alpha[2]=source.double_sided?1.f:0.f;
-            material.alpha[3]=probe_mode;
+            const vrm::Material fallback{};const auto& source=i<assets->avatar()->materials.size()?assets->avatar()->materials[i]:fallback;
+            const auto mode=artifact_probe_file.empty()?avatar_material_shader_mode(latest->appearance.get(),i):probe_mode;
+            const auto material=native_avatar_material(source,latest->parts[0][3],mode,bundle->menu_cutout);
             std::memcpy(static_cast<uint8_t*>(bundle->materials->mapped)+stride*i,&material,sizeof material);
         }
         const auto count=static_cast<uint32_t>(material_count);
@@ -1065,7 +1009,8 @@ struct NativeBackend::Impl {
         }
         for(uint32_t i=0;i<count;++i) {
             const std::array<VkDescriptorBufferInfo,4> buf={{{bundle->frame->handle,0,sizeof(NativePreparedFrame)},{bundle->materials->handle,stride*i,sizeof(NativeMaterial)},vertex_binding(*bundle),index_binding(*bundle)}};
-            const std::array<VkDescriptorImageInfo,2> images={{{VK_NULL_HANDLE,assets->images[assets->image_for_material[i]]->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},{assets->samplers[i],VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED}}};
+            const auto sampled=assets->material(i);
+            const std::array<VkDescriptorImageInfo,2> images={{{VK_NULL_HANDLE,sampled.imageView,sampled.imageLayout},{sampled.sampler,VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED}}};
             std::array<VkWriteDescriptorSet,6> draw_writes{};
             for(uint32_t j=0;j<6;++j){auto& w=draw_writes[j];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=sets[i+1];w.dstBinding=j;w.descriptorCount=1;w.descriptorType=j==0||j==3?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:j==1?VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:j==2?VK_DESCRIPTOR_TYPE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;if(j==1||j==2)w.pImageInfo=&images[j-1];else w.pBufferInfo=&buf[j?j-2:0];}
             F(vkUpdateDescriptorSets)(context.device,draw_writes.size(),draw_writes.data(),0,nullptr);
@@ -1172,40 +1117,49 @@ struct NativeBackend::Impl {
         const auto latest=publication_for(b.instances.info.buffer);
         if(b.submitted)return;
         b.submitted=true;b.awaiting_submit_result=true;b.submitted_queue=submitted_queue;
-        bool ready=shape&&recording.eligible&&!recording.tainted&&!b.invalid&&b.recorded&&b.ended&&b.visibility_passes>=1&&b.visibility_passes<=2&&b.gbuffer_passes==1&&
-            b.visibility_passes==b.visibility_draws&&b.gbuffer_draws==1&&b.gbuf_camera&&b.owner&&b.data.permit[3]>0&&
-            b.gbuf_camera.info.buffer==b.arena.info.buffer&&b.owner.info.buffer==b.arena.info.buffer&&
-            b.gbuf_camera.generation==b.arena.generation&&b.owner.generation==b.arena.generation&&
-            b.gbuf_camera.info.offset<=UINT32_MAX&&b.owner.info.offset<=UINT32_MAX&&latest&&latest->asset==b.pose->asset&&
-            GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250;
-        ready=ready&&sources_current(b.sources)&&source_current(b.gbuf_camera)&&source_current(b.owner);
-        for(const auto& view:b.shadow_views){const auto current=metadata.attachment_view(view.depth.view);ready=ready&&current.current&&
-            current.image==view.depth.image&&current.image_generation==view.depth.image_generation&&current.view_generation==view.depth.view_generation;}
-        if(b.material_plan.mixed)ready=ready&&mixed_current(b)&&b.oit_window.complete();
+        FallbackDecision decision;using Gate=FallbackGate;
+        bool ready=decision.check(shape,Gate::Shape)&&decision.check(recording.eligible,Gate::Eligible)&&
+            decision.check(!recording.tainted,Gate::Untainted)&&decision.check(!b.invalid,Gate::ValidBundle)&&
+            decision.check(b.recorded,Gate::Recorded)&&decision.check(b.ended,Gate::Ended)&&
+            decision.check(b.visibility_passes>=1&&b.visibility_passes<=2,Gate::VisibilityPass)&&decision.check(b.gbuffer_passes==1,Gate::GbufferPass)&&
+            decision.check(b.visibility_passes==b.visibility_draws,Gate::VisibilityDraw)&&decision.check(b.gbuffer_draws==1,Gate::GbufferDraw)&&
+            decision.check(bool(b.gbuf_camera),Gate::Camera)&&decision.check(bool(b.owner),Gate::Owner)&&decision.check(b.data.permit[3]>0,Gate::Parts)&&
+            decision.check(b.gbuf_camera.info.buffer==b.arena.info.buffer&&b.owner.info.buffer==b.arena.info.buffer&&
+                b.gbuf_camera.generation==b.arena.generation&&b.owner.generation==b.arena.generation,Gate::Arena)&&
+            decision.check(b.gbuf_camera.info.offset<=UINT32_MAX&&b.owner.info.offset<=UINT32_MAX,Gate::Offsets)&&
+            decision.check(latest&&latest->asset==b.pose->asset,Gate::Latest)&&
+            decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::PoseAge);
+        ready=ready&&decision.check(sources_current(b.sources),Gate::Sources)&&decision.check(source_current(b.gbuf_camera),Gate::CameraSource)&&decision.check(source_current(b.owner),Gate::OwnerSource);
+        for(const auto& view:b.shadow_views){const auto current=metadata.attachment_view(view.depth.view);ready=ready&&decision.check(current.current&&
+            current.image==view.depth.image&&current.image_generation==view.depth.image_generation&&current.view_generation==view.depth.view_generation,Gate::Shadows);}
+        if(b.material_plan.mixed)ready=ready&&decision.check(mixed_current(b)&&b.oit_window.complete(),Gate::Mixed);
+        std::string decision_reason;
         if(replacement) {
-            ready=ready&&b.visibility_clips>0&&b.gbuffer_clips>0&&b.clip_set&&b.body_bits&&
-                memory.valid(b.instances.info.buffer,0,b.instances.size)&&recording.affected_pass&&recording.ownership_window==b.pose->serial;
+            ready=ready&&decision.check(b.visibility_clips>0&&b.gbuffer_clips>0,Gate::Clips)&&decision.check(b.clip_set&&b.body_bits,Gate::Mask)&&
+                decision.check(memory.valid(b.instances.info.buffer,0,b.instances.size),Gate::Memory)&&decision.check(recording.affected_pass,Gate::AffectedPass)&&
+                decision.check(recording.ownership_window==b.pose->serial,Gate::OwnershipWindow);
             // Veto other affected primaries already observed in this publication
             // window, including earlier separate submissions. This observation
             // does not predict future command recording after this submission.
             each_recording([&](VkCommandBuffer native,const Recording& other){if(&other!=&recording&&other.affected_pass&&
                 (native==command||other.ownership_window==b.pose->serial||(b.pose->presentation_serial&&
-                    other.ownership_presentation==b.pose->presentation_serial))&&!independent_view(other,b))ready=false;});
-            for(const auto& source:b.excluded_transforms)ready=ready&&metadata.live(source)&&
-                memory.disjoint(b.instances.info.buffer,0,b.instances.size,source.info.buffer,source.info.offset,source.info.range);
-            std::string reason;
+                    other.ownership_presentation==b.pose->presentation_serial))&&!independent_view(other,b)){ready=false;decision.check(false,Gate::CompetingOwnership);}});
+            for(const auto& source:b.excluded_transforms)ready=ready&&decision.check(metadata.live(source)&&
+                memory.disjoint(b.instances.info.buffer,0,b.instances.size,source.info.buffer,source.info.offset,source.info.range),Gate::ExcludedTransforms);
+            auto& reason=decision_reason;
             NativeOwnerObservationStats owner_stats;bool owner_failed=false;
             if(ready){
                 if(b.menu_preview){ready=revalidate_menu_owner(b.menu_owner,reason);}
                 else{const auto owner_started=GetTickCount64();ready=revalidate_owner(b.cpu_owner,reason,&owner_stats);
                     if(!ready)ready=refresh_census_owner(b,owner_started,reason,owner_stats);}
                 owner_failed=!ready;
+                decision.check(ready,Gate::OwnerFreshness);
             }
             if(ready){NativeBodyMask current;
                 if(b.menu_preview){std::vector<std::array<std::uint32_t,4>> qualified;
-                    ready=make_native_menu_body_mask(b.menu_owner,b.pose->parts,b.pose->instance_qualifiers,b.instances,current,qualified,reason)&&
-                        qualified==b.qualified_parts&&current.words==b.body_mask.words;
-                }else ready=make_native_body_mask(b.cpu_owner,b.pose->parts,b.instances,current,reason)&&current.words==b.body_mask.words;
+                    ready=decision.check(make_native_menu_body_mask(b.menu_owner,b.pose->parts,b.pose->instance_qualifiers,b.instances,current,qualified,reason),Gate::BodyBuild)&&
+                        decision.check(qualified==b.qualified_parts,Gate::QualifiedParts)&&decision.check(current.words==b.body_mask.words,Gate::BodyWords);
+                }else ready=decision.check(make_native_body_mask(b.cpu_owner,b.pose->parts,b.instances,current,reason),Gate::BodyBuild)&&decision.check(current.words==b.body_mask.words,Gate::BodyWords);
             }
             if(!ready&&!reason.empty()){
                 report("replacement submission owner declined: "+reason);
@@ -1218,12 +1172,12 @@ struct NativeBackend::Impl {
             else if(ready&&owner_process){const auto started=std::chrono::steady_clock::now();tool_slots.publish(*owner_process,b.cpu_owner,b.pose,b.instances.generation);resource_timing(3,started);}else if(!ready)revoke_preparation(b.instances);
             // Initial hook installation may take time. It cannot extend the
             // original pose age accepted by either CPU or tool authorization.
-            ready=ready&&GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250;
+            ready=ready&&decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::AgeAfterTool);
             if(!ready)revoke_preparation(b.instances);
             if(ready)retain_owner_hint(b);
             // Optional first-seed allocation/copy is bounded in size, not time.
             // It must not carry an otherwise fresh pose across the age limit.
-            ready=ready&&GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250;
+            ready=ready&&decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::AgeAfterSeed);
             if(!ready)revoke_preparation(b.instances);
             b.data.permit[0]=ready?1:0;
         }
@@ -1231,6 +1185,21 @@ struct NativeBackend::Impl {
             latest->serial==b.pose->serial&&same_selection(*b.previous,b)?1u:0u;
         std::memcpy(b.control->mapped,&b.data,sizeof b.data);
         if(replacement){if(ready)++coverage_accepted;else ++coverage_declined;if((ready&&coverage_accepted==1)||(coverage_accepted+coverage_declined)%600==0)coverage_report();}
+        const auto diagnostic_now=GetTickCount64();
+        const auto diagnostic_event=ready?submission_gaps.recovery(diagnostic_now):submission_gaps.failure(diagnostic_now,decision.failed,decision_reason.c_str());
+        if(diagnostic_event.emit)log_event_lazy([&]{return std::string(ready?"avatar-fallback.submit-recovered":"avatar-fallback.submit-gap")+
+            " decision="+(ready?std::string("accepted"):std::string("declined"))+" episode="+std::to_string(diagnostic_event.episode)+
+            " failures="+std::to_string(diagnostic_event.failures)+" gap-ms="+std::to_string(diagnostic_event.elapsed_ms)+
+            " suppressed-episodes="+std::to_string(diagnostic_event.suppressed_episodes)+" pose="+std::to_string(b.pose->serial)+
+            " age-ms="+std::to_string(diagnostic_now>=b.pose->published_milliseconds?diagnostic_now-b.pose->published_milliseconds:UINT64_MAX)+
+            " epoch="+std::to_string(b.pose->source_buffer_epoch)+" current-epoch="+std::to_string(metadata.buffer_epoch())+
+            " latest="+std::to_string(bool(latest&&latest->asset==b.pose->asset))+" sources="+std::to_string(sources_current(b.sources))+
+            " shape="+std::to_string(shape)+" eligible="+std::to_string(recording.eligible)+" tainted="+std::to_string(recording.tainted)+
+            " invalid="+std::to_string(b.invalid)+" ended="+std::to_string(b.ended)+" visibility="+std::to_string(b.visibility_passes)+
+            "/"+std::to_string(b.visibility_draws)+" gbuffer="+std::to_string(b.gbuffer_passes)+"/"+std::to_string(b.gbuffer_draws)+
+            " ownership="+std::to_string(recording.affected_pass&&recording.ownership_window==b.pose->serial)+
+            " owner-detail="+(decision_reason.empty()?std::string("none"):decision_reason)+
+            " failed-checks="+fallback_gate_names(diagnostic_event.reason_mask)+fallback_event_summary(diagnostic_event);});
         try {
             if(ready){++permits;if(permits==1||permits%300==0)log_event(std::string(replacement?"native-replacement.cpu-permit count=":"native-additive.cpu-permit count=")+std::to_string(permits)+" pose-serial="+std::to_string(b.pose->serial)+" pose-age-ms="+std::to_string(GetTickCount64()-b.pose->published_milliseconds)+(b.data.history[0]?" history=requested original-body=":" history=invalid original-body=")+(replacement?"shared-gpu-clip":"retained"));last_reason.clear();}
             else {submission_decline_diagnostic(command,recording,b,shape);report("paired pass/source/pose submission gate declined");}
@@ -1259,6 +1228,8 @@ struct NativeBackend::Impl {
         if(context.device&&idle==VK_SUCCESS)each_recording([&](VkCommandBuffer command,Recording& item){harvest_mixed(command,item,"device-idle-success");});
         if(idle!=VK_SUCCESS&&idle!=VK_ERROR_DEVICE_LOST)context.uncertain=true;else context.uncertain=false;
         if(clips&&context.uncertain)clips->quarantine();
+        if(asset_stager&&!context.uncertain)asset_stager->device_idle_complete();
+        asset_stager.reset();
         discard_history();completed_views.clear();commands.clear();latest.reset();assets.reset();layouts.clear();
         clips.reset();
         if(context.uncertain){draw_pipelines.release();oit_pipelines.release();shadow_pipeline.release();return;}
@@ -1274,8 +1245,6 @@ struct NativeBackend::Impl {
         if(prepare_layout)F(vkDestroyPipelineLayout)(context.device,prepare_layout,nullptr);
         if(draw_set)F(vkDestroyDescriptorSetLayout)(context.device,draw_set,nullptr);
         if(prepare_set)F(vkDestroyDescriptorSetLayout)(context.device,prepare_set,nullptr);
-        if(upload_fence)F(vkDestroyFence)(context.device,upload_fence,nullptr);
-        if(upload_pool)F(vkDestroyCommandPool)(context.device,upload_pool,nullptr);
     }
 #undef F
     void coverage_report()noexcept {
@@ -1460,9 +1429,39 @@ NativeState& NativeBackend::state()noexcept{return impl->metadata;}
 NativeClipPipelines* NativeBackend::clipping()noexcept{return impl->clips.get();}
 NativeBufferMemory* NativeBackend::buffer_memory()noexcept{return impl->replacement||impl->partially_bound?&impl->memory:nullptr;}
 NativeImageMemory* NativeBackend::image_memory()noexcept{return impl->image_memory.get();}
+bool NativeBackend::mouth_gpu_unavailable()const noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->mutex);
+        return impl->assets&&impl->assets->avatar()&&impl->assets->avatar()->mouth&&impl->assets->skin()&&!impl->assets->skin()->mouth_available();
+    }catch(...){return true;}
+}
 #ifdef EVRM_NATIVE_BACKEND_TESTING
 void NativeBackend::test_owner(std::shared_ptr<const NativeBackendTestOwner> source)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->discard_owner_hint();impl->test_owner_source=std::move(source);}catch(...){} }
 #endif
+NativeAvatarUploadState NativeBackend::prepare_model(VkQueue queue,std::uint32_t family,const AvatarCandidatePtr& candidate)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->mutex);
+        impl->hot_generation=candidate?candidate->generation:0;
+        if(impl->disabled||impl->context.uncertain)return NativeAvatarUploadState::Failed;
+        if(!candidate){if(impl->asset_stager&&impl->assets)impl->asset_stager->update(queue,family,0,{});return NativeAvatarUploadState::Idle;}
+        if(impl->queue&&(impl->queue!=queue||impl->family!=family))return NativeAvatarUploadState::Failed;
+        impl->queue=queue;impl->family=family;impl->initialize();impl->ensure_asset_stager();
+        return impl->asset_stager->update(queue,family,candidate->generation,candidate->model->asset,candidate->model->skin);
+    }catch(const std::exception& error){try{impl->report(error.what());}catch(...){}return NativeAvatarUploadState::Failed;}catch(...){return NativeAvatarUploadState::Failed;}
+}
+bool NativeBackend::activate_model(const AvatarCandidate& candidate,bool(*commit)(void*,std::uint64_t)noexcept,void* context)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->mutex);
+        if(impl->disabled||impl->context.uncertain||!impl->asset_stager||impl->hot_generation!=candidate.generation||
+            !impl->asset_stager->ready(candidate.generation,candidate.model->asset))return false;
+        if(!commit||!commit(context,impl->metadata.buffer_epoch()))return false;
+        auto next=impl->asset_stager->take_ready(candidate.generation,candidate.model->asset);
+        impl->assets.swap(next);impl->hot_generation=0;impl->revoke_preparation();
+        // Revoke the old pose without restoring/repatching the same native hook.
+        // The next accepted publication must authorize the new model normally.
+        impl->tool_slots.disable();
+        // completed_views owns prior recorded/pending command bundles. The
+        // upload fence cannot retire commands submitted after that upload.
+        impl->latest.reset();impl->view_publications.reset();return true;
+    }catch(...){return false;}
+}
 void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const NativeAvatarPublication> publication,std::uint64_t source_buffer_epoch)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);impl->observe_image_disable();impl->latest=std::move(publication);if(!impl->latest||impl->disabled||impl->context.uncertain){impl->view_publications.reset();impl->revoke_preparation();return;}
         impl->view_publications=impl->latest;
@@ -1489,9 +1488,17 @@ void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const 
         if(!impl->assets&&impl->latest->asset&&std::any_of(impl->latest->asset->materials.begin(),impl->latest->asset->materials.end(),[](const vrm::Material& m){return m.alpha==vrm::AlphaMode::Blend;})){
             NativeMaterialPlan plan;if(!publication_material_plan(*impl->latest,plan)){impl->revoke_preparation();impl->report("mixed publication material partition declined before upload");return;}
         }
-        impl->initialize();if(!impl->assets)impl->assets=impl->upload(impl->latest->asset);
+        impl->initialize();
+        if(!impl->assets){
+            if(impl->hot_generation)return;
+            impl->ensure_asset_stager();
+            const auto skin=impl->latest->skinning?impl->latest->skinning->asset:nullptr;
+            const auto status=impl->asset_stager->update(queue,family,UINT64_MAX,impl->latest->asset,skin);
+            if(status!=NativeAvatarUploadState::Ready){if(status==NativeAvatarUploadState::Failed)impl->report(impl->asset_stager->error());return;}
+            impl->assets=impl->asset_stager->take_ready(UINT64_MAX,impl->latest->asset);
+        }
         try{if(impl->wants_notice("publication-ready"))impl->notice("publication-ready parts="+std::to_string(impl->latest->parts.size())+" vertices="+std::to_string(impl->latest->geometry?impl->latest->geometry->vertices.size():0),"publication-ready");}catch(...){}
-        if(impl->assets->asset!=impl->latest->asset){impl->revoke_preparation();impl->disabled=true;impl->report("asset changed");return;}
+        if(impl->assets->avatar()!=impl->latest->asset){impl->revoke_preparation();impl->report("model has not completed its activation transaction");return;}
         if(impl->replacement&&impl->owner_process){const auto started=std::chrono::steady_clock::now();
             const auto hint=std::atomic_load(&impl->owner_preparation_hint);
             const auto world=hint?native_publication_view(impl->view_publications,hint->candidate.native_buffer):impl->latest;

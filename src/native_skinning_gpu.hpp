@@ -9,6 +9,7 @@ class NativeSkinGpuAsset {
 public:
     ~NativeSkinGpuAsset();
     VkDescriptorBufferInfo indices()const noexcept;
+    bool mouth_available()const noexcept;
 private:
     struct Impl;std::shared_ptr<Impl> impl;
     explicit NativeSkinGpuAsset(std::shared_ptr<Impl>);
@@ -48,7 +49,7 @@ public:
     void finish_upload(const std::shared_ptr<NativeSkinGpuAsset>&);
     std::shared_ptr<NativeSkinGpuFrame> frame(const std::shared_ptr<NativeSkinGpuAsset>&,
         const NativeSkinPose&,VkDescriptorBufferInfo prepared_frame,
-        std::shared_ptr<const NativeSkinGpuGeometry> previous={});
+        std::shared_ptr<const NativeSkinGpuGeometry> previous={},const vrm::MouthWeights& mouth_weights={});
     // Preparation must already have written the shared frame. This records
     // transforms -> deformation -> aggregate commit gate -> graphics visibility.
     void record(VkCommandBuffer,const std::shared_ptr<NativeSkinGpuFrame>&);

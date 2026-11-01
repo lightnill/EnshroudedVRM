@@ -1,20 +1,111 @@
 {
-  "version": "0.2.0",
   "author": "lightnill",
   "originalCodeLicense": "MIT",
-  "runtimeSha256": "910ab2ccec93f3a386e2eca785883f061d8ece94c784cbfc2494ba1d56e52318",
+  "binaryInputs": [
+    {
+      "path": "vendor/oculus-lipsync/Win64/OVRLipSync.dll",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "distribution": "Official separately licensed DLL is in player ZIP; obtain from verified official SDK or release, not Git history"
+    }
+  ],
+  "externalTestInputs": [
+    {
+      "path": "tests/fixtures/voice-public-speech.wav",
+      "sha256": "6318883d5a5d5dc4b95457e43e2bf88d934b187f850a46b52ef02b2f459fb775",
+      "instructions": "tests/fixtures/README.md",
+      "provenance": "tests/fixtures/voice-public-speech-PROVENANCE.json",
+      "includedInGit": false
+    }
+  ],
+  "multiplayer": "Local avatar only; synchronization is not implemented",
+  "version": "0.3.0",
+  "releaseTag": "v0.3.0",
+  "packageName": "EnshroudedVRM-0.3.0.zip",
+  "packageSha256": "519c0141ad00faa6c51a800aee5cf28c5d8fc5aaa415c542c889fb37f4748d0e",
+  "runtimeSha256": "9c63410651703633268648fe346d435dc3a43040a82dc00c0c91a12be1473524",
+  "bootstrapSha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+  "runtimeVersion": "0.3.0",
+  "bootstrapVersion": "0.2.0-standalone-dev",
   "sourceInputs": [
     {
+      "path": ".gitattributes",
+      "sha256": "e5a9e72c2ba5d302239c4b85d3c51f5f54f0347dec1866031400390830cef44c"
+    },
+    {
       "path": "build.ps1",
-      "sha256": "7d4f78707b452caaf1c364d64015acc846b22ba089ccd1cd70e36ce01fc02b1c"
+      "sha256": "9b18bd5f3376ac07172716d46e32ef49c3f84c42b94b1f8d08806e7cc4697ac9"
     },
     {
       "path": "enshrouded_vrm_layer.json",
       "sha256": "48cc6a1c573a690c601070980b9c8bfc988f945be0f6a0b3e3437a98e7a2be54"
     },
     {
+      "path": "portable/bootstrap/bootstrap.rc",
+      "sha256": "518c74751dbe75ac0d10245978df18435c0bc8c8cf70b5fc01a46e485e3fa1af"
+    },
+    {
+      "path": "portable/bootstrap/build_bootstrap.py",
+      "sha256": "4a08c17f08a90ae989fdaf3febc5e2d243b6ad4b8171a72b0cd1087af14c3a00"
+    },
+    {
+      "path": "portable/bootstrap/generate_exports.py",
+      "sha256": "38386e28cfcb2aa5198ca95a212a191b73689e8601fcfdff89d74901512ec29d"
+    },
+    {
+      "path": "portable/bootstrap/vulkan-exports.json",
+      "sha256": "46f26fb2e389c2d97a4586790dc2582e1021de9ef6bbca9dbd42c76cebb14c06"
+    },
+    {
+      "path": "portable/build_standalone.py",
+      "sha256": "3aac1990468a02f3577d2eeb190ebd0890405cd7a33f7f1a36093efabcd30940"
+    },
+    {
+      "path": "portable/package_portable.py",
+      "sha256": "74321e24a4d4ba8f1e72236f08b5948199e9306a844f38ce35d5af51d102f452"
+    },
+    {
+      "path": "portable/package_script_release.py",
+      "sha256": "cb7091b60b16319ef0ace2ed0158c14fc030dda3b4073c1c766bfb18666e869a"
+    },
+    {
+      "path": "portable/package_standalone_release.py",
+      "sha256": "08af10729e15e77387d56095854fdd07bb7667f5b8a420c8b9dee6b913ff2ebf"
+    },
+    {
       "path": "portable/runtime.rc",
-      "sha256": "cb5ae265ba22c8acd26090cdf60f49f50d23c5e3f013c10b185b46a2c0174509"
+      "sha256": "27c7c930e0831d672b80a56639ea4053c5cd1ae8b87dc09419cb72bd6dd171b7"
+    },
+    {
+      "path": "portable/standalone_docs/Avatars-README.txt",
+      "sha256": "92c41eeb0873af857ff6995fbb2d36acab86636fffd24f8873c4fcf94b521d09"
+    },
+    {
+      "path": "portable/standalone_docs/KNOWN-ISSUES.txt",
+      "sha256": "054695ca135b09ad656a8eaebef39a4f0e047ee3ce7ab77383403436628592e7"
+    },
+    {
+      "path": "portable/standalone_docs/MOD-SETTINGS.txt",
+      "sha256": "ec140d4d8ed8c487eaf8515c9f5c4e594d6d02996c716a0eaadd1e4ff86720e9"
+    },
+    {
+      "path": "portable/standalone_docs/README.txt",
+      "sha256": "4afebb9a7ca803a76d86873f902db33db9c51fd27dd6d90fe7c3890de66f409b"
+    },
+    {
+      "path": "portable/standalone_docs/RELEASE-NOTES.md",
+      "sha256": "a89ff21b582dc7675a09184dba5473462d1e56c9e923c3bd23a130b194ad5b63"
+    },
+    {
+      "path": "portable/standalone_docs/SECURITY.md",
+      "sha256": "07f33f9f5dff4c67d97f433630ea95f4777f692fe5edfc93f0deb71da06852df"
+    },
+    {
+      "path": "portable/standalone_docs/THIRD_PARTY_NOTICES.md",
+      "sha256": "d8f57c0f8a402d574b82dcc43f15cd98f05bf81a8ea64ae68b590ac0dea69856"
+    },
+    {
+      "path": "portable/standalone_layer.json",
+      "sha256": "866cf4ae14d244808f52f42872c98e04338e71ae895e3ae82d0ee395e8ff04a9"
     },
     {
       "path": "shaders/avatar.hlsl",
@@ -62,7 +153,7 @@
     },
     {
       "path": "src/avatar_device_request.hpp",
-      "sha256": "d8ed1b8c4771612bc735d1227fbf3b579cf8c157e3ab170ed472b06aa041d74c"
+      "sha256": "dc1dc58a6cd6641855ccb006327e791de6e0dd215c2b85ed6f73576679bd6711"
     },
     {
       "path": "src/avatar_model.cpp",
@@ -74,7 +165,7 @@
     },
     {
       "path": "src/avatar_renderer.cpp",
-      "sha256": "fecf3cf522043c083c0016cc27c613bf98c5988acbcca896cfee30639e89da71"
+      "sha256": "98a8cd5ca267ce470f3a64cbc66e95537b0f370b8fa79f8ffca0ee049bc509c9"
     },
     {
       "path": "src/avatar_renderer.hpp",
@@ -82,7 +173,7 @@
     },
     {
       "path": "src/avatar_runtime.cpp",
-      "sha256": "908a0d7b50109a47e71efcbbc03cef5f993a31daa0cf23ab28bb123299603244"
+      "sha256": "073917a6d8b94a120520385e693e7ac98c557c1f6465bcb49a40b7f7458abd57"
     },
     {
       "path": "src/avatar_runtime.hpp",
@@ -90,23 +181,23 @@
     },
     {
       "path": "src/avatar_service.cpp",
-      "sha256": "8f4cb6c1a57a9c601e1098398f1c64f2789b8852d51dc4644342f9a5fd0d8ef0"
+      "sha256": "e89a92c36570c01f08e97e29ad6b11f8d34e775caeea24ba8869e9dfeed78845"
     },
     {
       "path": "src/avatar_service.hpp",
-      "sha256": "77c9dc1ca6a4b918523154e98d86bfc49b240c2816d36dd28f73b108454dba99"
+      "sha256": "f827cc7ce03728e3475078a758b3b4401ac6d03fce73ca8884483bcffc135d2a"
     },
     {
       "path": "src/avatar_service_types.hpp",
-      "sha256": "539394332edbc4487958cb6534189bd289b0ed7443bb4790db2f084f09ede220"
+      "sha256": "e2c8d686ce7c337782fa36296691284bf947f7d3b581eaf995d68cfff220866f"
     },
     {
       "path": "src/avatar_settings.cpp",
-      "sha256": "c7ed10be756b34db0fee9543a6a1b3afd4e3f488af5ce30a63ff358060a1ae58"
+      "sha256": "a69a94fdff7937c09ce706a0a0939c181d1343bdd6183d7bd12087dffe327c2e"
     },
     {
       "path": "src/avatar_settings.hpp",
-      "sha256": "51e1f3689e70465fa3d687f9356f5d6d9e179ba20c8e02aa44df3ac88a3f7716"
+      "sha256": "75d5316390809de74a87b763511951c29c07041b30b8568cb513a533f3c5258f"
     },
     {
       "path": "src/avatar_switch_transaction.hpp",
@@ -174,7 +265,7 @@
     },
     {
       "path": "src/gpu_probe.cpp",
-      "sha256": "0c9f7f1deea50790b397cc131723c2c5664ff0b65350c050323e87c972ed1350"
+      "sha256": "fe020f9067c1e39ccefb2e862c18e1736c6584033288fca7858e95255e7dd9c7"
     },
     {
       "path": "src/gpu_probe.hpp",
@@ -210,7 +301,7 @@
     },
     {
       "path": "src/import_images.inl",
-      "sha256": "f57017e42424c1925b40426e981483deb1262b568fc44031386b6880c41789bb"
+      "sha256": "8d136799d1992cccc439a623fd56bba9d5b062e290f6c907621cedaccf6edb45"
     },
     {
       "path": "src/import_meshes.inl",
@@ -246,7 +337,7 @@
     },
     {
       "path": "src/local_voice_observer.cpp",
-      "sha256": "42b3a48254c28ef3852c4bcac9d65efbe83a7b75836f49eae29c7435c57c6f41"
+      "sha256": "423c7e26bed93b6284839ec970012d640346a032914fbbe31141b1224c17dd86"
     },
     {
       "path": "src/local_voice_observer.hpp",
@@ -294,11 +385,11 @@
     },
     {
       "path": "src/mod_menu.cpp",
-      "sha256": "f947621947f1eac22a884c50dcd91c2ed14a1415b9b5b53eecd9e8dc87275450"
+      "sha256": "94db0afbd3e1ffa10a1a5d644d07e4ad14ceb67c41d494104307ef0e0a42cfc4"
     },
     {
       "path": "src/mod_menu.hpp",
-      "sha256": "18896577c80601b2828780918589855298442d7be3029343a1d6d04b2f730ec7"
+      "sha256": "320657139a8f6effba3687c703d8e96cd5b02872001513d034ee2883771f5d89"
     },
     {
       "path": "src/mod_menu_font.generated.inl",
@@ -314,7 +405,7 @@
     },
     {
       "path": "src/mod_menu_status.hpp",
-      "sha256": "d13091587b62b04895d0ee247566d8e2ea4bc2c5778ad48f62f5aa7371e14b59"
+      "sha256": "a5aab52610b8d98d227ce730ce36cef9a66d1f266668b8470d82541f211c4be4"
     },
     {
       "path": "src/mod_overlay.cpp",
@@ -330,15 +421,15 @@
     },
     {
       "path": "src/mod_settings.cpp",
-      "sha256": "2e914682ea0edba4557f54cb62cef2e3d0e0f28f0406a89c8c10b6b72d4a62dd"
+      "sha256": "21bc720733a314c8b25fa5a629e4f5d6b31b81f33f0ed75f3597c5c74efffc83"
     },
     {
       "path": "src/mod_settings.hpp",
-      "sha256": "3a7349574ac1be117d4aff0d39819be812a5bee23115f11d8404d84298642f74"
+      "sha256": "aef13ff4ded30f9005aa811ec2f2f76d66a547fa41d2e5280c654df0c32568cb"
     },
     {
       "path": "src/mod_settings_service.cpp",
-      "sha256": "b10a686cd10f5f31a3d81ab4e869344b013ac3e055ee04f01a97a79b3b2406d1"
+      "sha256": "5688ce1b74e1aeeb193f797777db1b70c197cb0185def57992f07fdd94d57b31"
     },
     {
       "path": "src/mod_settings_service.hpp",
@@ -386,11 +477,11 @@
     },
     {
       "path": "src/native_backend.cpp",
-      "sha256": "c0321e308d10f99dd624867d1bbc4cbcac695597291ec08406786cd7b0f40e90"
+      "sha256": "5f9d2de9727ff7de5feb417ed88fdd03533a66862cc7c107dc382c45dcce984a"
     },
     {
       "path": "src/native_backend.hpp",
-      "sha256": "2b803a2cc0b2c6325774fd09f6acc1e89d2044cae20d72dd0238d12a2d824734"
+      "sha256": "79f1b12728c4a98b71ca8b1ff596ae7f3674354e36494b3378b3dff25567c067"
     },
     {
       "path": "src/native_body_coverage.cpp",
@@ -582,7 +673,7 @@
     },
     {
       "path": "src/native_tool_slots_runtime.cpp",
-      "sha256": "f6582e93a349234c18110d9a62c24ef7239d0e12f4197f1e9c9d2ba35d844cc3"
+      "sha256": "f5cd20d57bf10dcfb47b0feafa2a4a1bea50de05024a7f04d0ceb4e8eed92caf"
     },
     {
       "path": "src/native_transparency_trace.cpp",
@@ -630,7 +721,7 @@
     },
     {
       "path": "src/runtime_bridge.cpp",
-      "sha256": "ea4f60e5fb38c77542cf811810ad749925a37ba85e0a59f254beeea71ce04e29"
+      "sha256": "28ad9d89e54718d0417dd90e21e337f7c91aa5bfe9747dd208423cc7d127838d"
     },
     {
       "path": "src/runtime_hooks.inl",
@@ -667,6 +758,54 @@
     {
       "path": "src/spring_import.inl",
       "sha256": "bc6a2ca29466c851550b0567588fd36cbbb51a230a49f73e4e18d26e35ea9066"
+    },
+    {
+      "path": "src/standalone_bootstrap_main.cpp",
+      "sha256": "24c5c9acc5900916d8d800a2eb4b6e5acfb72709e900e4be81ae10b53171fb12"
+    },
+    {
+      "path": "src/standalone_bootstrap_policy.cpp",
+      "sha256": "f100824ac00eb972eb0b05f8c5583252f7ae266214be5f7c757720b076207d76"
+    },
+    {
+      "path": "src/standalone_bootstrap_policy.hpp",
+      "sha256": "d149b8af3d21e5de4a590f26ee333d19218c4849feb9beacc9b96ba9b89bfa48"
+    },
+    {
+      "path": "src/standalone_files.cpp",
+      "sha256": "2b4a52c9f75a64bdf20935baf6b71f293daa4f0a767fcaadbeb4e624db9f49b2"
+    },
+    {
+      "path": "src/standalone_files.hpp",
+      "sha256": "7cff0f9d482ac19d632242c823b754a919796971cad656a000d117f8e82c00f8"
+    },
+    {
+      "path": "src/standalone_package_members.hpp",
+      "sha256": "f17262a89debd23c609c3f4168759fa67f173eea49ebfac3d0386c4b34c01e24"
+    },
+    {
+      "path": "src/standalone_settings.cpp",
+      "sha256": "908ac1df986701e33989e58e533ef0b512cde1f3df0a0883fb6bb7952088af87"
+    },
+    {
+      "path": "src/standalone_settings.hpp",
+      "sha256": "0aac7fda2b336f2f5afa80e060d069fe1dff31a0229c33d0d1f2459c81b0f9d3"
+    },
+    {
+      "path": "src/standalone_startup.cpp",
+      "sha256": "b87a4b926e8b81edf443bd081721a8f41f1e3d938a08bd778a6bae16ddffba0a"
+    },
+    {
+      "path": "src/standalone_startup.hpp",
+      "sha256": "80b750e6322d678bbc3d625aa8b57921875d1e8d075c06cdbbd3918846988619"
+    },
+    {
+      "path": "src/standalone_startup_environment.cpp",
+      "sha256": "1d5706178648f517975f875f121d7d4dea6672971ba34549034cb6a961da81f2"
+    },
+    {
+      "path": "src/standalone_startup_runtime.cpp",
+      "sha256": "acac10851edc26d7e29fffcdaf0a7a0bec17cb70e20b74c585e4d456fe5dbfdc"
     },
     {
       "path": "src/tool_grip.cpp",
@@ -714,7 +853,7 @@
     },
     {
       "path": "src/voice_inputs.cpp",
-      "sha256": "a4fd12e0b5dced8d5ba485dfdbee4b01c1fc19cb39ddf7c856991cd2a91fb579"
+      "sha256": "bb292bf500c03c1acb17cb6a58ed0366ce70a326540f9fa2e6cf5093f6b5de4b"
     },
     {
       "path": "src/voice_inputs.hpp",
@@ -917,128 +1056,6 @@
       "sha256": "0149e52ba5cde59e6894684f2d8611fddfbd53e189890bb167b5d0a9bb9825a2"
     }
   ],
-  "releaseSourceInputs": [
-    {
-      "path": "LICENSE",
-      "archivePath": "LICENSE",
-      "sha256": "c8bcc4c0c6954eb01800e0569421e644c57f93376a92182bb18c62537e35bcb1"
-    },
-    {
-      "path": "portable/docs/Avatars-README.txt",
-      "archivePath": "Avatars/README.txt",
-      "sha256": "b81266115976458b72d11e31336a810afce7a8c20ce7a71e4bd39e9cf74329c1"
-    },
-    {
-      "path": "portable/docs/KNOWN-ISSUES.txt",
-      "archivePath": "KNOWN-ISSUES.txt",
-      "sha256": "a8d62fa07fc15ca2463eb37a75bf9e2ca551249373a0eda1e7734cd9236c47c1"
-    },
-    {
-      "path": "portable/docs/RELEASE-NOTES.md",
-      "archivePath": "RELEASE-NOTES.md",
-      "sha256": "a4e9ad9bed41d7e177a2fced46f7401a13e74d5c9959e46ff5ae975fdaf2f4f7"
-    },
-    {
-      "path": "portable/docs/SCRIPT-LAUNCHER.txt",
-      "archivePath": "README.txt",
-      "sha256": "37660ec7411780c80450e43f7af0d42f70606d825d2957148ec7ffb18e973346"
-    },
-    {
-      "path": "portable/docs/SECURITY.md",
-      "archivePath": "SECURITY.md",
-      "sha256": "d2da1caed62ff0473b297af3014c14dd556fb944d1da7e7a1bb9b52e4518e2a4"
-    },
-    {
-      "path": "portable/docs/THIRD_PARTY_NOTICES.md",
-      "archivePath": "THIRD_PARTY_NOTICES.md",
-      "sha256": "b0bdcbd95fe6a0cb1ea3e914ca9a04ed608d8ab21843968472900e3c8604e92b"
-    },
-    {
-      "path": "portable/docs/VOICE-MENU-TEST.txt",
-      "archivePath": "MOD-SETTINGS.txt",
-      "sha256": "ebe646815790544665c230ddaad69fe5de715f1bf8b88885bf5798fd9e93f6cb"
-    },
-    {
-      "path": "portable/notices/GCC-RUNTIME-EXCEPTION.txt",
-      "archivePath": "notices/GCC-RUNTIME-EXCEPTION.txt",
-      "sha256": "90077ba306ee9d8ed966cab1b4abd69b6e728acf08777283cc50283cd9503fa6"
-    },
-    {
-      "path": "portable/notices/GPL-3.0.txt",
-      "archivePath": "notices/GPL-3.0.txt",
-      "sha256": "81cbae84a29ce7e770bf2bc7b178e50bda0ce8de6067aba661b0bc7b05b562f8"
-    },
-    {
-      "path": "portable/notices/LGPL-2.1.txt",
-      "archivePath": "notices/LGPL-2.1.txt",
-      "sha256": "090f8eb6ba63e72887c1f89b009fb1656cfda02d83b6e9805b20468520a5d77f"
-    },
-    {
-      "path": "portable/notices/MinGW-w64-runtime.txt",
-      "archivePath": "notices/MinGW-w64-runtime.txt",
-      "sha256": "8211dccca73dd4078d50ce7fa535b329f1c13edf6b54aa590131549f880ca0b8"
-    },
-    {
-      "path": "portable/notices/MinHook-BSD.txt",
-      "archivePath": "notices/MinHook-BSD.txt",
-      "sha256": "d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8"
-    },
-    {
-      "path": "portable/notices/Oculus-LipSync.txt",
-      "archivePath": "notices/Oculus-LipSync.txt",
-      "sha256": "860d2843070e9cf4a75b27d6efb3b3952be96fd0d3c72c840187becd95da7b03"
-    },
-    {
-      "path": "portable/notices/ShroudForge-MIT.txt",
-      "archivePath": "notices/ShroudForge-MIT.txt",
-      "sha256": "6e92f324737f2638f7ca8440aaa08c45897d4c32ea07c68a853ea46d560f4a0b"
-    },
-    {
-      "path": "portable/notices/TinyGLTF-MIT.txt",
-      "archivePath": "notices/TinyGLTF-MIT.txt",
-      "sha256": "95d94609b88df9d8d162e01b3f985c226c8d612b003ef85de74c5f45a6f5327b"
-    },
-    {
-      "path": "portable/notices/Vulkan-Headers-MIT.txt",
-      "archivePath": "notices/Vulkan-Headers-MIT.txt",
-      "sha256": "aeaee01d2c00f0a9bef734ea415aaec662d1ed615970bf50eeb6ebeb2897b9f7"
-    },
-    {
-      "path": "portable/notices/nlohmann-json-MIT.txt",
-      "archivePath": "notices/nlohmann-json-MIT.txt",
-      "sha256": "417d1dc998f6ee3d40db4e38ae909ee6c28259d36e733fb118ec84acba775c39"
-    },
-    {
-      "path": "portable/notices/stb-image-MIT.txt",
-      "archivePath": "notices/stb-image-MIT.txt",
-      "sha256": "4be6a99e816a7e197fcad539240c09713d4c887967eb81a07e52b47ecc33f873"
-    },
-    {
-      "path": "portable/script/Launch-EnshroudedVRM.cmd",
-      "archivePath": "Launch-EnshroudedVRM.cmd",
-      "sha256": "44e84e6eabd724689a7601de5db099e14e719ba8473e33fa33e59adb5797d977"
-    },
-    {
-      "path": "portable/script/Launch-EnshroudedVRM.ps1",
-      "archivePath": "Launch-EnshroudedVRM.ps1",
-      "sha256": "1d61edbad8ad0cd8791d94878f9c9f35ea94ca71782b4a6a6ab8acf9172a4d4c"
-    },
-    {
-      "path": "portable/script/launcher_core.psm1",
-      "archivePath": "launcher_core.psm1",
-      "sha256": "23845c84e5626ab01c1194fd53eccafcf5e8c59f605069a79e5e2699ab3e4b31"
-    },
-    {
-      "path": "vendor/imgui/BINARY-NOTICES.txt",
-      "archivePath": "notices/Dear-ImGui-fonts.txt",
-      "sha256": "6aaa921092f06c31d3569d2437ab4f69c67f31bd49feca55914ae379201e2957"
-    },
-    {
-      "path": "vendor/oculus-lipsync/Win64/OVRLipSync.dll",
-      "archivePath": "Runtime/OVRLipSync.dll",
-      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7"
-    }
-  ],
   "acceptedShaderModules": {
     "avatar.frag.spv": "704fdc4847962217d246760ad3117263e59f5c1e5e93a98d1546a4179899c5bb",
     "avatar.vert.spv": "f35c23585ef3baf3b01dbe7bce4c73a2af844f73c198a3f4d4779994466c718a",
@@ -1054,61 +1071,56 @@
     "native_skinning.finalize.spv": "e8675edd8de96e5ae7a0594ae2bed29aa6650f5cce932bf5edfb7f9d6c7082fd",
     "native_volume_snapshot.comp.spv": "a0d207e8e92e3bba89f2f78a63951d178f171479a44f990d49f7b829928d92f3"
   },
-  "releaseTag": "v0.2.0",
-  "packageSha256": "6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26",
-  "publishedBaselineTag": "v0.1.2-preview",
-  "binaryInputs": [
-    {
-      "path": "vendor/oculus-lipsync/Win64/OVRLipSync.dll",
-      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
-      "distribution": "Official separately licensed DLL is in player ZIP; obtain from verified official SDK or release, not Git history"
-    }
-  ],
+  "publishedBaselineTag": "v0.2.0",
+  "startup": "Normal Steam launch with game-local Vulkan bootstrap; all avatar/voice/material configuration in F8",
+  "nativeBuild": {
+    "runtime": "GCC 16.2 Windows x64; includes 16-bit PNG input compatibility normalized to RGBA8",
+    "bootstrap": "Retained unchanged MSVC 19.27.29112/v142 binary; independent file version",
+    "nativeDllsReusedUnchanged": true
+  },
+  "validation": {
+    "freshCuratedSourceMethodsPassed": 31,
+    "sourceVerificationScope": "14 texture-depth checks, 14 packaging checks, 3 model/material importer integration checks; CPU fixtures only; no new candidate DLL execution",
+    "packageMembers": 42,
+    "manifestEntries": 41,
+    "deterministicArchive": true,
+    "laptopValidation": "pending",
+    "combinedCandidateManualValidation": "pending",
+    "scanRecords": "validation/0.3.0/SCAN-RESULTS-0.3.0.json"
+  },
+  "sourceHashNormalization": "Exact bytes; no text normalization. No source/test audio or SDK DLL is included in Git history.",
   "publicBinarySourceAssets": [
+    {
+      "path": "portable/standalone_assets/vroid-sample.vrm",
+      "sha256": "da1e68ca997415de3ff55ba1a8468257c523c6d5db65d193f4110e37861bc098",
+      "bytes": 17491388
+    },
     {
       "path": "vendor/imgui/misc/fonts/Roboto-Medium.ttf",
       "sha256": "8559132c89ad51d8a2ba5b171887a44a7ba93776e205f553573de228e64b45f8",
-      "license": "vendor/imgui/misc/fonts/Apache-2.0.txt"
+      "bytes": 162588
     }
   ],
-  "externalTestInputs": [
-    {
-      "path": "tests/fixtures/voice-public-speech.wav",
-      "sha256": "6318883d5a5d5dc4b95457e43e2bf88d934b187f850a46b52ef02b2f459fb775",
-      "instructions": "tests/fixtures/README.md",
-      "provenance": "tests/fixtures/voice-public-speech-PROVENANCE.json",
-      "includedInGit": false
-    }
-  ],
-  "startup": "Launch immediately; avatar/voice/appearance configuration and selected-model persistence live in F8",
-  "multiplayer": "Local avatar only; synchronization is not implemented",
-  "nativeBuild": {
-    "command": "build.ps1 -Target Bridge -PortableRelease",
-    "compiler": "GCC 16.2.0 with DXC",
-    "runtimeFileVersion": "0.2.0"
-  },
-  "validation": {
-    "current": "validation/0.2.0-docs1/package-verification.json",
-    "tests": "validation/0.2.0/suite.json",
-    "scanEvidence": "validation/0.2.0-docs1/SCAN-RESULTS-0.2.0-docs1.json",
-    "currentTests": "30 package methods passed; one existing Windows permission skip. Prior full suite retained separately; not rerun for documentation-only correction."
-  },
-  "sourceHashNormalization": "Exact published bytes; no text normalization. Binary SDK input is distributed with player ZIP and notices, separately from source Git history.",
   "sourceFiles": [
     {
+      "path": ".gitattributes",
+      "sha256": "e5a9e72c2ba5d302239c4b85d3c51f5f54f0347dec1866031400390830cef44c",
+      "bytes": 146
+    },
+    {
       "path": ".gitignore",
-      "sha256": "1327cca01522c5a0c692db708132028436af491ae4ed95d44dbfeeb6d41b1bb2",
-      "bytes": 302
+      "sha256": "693b6b3489ee58223a71107c51fc98654192e463524a685fc097325e7c7a7a85",
+      "bytes": 434
     },
     {
       "path": "BUILDING.md",
-      "sha256": "cd0f82d9ae4ed5a02198cc468991bbe4f9b1f2affa79a78b528848214b5e0aff",
-      "bytes": 13101
+      "sha256": "6af60ece786dababa0bc48a368355cba22994af3df681d577059e6337cf270f3",
+      "bytes": 5898
     },
     {
       "path": "KNOWN-ISSUES.txt",
-      "sha256": "0ae7b782e5275ed0ba7620d921449bf718ffc02497370510e1403ff762dacc04",
-      "bytes": 6669
+      "sha256": "054695ca135b09ad656a8eaebef39a4f0e047ee3ce7ab77383403436628592e7",
+      "bytes": 3145
     },
     {
       "path": "LICENSE",
@@ -1117,28 +1129,28 @@
     },
     {
       "path": "README.md",
-      "sha256": "9855b2fa992af58c5b4aef5ab689b60af0863979513a7d799cfaf07b2ae56eab",
-      "bytes": 5135
+      "sha256": "a7fb269b2fe3a8f878ac90e5180b77b77e6cc1d558d3ec6148eed40ff21d80be",
+      "bytes": 5714
     },
     {
       "path": "RELEASE-NOTES.md",
-      "sha256": "a4e9ad9bed41d7e177a2fced46f7401a13e74d5c9959e46ff5ae975fdaf2f4f7",
-      "bytes": 1797
+      "sha256": "a89ff21b582dc7675a09184dba5473462d1e56c9e923c3bd23a130b194ad5b63",
+      "bytes": 1682
     },
     {
       "path": "SECURITY.md",
-      "sha256": "d2da1caed62ff0473b297af3014c14dd556fb944d1da7e7a1bb9b52e4518e2a4",
-      "bytes": 4306
+      "sha256": "07f33f9f5dff4c67d97f433630ea95f4777f692fe5edfc93f0deb71da06852df",
+      "bytes": 1764
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "b0bdcbd95fe6a0cb1ea3e914ca9a04ed608d8ab21843968472900e3c8604e92b",
-      "bytes": 5199
+      "sha256": "1ef186a693bc9cf7f7eb18c4be1b7b7eca776875c452a5cc5210a94b45c24023",
+      "bytes": 5367
     },
     {
       "path": "build.ps1",
-      "sha256": "7d4f78707b452caaf1c364d64015acc846b22ba089ccd1cd70e36ce01fc02b1c",
-      "bytes": 30073
+      "sha256": "9b18bd5f3376ac07172716d46e32ef49c3f84c42b94b1f8d08806e7cc4697ac9",
+      "bytes": 30342
     },
     {
       "path": "docs/compatibility/hands-free-lantern.md",
@@ -1161,6 +1173,11 @@
       "bytes": 312
     },
     {
+      "path": "notices/Dear-ImGui-fonts.txt",
+      "sha256": "6aaa921092f06c31d3569d2437ab4f69c67f31bd49feca55914ae379201e2957",
+      "bytes": 15127
+    },
+    {
       "path": "notices/GCC-RUNTIME-EXCEPTION.txt",
       "sha256": "90077ba306ee9d8ed966cab1b4abd69b6e728acf08777283cc50283cd9503fa6",
       "bytes": 3397
@@ -1179,6 +1196,16 @@
       "path": "notices/MinGW-w64-runtime.txt",
       "sha256": "8211dccca73dd4078d50ce7fa535b329f1c13edf6b54aa590131549f880ca0b8",
       "bytes": 15403
+    },
+    {
+      "path": "notices/MinHook-BSD.txt",
+      "sha256": "d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8",
+      "bytes": 4365
+    },
+    {
+      "path": "notices/Oculus-LipSync.txt",
+      "sha256": "860d2843070e9cf4a75b27d6efb3b3952be96fd0d3c72c840187becd95da7b03",
+      "bytes": 75521
     },
     {
       "path": "notices/ShroudForge-MIT.txt",
@@ -1206,14 +1233,44 @@
       "bytes": 1082
     },
     {
+      "path": "portable/bootstrap/bootstrap.rc",
+      "sha256": "518c74751dbe75ac0d10245978df18435c0bc8c8cf70b5fc01a46e485e3fa1af",
+      "bytes": 771
+    },
+    {
+      "path": "portable/bootstrap/build_bootstrap.py",
+      "sha256": "4a08c17f08a90ae989fdaf3febc5e2d243b6ad4b8171a72b0cd1087af14c3a00",
+      "bytes": 6055
+    },
+    {
+      "path": "portable/bootstrap/generate_exports.py",
+      "sha256": "38386e28cfcb2aa5198ca95a212a191b73689e8601fcfdff89d74901512ec29d",
+      "bytes": 4763
+    },
+    {
+      "path": "portable/bootstrap/vulkan-exports.json",
+      "sha256": "46f26fb2e389c2d97a4586790dc2582e1021de9ef6bbca9dbd42c76cebb14c06",
+      "bytes": 26711
+    },
+    {
+      "path": "portable/build_standalone.py",
+      "sha256": "3aac1990468a02f3577d2eeb190ebd0890405cd7a33f7f1a36093efabcd30940",
+      "bytes": 7115
+    },
+    {
+      "path": "portable/development/Play-voice-test.ps1",
+      "sha256": "252822b99e56a64a10bdf6d81cc42cd5d98a02684e351c1df8edb73522226729",
+      "bytes": 922
+    },
+    {
       "path": "portable/docs/Avatars-README.txt",
       "sha256": "b81266115976458b72d11e31336a810afce7a8c20ce7a71e4bd39e9cf74329c1",
       "bytes": 600
     },
     {
       "path": "portable/docs/BUILDING.md",
-      "sha256": "56079f1d54bb8667ae34b65dc30cf1bf7aedf579ca98e1ce62e6c72ffda678d5",
-      "bytes": 11562
+      "sha256": "a9b11ce7dfc5bbd841d91593d56100ce26815de0d145462d6b575a6b00f3de88",
+      "bytes": 11356
     },
     {
       "path": "portable/docs/KNOWN-ISSUES.txt",
@@ -1222,13 +1279,13 @@
     },
     {
       "path": "portable/docs/NEXUS-DESCRIPTION.txt",
-      "sha256": "72ac7cf1a7854df377835609a60767ec04d1ae0fcae23b30109be6d9f42f8443",
-      "bytes": 4212
+      "sha256": "6cf9bd5526322ce72e40e79cde8c5628fbe850d8a02da8e00f1e7a1204402388",
+      "bytes": 4169
     },
     {
       "path": "portable/docs/README.txt",
-      "sha256": "ce20b858fc5e08433817a597b6487b9f2cad57bb39096488ffbf77c01fddf90c",
-      "bytes": 4765
+      "sha256": "5f4948d971e8b8fe092efd6a6e40f3366c72e93521b749cac073f84789f509ae",
+      "bytes": 4691
     },
     {
       "path": "portable/docs/RELEASE-NOTES.md",
@@ -1252,8 +1309,8 @@
     },
     {
       "path": "portable/docs/UPLOAD-NOTES.md",
-      "sha256": "8215163bd460dc7761ee61322c8c0ec2bd4d2a72be909599884bace99d0865cd",
-      "bytes": 1135
+      "sha256": "8e9f85e35b611b6a2e1925d68645d8bdc0fa63fbef796bb097631df2424f63a5",
+      "bytes": 1115
     },
     {
       "path": "portable/docs/VOICE-MENU-TEST.txt",
@@ -1326,14 +1383,19 @@
       "bytes": 25168
     },
     {
+      "path": "portable/package_standalone_release.py",
+      "sha256": "08af10729e15e77387d56095854fdd07bb7667f5b8a420c8b9dee6b913ff2ebf",
+      "bytes": 16851
+    },
+    {
       "path": "portable/runtime.rc",
-      "sha256": "cb5ae265ba22c8acd26090cdf60f49f50d23c5e3f013c10b185b46a2c0174509",
+      "sha256": "27c7c930e0831d672b80a56639ea4053c5cd1ae8b87dc09419cb72bd6dd171b7",
       "bytes": 763
     },
     {
       "path": "portable/script/Launch-EnshroudedVRM.cmd",
-      "sha256": "44e84e6eabd724689a7601de5db099e14e719ba8473e33fa33e59adb5797d977",
-      "bytes": 592
+      "sha256": "1aea2e183596b9d78603e306ee2181854f876f97cfc36a9e7ccea1f2abdd8608",
+      "bytes": 582
     },
     {
       "path": "portable/script/Launch-EnshroudedVRM.ps1",
@@ -1344,6 +1406,56 @@
       "path": "portable/script/launcher_core.psm1",
       "sha256": "23845c84e5626ab01c1194fd53eccafcf5e8c59f605069a79e5e2699ab3e4b31",
       "bytes": 40228
+    },
+    {
+      "path": "portable/standalone_assets/README.txt",
+      "sha256": "c0421e26bff7f9a733fab6b0dd4e4b778633956cf55ad3fb18cbd59e07ce2003",
+      "bytes": 541
+    },
+    {
+      "path": "portable/standalone_assets/vroid-sample.vrm",
+      "sha256": "da1e68ca997415de3ff55ba1a8468257c523c6d5db65d193f4110e37861bc098",
+      "bytes": 17491388
+    },
+    {
+      "path": "portable/standalone_docs/Avatars-README.txt",
+      "sha256": "92c41eeb0873af857ff6995fbb2d36acab86636fffd24f8873c4fcf94b521d09",
+      "bytes": 1229
+    },
+    {
+      "path": "portable/standalone_docs/KNOWN-ISSUES.txt",
+      "sha256": "054695ca135b09ad656a8eaebef39a4f0e047ee3ce7ab77383403436628592e7",
+      "bytes": 3145
+    },
+    {
+      "path": "portable/standalone_docs/MOD-SETTINGS.txt",
+      "sha256": "ec140d4d8ed8c487eaf8515c9f5c4e594d6d02996c716a0eaadd1e4ff86720e9",
+      "bytes": 1099
+    },
+    {
+      "path": "portable/standalone_docs/README.txt",
+      "sha256": "4afebb9a7ca803a76d86873f902db33db9c51fd27dd6d90fe7c3890de66f409b",
+      "bytes": 4213
+    },
+    {
+      "path": "portable/standalone_docs/RELEASE-NOTES.md",
+      "sha256": "a89ff21b582dc7675a09184dba5473462d1e56c9e923c3bd23a130b194ad5b63",
+      "bytes": 1682
+    },
+    {
+      "path": "portable/standalone_docs/SECURITY.md",
+      "sha256": "07f33f9f5dff4c67d97f433630ea95f4777f692fe5edfc93f0deb71da06852df",
+      "bytes": 1764
+    },
+    {
+      "path": "portable/standalone_docs/THIRD_PARTY_NOTICES.md",
+      "sha256": "d8f57c0f8a402d574b82dcc43f15cd98f05bf81a8ea64ae68b590ac0dea69856",
+      "bytes": 1157
+    },
+    {
+      "path": "portable/standalone_layer.json",
+      "sha256": "866cf4ae14d244808f52f42872c98e04338e71ae895e3ae82d0ee395e8ff04a9",
+      "bytes": 364
     },
     {
       "path": "shaders/avatar.hlsl",
@@ -1402,8 +1514,8 @@
     },
     {
       "path": "src/avatar_device_request.hpp",
-      "sha256": "d8ed1b8c4771612bc735d1227fbf3b579cf8c157e3ab170ed472b06aa041d74c",
-      "bytes": 783
+      "sha256": "dc1dc58a6cd6641855ccb006327e791de6e0dd215c2b85ed6f73576679bd6711",
+      "bytes": 832
     },
     {
       "path": "src/avatar_model.cpp",
@@ -1417,8 +1529,8 @@
     },
     {
       "path": "src/avatar_renderer.cpp",
-      "sha256": "fecf3cf522043c083c0016cc27c613bf98c5988acbcca896cfee30639e89da71",
-      "bytes": 74784
+      "sha256": "98a8cd5ca267ce470f3a64cbc66e95537b0f370b8fa79f8ffca0ee049bc509c9",
+      "bytes": 73938
     },
     {
       "path": "src/avatar_renderer.hpp",
@@ -1427,8 +1539,8 @@
     },
     {
       "path": "src/avatar_runtime.cpp",
-      "sha256": "908a0d7b50109a47e71efcbbc03cef5f993a31daa0cf23ab28bb123299603244",
-      "bytes": 2292
+      "sha256": "073917a6d8b94a120520385e693e7ac98c557c1f6465bcb49a40b7f7458abd57",
+      "bytes": 2385
     },
     {
       "path": "src/avatar_runtime.hpp",
@@ -1437,28 +1549,28 @@
     },
     {
       "path": "src/avatar_service.cpp",
-      "sha256": "8f4cb6c1a57a9c601e1098398f1c64f2789b8852d51dc4644342f9a5fd0d8ef0",
-      "bytes": 20472
+      "sha256": "e89a92c36570c01f08e97e29ad6b11f8d34e775caeea24ba8869e9dfeed78845",
+      "bytes": 22342
     },
     {
       "path": "src/avatar_service.hpp",
-      "sha256": "77c9dc1ca6a4b918523154e98d86bfc49b240c2816d36dd28f73b108454dba99",
-      "bytes": 1904
+      "sha256": "f827cc7ce03728e3475078a758b3b4401ac6d03fce73ca8884483bcffc135d2a",
+      "bytes": 2028
     },
     {
       "path": "src/avatar_service_types.hpp",
-      "sha256": "539394332edbc4487958cb6534189bd289b0ed7443bb4790db2f084f09ede220",
-      "bytes": 1031
+      "sha256": "e2c8d686ce7c337782fa36296691284bf947f7d3b581eaf995d68cfff220866f",
+      "bytes": 1113
     },
     {
       "path": "src/avatar_settings.cpp",
-      "sha256": "c7ed10be756b34db0fee9543a6a1b3afd4e3f488af5ce30a63ff358060a1ae58",
-      "bytes": 13069
+      "sha256": "a69a94fdff7937c09ce706a0a0939c181d1343bdd6183d7bd12087dffe327c2e",
+      "bytes": 13891
     },
     {
       "path": "src/avatar_settings.hpp",
-      "sha256": "51e1f3689e70465fa3d687f9356f5d6d9e179ba20c8e02aa44df3ac88a3f7716",
-      "bytes": 1518
+      "sha256": "75d5316390809de74a87b763511951c29c07041b30b8568cb513a533f3c5258f",
+      "bytes": 1664
     },
     {
       "path": "src/avatar_switch_transaction.hpp",
@@ -1542,8 +1654,8 @@
     },
     {
       "path": "src/gpu_probe.cpp",
-      "sha256": "0c9f7f1deea50790b397cc131723c2c5664ff0b65350c050323e87c972ed1350",
-      "bytes": 69234
+      "sha256": "fe020f9067c1e39ccefb2e862c18e1736c6584033288fca7858e95255e7dd9c7",
+      "bytes": 69222
     },
     {
       "path": "src/gpu_probe.hpp",
@@ -1587,8 +1699,8 @@
     },
     {
       "path": "src/import_images.inl",
-      "sha256": "f57017e42424c1925b40426e981483deb1262b568fc44031386b6880c41789bb",
-      "bytes": 2231
+      "sha256": "8d136799d1992cccc439a623fd56bba9d5b062e290f6c907621cedaccf6edb45",
+      "bytes": 3834
     },
     {
       "path": "src/import_meshes.inl",
@@ -1632,8 +1744,8 @@
     },
     {
       "path": "src/local_voice_observer.cpp",
-      "sha256": "42b3a48254c28ef3852c4bcac9d65efbe83a7b75836f49eae29c7435c57c6f41",
-      "bytes": 19055
+      "sha256": "423c7e26bed93b6284839ec970012d640346a032914fbbe31141b1224c17dd86",
+      "bytes": 19239
     },
     {
       "path": "src/local_voice_observer.hpp",
@@ -1692,13 +1804,13 @@
     },
     {
       "path": "src/mod_menu.cpp",
-      "sha256": "f947621947f1eac22a884c50dcd91c2ed14a1415b9b5b53eecd9e8dc87275450",
-      "bytes": 21236
+      "sha256": "94db0afbd3e1ffa10a1a5d644d07e4ad14ceb67c41d494104307ef0e0a42cfc4",
+      "bytes": 22152
     },
     {
       "path": "src/mod_menu.hpp",
-      "sha256": "18896577c80601b2828780918589855298442d7be3029343a1d6d04b2f730ec7",
-      "bytes": 1193
+      "sha256": "320657139a8f6effba3687c703d8e96cd5b02872001513d034ee2883771f5d89",
+      "bytes": 1212
     },
     {
       "path": "src/mod_menu_font.generated.inl",
@@ -1717,8 +1829,8 @@
     },
     {
       "path": "src/mod_menu_status.hpp",
-      "sha256": "d13091587b62b04895d0ee247566d8e2ea4bc2c5778ad48f62f5aa7371e14b59",
-      "bytes": 552
+      "sha256": "a5aab52610b8d98d227ce730ce36cef9a66d1f266668b8470d82541f211c4be4",
+      "bytes": 662
     },
     {
       "path": "src/mod_overlay.cpp",
@@ -1737,18 +1849,18 @@
     },
     {
       "path": "src/mod_settings.cpp",
-      "sha256": "2e914682ea0edba4557f54cb62cef2e3d0e0f28f0406a89c8c10b6b72d4a62dd",
-      "bytes": 9103
+      "sha256": "21bc720733a314c8b25fa5a629e4f5d6b31b81f33f0ed75f3597c5c74efffc83",
+      "bytes": 9561
     },
     {
       "path": "src/mod_settings.hpp",
-      "sha256": "3a7349574ac1be117d4aff0d39819be812a5bee23115f11d8404d84298642f74",
-      "bytes": 2030
+      "sha256": "aef13ff4ded30f9005aa811ec2f2f76d66a547fa41d2e5280c654df0c32568cb",
+      "bytes": 2154
     },
     {
       "path": "src/mod_settings_service.cpp",
-      "sha256": "b10a686cd10f5f31a3d81ab4e869344b013ac3e055ee04f01a97a79b3b2406d1",
-      "bytes": 3945
+      "sha256": "5688ce1b74e1aeeb193f797777db1b70c197cb0185def57992f07fdd94d57b31",
+      "bytes": 4081
     },
     {
       "path": "src/mod_settings_service.hpp",
@@ -1807,13 +1919,13 @@
     },
     {
       "path": "src/native_backend.cpp",
-      "sha256": "c0321e308d10f99dd624867d1bbc4cbcac695597291ec08406786cd7b0f40e90",
-      "bytes": 163379
+      "sha256": "5f9d2de9727ff7de5feb417ed88fdd03533a66862cc7c107dc382c45dcce984a",
+      "bytes": 164590
     },
     {
       "path": "src/native_backend.hpp",
-      "sha256": "2b803a2cc0b2c6325774fd09f6acc1e89d2044cae20d72dd0238d12a2d824734",
-      "bytes": 5103
+      "sha256": "79f1b12728c4a98b71ca8b1ff596ae7f3674354e36494b3378b3dff25567c067",
+      "bytes": 5152
     },
     {
       "path": "src/native_body_coverage.cpp",
@@ -2052,8 +2164,8 @@
     },
     {
       "path": "src/native_tool_slots_runtime.cpp",
-      "sha256": "f6582e93a349234c18110d9a62c24ef7239d0e12f4197f1e9c9d2ba35d844cc3",
-      "bytes": 13631
+      "sha256": "f5cd20d57bf10dcfb47b0feafa2a4a1bea50de05024a7f04d0ceb4e8eed92caf",
+      "bytes": 13600
     },
     {
       "path": "src/native_transparency_trace.cpp",
@@ -2112,8 +2224,8 @@
     },
     {
       "path": "src/runtime_bridge.cpp",
-      "sha256": "ea4f60e5fb38c77542cf811810ad749925a37ba85e0a59f254beeea71ce04e29",
-      "bytes": 37612
+      "sha256": "28ad9d89e54718d0417dd90e21e337f7c91aa5bfe9747dd208423cc7d127838d",
+      "bytes": 38171
     },
     {
       "path": "src/runtime_hooks.inl",
@@ -2159,6 +2271,66 @@
       "path": "src/spring_import.inl",
       "sha256": "bc6a2ca29466c851550b0567588fd36cbbb51a230a49f73e4e18d26e35ea9066",
       "bytes": 9611
+    },
+    {
+      "path": "src/standalone_bootstrap_main.cpp",
+      "sha256": "24c5c9acc5900916d8d800a2eb4b6e5acfb72709e900e4be81ae10b53171fb12",
+      "bytes": 5305
+    },
+    {
+      "path": "src/standalone_bootstrap_policy.cpp",
+      "sha256": "f100824ac00eb972eb0b05f8c5583252f7ae266214be5f7c757720b076207d76",
+      "bytes": 3968
+    },
+    {
+      "path": "src/standalone_bootstrap_policy.hpp",
+      "sha256": "d149b8af3d21e5de4a590f26ee333d19218c4849feb9beacc9b96ba9b89bfa48",
+      "bytes": 719
+    },
+    {
+      "path": "src/standalone_files.cpp",
+      "sha256": "2b4a52c9f75a64bdf20935baf6b71f293daa4f0a767fcaadbeb4e624db9f49b2",
+      "bytes": 4472
+    },
+    {
+      "path": "src/standalone_files.hpp",
+      "sha256": "7cff0f9d482ac19d632242c823b754a919796971cad656a000d117f8e82c00f8",
+      "bytes": 924
+    },
+    {
+      "path": "src/standalone_package_members.hpp",
+      "sha256": "f17262a89debd23c609c3f4168759fa67f173eea49ebfac3d0386c4b34c01e24",
+      "bytes": 2233
+    },
+    {
+      "path": "src/standalone_settings.cpp",
+      "sha256": "908ac1df986701e33989e58e533ef0b512cde1f3df0a0883fb6bb7952088af87",
+      "bytes": 2690
+    },
+    {
+      "path": "src/standalone_settings.hpp",
+      "sha256": "0aac7fda2b336f2f5afa80e060d069fe1dff31a0229c33d0d1f2459c81b0f9d3",
+      "bytes": 414
+    },
+    {
+      "path": "src/standalone_startup.cpp",
+      "sha256": "b87a4b926e8b81edf443bd081721a8f41f1e3d938a08bd778a6bae16ddffba0a",
+      "bytes": 8157
+    },
+    {
+      "path": "src/standalone_startup.hpp",
+      "sha256": "80b750e6322d678bbc3d625aa8b57921875d1e8d075c06cdbbd3918846988619",
+      "bytes": 1738
+    },
+    {
+      "path": "src/standalone_startup_environment.cpp",
+      "sha256": "1d5706178648f517975f875f121d7d4dea6672971ba34549034cb6a961da81f2",
+      "bytes": 6841
+    },
+    {
+      "path": "src/standalone_startup_runtime.cpp",
+      "sha256": "acac10851edc26d7e29fffcdaf0a7a0bec17cb70e20b74c585e4d456fe5dbfdc",
+      "bytes": 2852
     },
     {
       "path": "src/tool_grip.cpp",
@@ -2217,8 +2389,8 @@
     },
     {
       "path": "src/voice_inputs.cpp",
-      "sha256": "a4fd12e0b5dced8d5ba485dfdbee4b01c1fc19cb39ddf7c856991cd2a91fb579",
-      "bytes": 3412
+      "sha256": "bb292bf500c03c1acb17cb6a58ed0366ce70a326540f9fa2e6cf5093f6b5de4b",
+      "bytes": 3637
     },
     {
       "path": "src/voice_inputs.hpp",
@@ -2287,8 +2459,8 @@
     },
     {
       "path": "tests/avatar_backend_switch.cpp",
-      "sha256": "03c59d275b032dfa809c9c403bb4406c26b78c878154fad78345beb1c201a7b1",
-      "bytes": 4210
+      "sha256": "aa1244f5c6ced48cc05ba7342628cb566dfd765e975766b7761b64cc1a8b4269",
+      "bytes": 6844
     },
     {
       "path": "tests/avatar_device_selection.cpp",
@@ -2317,8 +2489,8 @@
     },
     {
       "path": "tests/avatar_menu.cpp",
-      "sha256": "4fbdfdc450e44f40fd072b2b725d111e55cb3620a890c8ae3e07bf6a660840fb",
-      "bytes": 3858
+      "sha256": "1d62cc97d947338a865e4e6a0748763c6f2c09d261c99954a86e16e15f7706eb",
+      "bytes": 4550
     },
     {
       "path": "tests/avatar_model.cpp",
@@ -2326,9 +2498,14 @@
       "bytes": 2295
     },
     {
+      "path": "tests/avatar_readonly.cpp",
+      "sha256": "5d8432a09c156b884640515e897e49dfabd6adffd4bc16edc2033f10c224259f",
+      "bytes": 1715
+    },
+    {
       "path": "tests/avatar_renderer_startup.cpp",
-      "sha256": "98a204dec1c8b8ea508ded24157506b90147bf69136e58b408ff18f3f1505c7b",
-      "bytes": 3989
+      "sha256": "6ff1f9967da40270d379205cf236516d6471871b80f9cdafd5b0e2b90d8810a0",
+      "bytes": 5225
     },
     {
       "path": "tests/avatar_renderer_switch.cpp",
@@ -2336,14 +2513,19 @@
       "bytes": 4554
     },
     {
+      "path": "tests/avatar_sample.cpp",
+      "sha256": "37f6f2561ed7489a9a87752efe6576ad438b9905e4556604e6c15fb7ac4b6510",
+      "bytes": 992
+    },
+    {
       "path": "tests/avatar_service.cpp",
-      "sha256": "21b8f2d8983f4882cd24b361f70e398c59decda23c9a9b2895b1908ea1ca154a",
-      "bytes": 10107
+      "sha256": "6e613b039034ad9aef7669d9e0a95b568a024926f46629d3c661ec8b4317e717",
+      "bytes": 13076
     },
     {
       "path": "tests/avatar_settings.cpp",
-      "sha256": "e3e1420416f142c5cdb8f9afa5cad735b87f7b1eebc8c8b58755640f2cb9a7f9",
-      "bytes": 4932
+      "sha256": "51c8ba6c571e30205d70efde5bb4dfaa1fbf356d57ac73544a955b7ea3cf2ce9",
+      "bytes": 6088
     },
     {
       "path": "tests/avatar_shader_persistence.cpp",
@@ -2361,9 +2543,59 @@
       "bytes": 2024
     },
     {
+      "path": "tests/bootstrap_child.cpp",
+      "sha256": "4298b0af87818f66c87758ec2ab851fdb41a18ef8ea2f3d7d429d8187f6c4daa",
+      "bytes": 3037
+    },
+    {
+      "path": "tests/bootstrap_dependency_surface.cpp",
+      "sha256": "362d74ce7c5bb6c62117a738e19c7be5826d8269930bfd5c63cc01ba63064ad5",
+      "bytes": 1815
+    },
+    {
+      "path": "tests/bootstrap_dependent.cpp",
+      "sha256": "b889b9eb80cc03c364576e43eba3fd6781295f504d15870880dd8760485eeadd",
+      "bytes": 627
+    },
+    {
+      "path": "tests/bootstrap_layer_probe.cpp",
+      "sha256": "43f47490460478d2481afc8c254a396dbe8f291b05a68a8a1b38e06923a79ea0",
+      "bytes": 3951
+    },
+    {
+      "path": "tests/bootstrap_policy.cpp",
+      "sha256": "14f1d3edfe0c3c39830486ece8305c8ad9d7b734bd1ed472f0af4286cce3e3bf",
+      "bytes": 1983
+    },
+    {
+      "path": "tests/bootstrap_provider.cpp",
+      "sha256": "9919ddd56aa1091a37216de751508a1efb2f0a483872a77477bd354c5b3f0201",
+      "bytes": 1203
+    },
+    {
+      "path": "tests/bootstrap_small_stack.cpp",
+      "sha256": "05c63e42a175f0692ba17f249279863b08825c9a52a5946ed6599dbb9506de3b",
+      "bytes": 2031
+    },
+    {
+      "path": "tests/bootstrap_vulkan_attach.cpp",
+      "sha256": "f4e98f96caa962d46a416c7cffbd6cbe8aef307b8bb333a3014af17ce9959727",
+      "bytes": 816
+    },
+    {
+      "path": "tests/bootstrap_vulkan_child.cpp",
+      "sha256": "4da7efe7873384ac3c635f1af6525295311fcd16308b74425bac880249bf061e",
+      "bytes": 5370
+    },
+    {
+      "path": "tests/bootstrap_vulkan_dispatch.cpp",
+      "sha256": "18286697c305a1e9692c6632026faee4c097e1d2a2fdc37b563a7c18c103b66b",
+      "bytes": 15156
+    },
+    {
       "path": "tests/build_script_fixture.ps1",
-      "sha256": "26c73a12bb6034a004951eea41958a19a6b996f9adba17cd6e7be8511fb525c8",
-      "bytes": 1409
+      "sha256": "5c17cf231b1322958b9713c875aaf97ba9f46e44c37dc90793757f2f3aa7ff79",
+      "bytes": 1385
     },
     {
       "path": "tests/fallback_diagnostics.cpp",
@@ -2391,6 +2623,11 @@
       "bytes": 889
     },
     {
+      "path": "tests/import_texture_depth.cpp",
+      "sha256": "120e26bb956b665b26106c250624d92fe14dc24ccef1abe8d08ee7ee8031778a",
+      "bytes": 10680
+    },
+    {
       "path": "tests/local_voice_borrowed.cpp",
       "sha256": "0780b68d806cb2c21a31b8edb004b82f722f5b084e51f24e0ee8e315a7dad3eb",
       "bytes": 3324
@@ -2407,8 +2644,8 @@
     },
     {
       "path": "tests/material_compatibility.cpp",
-      "sha256": "f7150cca3e1a64a5733ae1c82f93b39f217b614eb8681bcfd36ccecc9f8bdf05",
-      "bytes": 6714
+      "sha256": "8ae3bdf0e5ffafc6d98494e75066a4f8b257c88fd9183593d293e8cd27356420",
+      "bytes": 6637
     },
     {
       "path": "tests/microphone_audio.cpp",
@@ -2506,6 +2743,11 @@
       "bytes": 4902
     },
     {
+      "path": "tests/native_replacement_toggle.cpp",
+      "sha256": "ae3b61f451eaa9373450eea9e49dc4b723b98894990d1605290b0049b444ca11",
+      "bytes": 2035
+    },
+    {
       "path": "tests/native_skinning_fixture.hpp",
       "sha256": "d6719fc49d23abf52aaaff28e6e8633bfc5a49f8cf060aa9e396ee867103a78d",
       "bytes": 9083
@@ -2542,13 +2784,13 @@
     },
     {
       "path": "tests/retarget_cache.cpp",
-      "sha256": "057ab2c02363197ddd287c7ffb83d009ff4da720384b693dba56c600430422e9",
-      "bytes": 11021
+      "sha256": "da621a718544765ba07dbbf969512ca6debf28c4c4b86b0922e6e80a039bf6d0",
+      "bytes": 10955
     },
     {
       "path": "tests/retarget_views.cpp",
-      "sha256": "cc3a69be610238cf66e2209fc8f81abd10ffdf5572878683308a2142e5917112",
-      "bytes": 2975
+      "sha256": "5558bb445492399da6696b5fd2b8fb348620fe842ee56ff77834c2f4631297cb",
+      "bytes": 2920
     },
     {
       "path": "tests/runtime_log.cpp",
@@ -2567,33 +2809,83 @@
     },
     {
       "path": "tests/spring_airflow.cpp",
-      "sha256": "0937277ed6da700073bd0a4a93d794da9dc4e20a12fa1f8ce83e34ce974d83c4",
-      "bytes": 10681
+      "sha256": "afbcd13494d0e48af25349680ce6813659e98f858efbf71e3113ed31342d6426",
+      "bytes": 10594
     },
     {
       "path": "tests/spring_arm_release.cpp",
-      "sha256": "3016cae30602c3a0903267d5d5eb575df9a8f21b3f7e855aee4185d5befaab53",
-      "bytes": 4223
+      "sha256": "e404e149857e031fe3826f766b79cf0af09bd13d4933ffd04e40b4130bd37f63",
+      "bytes": 4181
     },
     {
       "path": "tests/spring_cohesion.cpp",
-      "sha256": "b7a2f9ca5667166ee5cca1860ecb5a4e484529bce1e8ac257625cb5fa80abba0",
-      "bytes": 13592
+      "sha256": "eedf99ae9bcacf520782937ce356f2eea3a3797e02ee1e641f2cfa50455b53d4",
+      "bytes": 13511
     },
     {
       "path": "tests/spring_collision.cpp",
-      "sha256": "e2e6c1c631b3f2caf2957a9f599bd6e7deb3f58987373cca9ea3e331c56c8c3f",
-      "bytes": 12048
+      "sha256": "d03400f1f9df1a14b3e8c8372e217e19b5780c57dbdbf235a267ce10e923cecb",
+      "bytes": 11903
     },
     {
       "path": "tests/spring_inertial.cpp",
-      "sha256": "9cedfdfb67111944001466702fd541623004b820d81f3beab67ca88ee5be2fff",
-      "bytes": 15015
+      "sha256": "f59574b944120ab76eec246515d479b5e4864856d3ed91b3d2ed55945f8c86d1",
+      "bytes": 14918
     },
     {
       "path": "tests/spring_shape.cpp",
-      "sha256": "f733f29743e703d26a20d7507e524862e5c5bb89535b00f535f7169472b69044",
-      "bytes": 10377
+      "sha256": "81e29f1c72e28683bd5e4dc2dc549f9051621ac4c75493af9493f2154ff0f07d",
+      "bytes": 10271
+    },
+    {
+      "path": "tests/standalone_environment.cpp",
+      "sha256": "e57fcfc23eba92b93877add797567aae7474f8971edaf2aad9e2b00c0efd70ba",
+      "bytes": 3459
+    },
+    {
+      "path": "tests/standalone_fixture_context.cpp",
+      "sha256": "4030d9ed6ca3a1142f0dd834fc9bdc3356fc6f385f2d283942f702a4b07a0d26",
+      "bytes": 472
+    },
+    {
+      "path": "tests/standalone_gpu_smoke.cpp",
+      "sha256": "a5975716e6af75863505b3b8bf781ba8a912ab1f4cf35c9eb9fdc3127c67f567",
+      "bytes": 12065
+    },
+    {
+      "path": "tests/standalone_gpu_smoke.hlsl",
+      "sha256": "fe5da2249dbefa0a73074453fd783a4fb7075d915f6a1d21cafb63fb164a08b3",
+      "bytes": 182
+    },
+    {
+      "path": "tests/standalone_log_commit.cpp",
+      "sha256": "60542ab979336bc6fac649d4deccfc7975572ab12484a4a11093d78c96a23bd3",
+      "bytes": 1070
+    },
+    {
+      "path": "tests/standalone_probe_startup.cpp",
+      "sha256": "2c83d4e49c7cec6ee2f9ff00f9193251b924d90c8eccf93e7740ab4d09394691",
+      "bytes": 2823
+    },
+    {
+      "path": "tests/standalone_runtime_dormant.cpp",
+      "sha256": "4544b44e0f2d441ed6318b7d9b1a980a5948601b363bbbfd0f8e1c00a168324b",
+      "bytes": 2843
+    },
+    {
+      "path": "tests/standalone_services.cpp",
+      "sha256": "a8246b2a12d8517b6540f4e7d4815d8b8e76793dbe98cc4ca623c51127c91347",
+      "bytes": 4276
+    },
+    {
+      "path": "tests/standalone_startup.cpp",
+      "sha256": "5771962e07db0092d32b875a604de48fae8243d8fefd619b339022204ae69981",
+      "bytes": 14381
+    },
+    {
+      "path": "tests/standalone_voice_admission.cpp",
+      "sha256": "22cabd69286599b3482ca40c896f23189c57e27922af1ac0ee3143c37c320624",
+      "bytes": 2657
     },
     {
       "path": "tests/test_avatar_assets.py",
@@ -2602,8 +2894,13 @@
     },
     {
       "path": "tests/test_avatar_switch.py",
-      "sha256": "6b524b4f8daefc543db9567930358d692d27ef26857356a7bdd73ed9199dac96",
-      "bytes": 4540
+      "sha256": "03578c812d8e3ed1b22d7b6f1b4f814235b1ab65c7b73e2cffeacee54942907a",
+      "bytes": 5639
+    },
+    {
+      "path": "tests/test_bootstrap_small_stack.py",
+      "sha256": "fe7453738e5745425511b2908b4683a4709a91419f3ed8fb8db5cbdeee69caf5",
+      "bytes": 3559
     },
     {
       "path": "tests/test_fallback_diagnostics.py",
@@ -2611,14 +2908,19 @@
       "bytes": 1058
     },
     {
+      "path": "tests/test_import_texture_depth.py",
+      "sha256": "23061f4ca3c6b1df1f9cdb1903d18a2202c34f09baea2b2d052d2aabfa48f2b2",
+      "bytes": 2695
+    },
+    {
       "path": "tests/test_local_voice_observation.py",
-      "sha256": "10270b3fb9b8da1ba25a368849ba1d3b38c1b8573cacbd33fccc04d35f60031e",
-      "bytes": 7782
+      "sha256": "d0e79fd31f58601e945f73c779cc64389ad6ac2936fac2136ef16cf65b959656",
+      "bytes": 7832
     },
     {
       "path": "tests/test_material_compatibility.py",
-      "sha256": "ca81e3785130acc69d4fda08391921bc83fa9d7a6f00be8b2fbabe97197ebbab",
-      "bytes": 1401
+      "sha256": "6568dfd4431d7cfeeffc93ce394256069bfaa8196b38315cb6aac0c261f428c0",
+      "bytes": 1372
     },
     {
       "path": "tests/test_microphone_source.py",
@@ -2627,13 +2929,13 @@
     },
     {
       "path": "tests/test_mod_menu.py",
-      "sha256": "c06d7b8e1f55d18d2c85d82553aedc361a9f067417d3bb82dad70e3e55ddfaa2",
-      "bytes": 6256
+      "sha256": "7e0e6f32861a119525eb2ad4f33fa8772d4a3198b35f496015229e3ecc98bf90",
+      "bytes": 6391
     },
     {
       "path": "tests/test_model_changeover.py",
-      "sha256": "60ef303590024185363e98d52e16e280dd4626d8b290152e50334c9d466375d7",
-      "bytes": 1507
+      "sha256": "3457e9591faf2cb40a7a862354e591b68190c319369427584fb77f923409611e",
+      "bytes": 1580
     },
     {
       "path": "tests/test_mouth_animation.py",
@@ -2652,13 +2954,13 @@
     },
     {
       "path": "tests/test_retarget_cache.py",
-      "sha256": "a98188241a3f61cd1aab16f4faa141a4a7456d21891996b583b45139d6e825a6",
-      "bytes": 2872
+      "sha256": "b550be99b7b5d4eadff7e5b05308bfa8008fd846f2c89efb8a06b546df315bdf",
+      "bytes": 2822
     },
     {
       "path": "tests/test_script_fixture_build.py",
-      "sha256": "578f4565dcdc8de5f6ce1a4c44bae642228d408680250a211a422e5c16241d9c",
-      "bytes": 1911
+      "sha256": "7a77f7de03ef16ab466d0c102dea3f5523feffce1ac47f0c84e01d52a5e563b0",
+      "bytes": 1872
     },
     {
       "path": "tests/test_script_launcher.py",
@@ -2672,33 +2974,53 @@
     },
     {
       "path": "tests/test_spring_airflow.py",
-      "sha256": "d8671f6a9e4781f1486ba5972af7cb6a2769d009a255e9dba27e2b983a3b3684",
-      "bytes": 1337
+      "sha256": "f27b42ab5943d0bb8c527ca30b4713a43e3e8028c395cf0f6c03337b6afc4bea",
+      "bytes": 1308
     },
     {
       "path": "tests/test_spring_arm_release.py",
-      "sha256": "3c7953c9f718c42a5613607b1ad06111bdd4dcb60a14407a728c8aee3136275e",
-      "bytes": 1382
+      "sha256": "baff5aefc205b4830e0f242f0375af7b54a60c43fda576a3c479d188ca41a9dd",
+      "bytes": 1353
     },
     {
       "path": "tests/test_spring_cohesion.py",
-      "sha256": "cc1056f3cf385ceb602382c558dc8fb0754b3b388bd4d5c6863aff7fe0abe8b0",
-      "bytes": 1360
+      "sha256": "95a2ebc7d5e6aee5ecc40423bdde7d90e975a031cebf69ca7d5869adde12b866",
+      "bytes": 1331
     },
     {
       "path": "tests/test_spring_collision.py",
-      "sha256": "1cf5b03cd297af99645a78ad7a24584a9b152de15b7038391756ae9005365bf1",
-      "bytes": 1370
+      "sha256": "73ec1143da1cb8c20fbcc8e8023ef3cfb5c0046211c710fbde3c6cefa385df6c",
+      "bytes": 1341
     },
     {
       "path": "tests/test_spring_inertial.py",
-      "sha256": "6b18a47038e803567ee12bb489cdc40d8c7b9931952e95769ea2ed928adc5eef",
-      "bytes": 1367
+      "sha256": "3a783aec4c55e411454c9cef82013bcc832e437d318464f02527f6aabe28c015",
+      "bytes": 1338
     },
     {
       "path": "tests/test_spring_shape.py",
-      "sha256": "bc64e6bdd2e2528c6e292837808bac301b1ff84842d1fcec3d7725263a6c1428",
-      "bytes": 1356
+      "sha256": "cc22d55857146eb1ed8b87a9373710ca90434842fcf2f205eeecf7612fed9ac6",
+      "bytes": 1327
+    },
+    {
+      "path": "tests/test_standalone_bootstrap.py",
+      "sha256": "d132299ab5a1917087dade98d0dbfe2da7dfca54fbb3fc2d64b87382c7bb91ec",
+      "bytes": 22510
+    },
+    {
+      "path": "tests/test_standalone_package.py",
+      "sha256": "e3e03d986119d03732f3efb346b8da226848b77bc36faca9d64eea547011880f",
+      "bytes": 13422
+    },
+    {
+      "path": "tests/test_standalone_runtime_dll.py",
+      "sha256": "f368d748d43c69dac4bb89975b83172b8aa30e40535a698a7ccfcfbf633eb4fa",
+      "bytes": 4715
+    },
+    {
+      "path": "tests/test_standalone_startup.py",
+      "sha256": "8d70ce43bdb5d7c5ba36caf7d5be23e54bf9b342b9aef9df49c965ed7b1a8ccd",
+      "bytes": 8912
     },
     {
       "path": "tests/test_voice_analysis.py",
@@ -2714,6 +3036,26 @@
       "path": "tests/test_voice_observer_launcher.py",
       "sha256": "155512eb2b1e6faa48959347c8205ac96faba57088c0934bd8b0d93ca115ad40",
       "bytes": 1644
+    },
+    {
+      "path": "tests/test_vulkan_bootstrap_build.py",
+      "sha256": "dc895a68b094f126adfba3bf9637791cce2a1ca8a2a83da3f5956487f613c9d4",
+      "bytes": 4464
+    },
+    {
+      "path": "tests/test_vulkan_bootstrap_dispatch.py",
+      "sha256": "bf14b9eb75993ec206dffae807ee1403cad3f2ce6f8d852f563ea0573b762a16",
+      "bytes": 8579
+    },
+    {
+      "path": "tests/texture_alloc_hooks.hpp",
+      "sha256": "8ea2493ba4ead70d08372b02c5ad1ef1883150478771ab742307e177bcde11cd",
+      "bytes": 339
+    },
+    {
+      "path": "tests/texture_depth_pngs.hpp",
+      "sha256": "4122636e5ac929ce29eaadbdf9b4193eda6777ae04c7cbf455a8adc05f144e9f",
+      "bytes": 2125
     },
     {
       "path": "tests/tool_grip.cpp",
@@ -2814,6 +3156,21 @@
       "path": "validation/0.2.0/suite.json",
       "sha256": "32ceb11ad56ed3c5afa5abc9904a6e97adf335535e50ee5a57d6b283a926b3e3",
       "bytes": 2897
+    },
+    {
+      "path": "validation/0.3.0/README.md",
+      "sha256": "a60137f606d719b52887b9f6a606d50e73456c59431a36ec60a2a1f9db64f109",
+      "bytes": 1093
+    },
+    {
+      "path": "validation/0.3.0/SCAN-RESULTS-0.3.0.json",
+      "sha256": "740ed6444f2562f7b48a82fe6444b81d0da91e62e32588cf6dee4346f68a6690",
+      "bytes": 2541
+    },
+    {
+      "path": "validation/0.3.0/package-verification.json",
+      "sha256": "bb7fe50c704bd398518b098e0fdba14c1895f8608f133fb695b1fd0afa98d3c4",
+      "bytes": 1317
     },
     {
       "path": "validation/hands-free-lantern-20261027/results.json",
@@ -3065,9 +3422,5 @@
       "sha256": "b061bd4672c939fbbfbcd8a923385f51276e4fea1c44b0b7035768378160b336",
       "bytes": 289320
     }
-  ],
-  "documentationRevision": "docs1",
-  "originalReleaseTag": "v0.2.0",
-  "documentationSourceRef": "main",
-  "packageName": "EnshroudedVRM-0.2.0-docs1.zip"
+  ]
 }

@@ -107,7 +107,7 @@ ModSettingsLoad read_mod_settings(const std::filesystem::path& path)noexcept {
         s.voice_enabled=json["voiceEnabled"].get<bool>();result.settings=s;result.status=ModSettingsStatus::Loaded;return result;
     }catch(...){return result;}
 }
-bool write_mod_settings(const std::filesystem::path& path,const ModSettings& settings)noexcept {
+static bool commit_mod_settings(const std::filesystem::path& path,const ModSettings& settings,bool replace)noexcept {
     std::filesystem::path temporary;bool own_temp=false;
     try{
         if(!valid_mod_settings(settings))return false;
@@ -125,9 +125,11 @@ bool write_mod_settings(const std::filesystem::path& path,const ModSettings& set
         DWORD written=0;
         const bool complete=WriteFile(file.h,bytes.data(),DWORD(bytes.size()),&written,nullptr)&&written==bytes.size()&&FlushFileBuffers(file.h);
         CloseHandle(file.h);file.h=INVALID_HANDLE_VALUE;
-        if(!complete||!local_path(path,full,missing)||!MoveFileExW(temporary.c_str(),full.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+        if(!complete||!local_path(path,full,missing)||!MoveFileExW(temporary.c_str(),full.c_str(),(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH)){
             DeleteFileW(temporary.c_str());return false;}
         return true;
     }catch(...){if(own_temp)DeleteFileW(temporary.c_str());return false;}
 }
+bool write_mod_settings(const std::filesystem::path& path,const ModSettings& settings)noexcept{return commit_mod_settings(path,settings,true);}
+bool create_mod_settings(const std::filesystem::path& path,const ModSettings& settings)noexcept{return commit_mod_settings(path,settings,false);}
 }

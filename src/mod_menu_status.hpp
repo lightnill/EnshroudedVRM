@@ -8,6 +8,8 @@ struct ModMenuStatus {
     VoiceActivity voice=VoiceActivity::Off;
     ModMouthSupport mouth=ModMouthSupport::NoAvatar;
     bool starting=false,save_failed=false;
+    bool startup_ready=false;
+    const char* startup_version=nullptr; // Immutable process-lifetime context.
     MicrophoneState microphone=MicrophoneState::Off;
     std::shared_ptr<const MicrophoneDeviceList> microphones{};
     std::shared_ptr<const AvatarMenuSnapshot> avatar;

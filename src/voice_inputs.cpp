@@ -2,6 +2,7 @@
 #include "local_voice_observer.hpp"
 #include "microphone_source.hpp"
 #include "runtime_log.hpp"
+#include "standalone_startup.hpp"
 #include <windows.h>
 namespace evrm {
 namespace {
@@ -16,8 +17,10 @@ VoiceInputRouter& router(){
 }
 }
 void initialize_voice_inputs()noexcept{
-    initialize_local_voice_observer();static std::once_flag once;
+    if(!runtime_startup_context().ready())return;
+    static std::once_flag once;
     try{std::call_once(once,[]{
+        initialize_local_voice_observer();
         HMODULE pinned=nullptr;
         if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,reinterpret_cast<LPCWSTR>(&initialize_voice_inputs),&pinned))return;
         auto input=std::make_unique<MicrophoneSource>();
@@ -26,14 +29,15 @@ void initialize_voice_inputs()noexcept{
     });}catch(...){log_event("voice-input.microphone-service-unavailable");}
 }
 void request_voice_inputs(const ModSettings& settings)noexcept{
+    if(!runtime_startup_context().ready())return;
     const auto previous=router().selection();if(!router().request(settings))return;
     if(!previous||previous->settings.voice_source!=settings.voice_source||previous->settings.voice_enabled!=settings.voice_enabled||
         microphone_device_id(previous->settings)!=microphone_device_id(settings))log_event_lazy([&]{return "voice-input.source mode="+
             std::string(settings.voice_source==VoiceInputSource::Game?"game":"microphone")+" enabled="+std::to_string(settings.voice_enabled)+
             " microphone-selection="+std::string(microphone_device_id(settings).empty()?"windows-default":"specific");});
 }
-void service_voice_inputs()noexcept{service_local_voice_feature_requests();}
-void poll_voice_inputs(std::uint64_t now)noexcept{poll_local_voice_observer(now);if(auto* input=microphone.load(std::memory_order_acquire))input->poll(now);}
+void service_voice_inputs()noexcept{if(runtime_startup_context().ready())service_local_voice_feature_requests();}
+void poll_voice_inputs(std::uint64_t now)noexcept{if(!runtime_startup_context().ready())return;poll_local_voice_observer(now);if(auto* input=microphone.load(std::memory_order_acquire))input->poll(now);}
 MouthSnapshot selected_voice_mouth_snapshot()noexcept{return router().snapshot();}
 bool selected_voice_starting()noexcept{
     const auto current=router().selection();if(!current||!current->settings.voice_enabled||!current->usable)return false;

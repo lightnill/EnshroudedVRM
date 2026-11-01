@@ -4,6 +4,7 @@ namespace evrm {
 // Every device can prepare a proposal, then reconcile to the coherent committed
 // selection if another device completed it first.
 inline AvatarCandidatePtr avatar_device_request(AvatarService& service,const std::shared_ptr<const PreparedAvatar>& current)noexcept {
+    if(!service.replacement_enabled())return {};
     if(auto pending=service.candidate())return pending;
     const auto selected=service.selection();return selected&&selected->model!=current?selected:nullptr;
 }

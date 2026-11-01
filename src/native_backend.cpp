@@ -323,7 +323,7 @@ struct NativeBackend::Impl {
 #ifdef EVRM_NATIVE_BACKEND_TESTING
     std::shared_ptr<const NativeBackendTestOwner> test_owner_source;
 #endif
-    bool replacement=false,mesh_enabled=false;
+    bool replacement=false,mesh_enabled=false,replacement_enabled=true;
     std::uint64_t coverage_models=0,coverage_independent=0,coverage_uncovered=0,coverage_sources=0,coverage_accepted=0,coverage_declined=0;
     VkPhysicalDeviceLimits limits{};std::mutex mutex;
     std::map<VkCommandBuffer,Recording> commands;
@@ -1118,7 +1118,7 @@ struct NativeBackend::Impl {
         if(b.submitted)return;
         b.submitted=true;b.awaiting_submit_result=true;b.submitted_queue=submitted_queue;
         FallbackDecision decision;using Gate=FallbackGate;
-        bool ready=decision.check(shape,Gate::Shape)&&decision.check(recording.eligible,Gate::Eligible)&&
+        bool ready=decision.check(shape,Gate::Shape)&&decision.check(replacement_enabled&&recording.eligible,Gate::Eligible)&&
             decision.check(!recording.tainted,Gate::Untainted)&&decision.check(!b.invalid,Gate::ValidBundle)&&
             decision.check(b.recorded,Gate::Recorded)&&decision.check(b.ended,Gate::Ended)&&
             decision.check(b.visibility_passes>=1&&b.visibility_passes<=2,Gate::VisibilityPass)&&decision.check(b.gbuffer_passes==1,Gate::GbufferPass)&&
@@ -1439,9 +1439,15 @@ void NativeBackend::test_owner(std::shared_ptr<const NativeBackendTestOwner> sou
 #endif
 NativeAvatarUploadState NativeBackend::prepare_model(VkQueue queue,std::uint32_t family,const AvatarCandidatePtr& candidate)noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
+        const auto previous_generation=impl->hot_generation;
         impl->hot_generation=candidate?candidate->generation:0;
         if(impl->disabled||impl->context.uncertain)return NativeAvatarUploadState::Failed;
-        if(!candidate){if(impl->asset_stager&&impl->assets)impl->asset_stager->update(queue,family,0,{});return NativeAvatarUploadState::Idle;}
+        if(!candidate||!impl->replacement_enabled){
+            // With no active assets and no hot proposal, publish() may own an
+            // initial UINT64_MAX upload for this device's seeded CPU model.
+            if(impl->asset_stager&&(!impl->replacement_enabled||impl->assets||previous_generation))impl->asset_stager->update(queue,family,0,{});
+            return NativeAvatarUploadState::Idle;
+        }
         if(impl->queue&&(impl->queue!=queue||impl->family!=family))return NativeAvatarUploadState::Failed;
         impl->queue=queue;impl->family=family;impl->initialize();impl->ensure_asset_stager();
         return impl->asset_stager->update(queue,family,candidate->generation,candidate->model->asset,candidate->model->skin);
@@ -1449,7 +1455,7 @@ NativeAvatarUploadState NativeBackend::prepare_model(VkQueue queue,std::uint32_t
 }
 bool NativeBackend::activate_model(const AvatarCandidate& candidate,bool(*commit)(void*,std::uint64_t)noexcept,void* context)noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
-        if(impl->disabled||impl->context.uncertain||!impl->asset_stager||impl->hot_generation!=candidate.generation||
+        if(!impl->replacement_enabled||impl->disabled||impl->context.uncertain||!impl->asset_stager||impl->hot_generation!=candidate.generation||
             !impl->asset_stager->ready(candidate.generation,candidate.model->asset))return false;
         if(!commit||!commit(context,impl->metadata.buffer_epoch()))return false;
         auto next=impl->asset_stager->take_ready(candidate.generation,candidate.model->asset);
@@ -1462,8 +1468,17 @@ bool NativeBackend::activate_model(const AvatarCandidate& candidate,bool(*commit
         impl->latest.reset();impl->view_publications.reset();return true;
     }catch(...){return false;}
 }
+void NativeBackend::set_replacement_enabled(bool enabled)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->mutex);
+        if(impl->replacement_enabled==enabled)return;
+        impl->replacement_enabled=enabled;
+        if(!enabled){impl->latest.reset();impl->view_publications.reset();impl->revoke_preparation();impl->tool_slots.disable();}
+        // Recorded/submitted bundles retain their leases until normal retirement.
+        // The common submit permit disables both replacement and native clipping.
+    }catch(...){}
+}
 void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const NativeAvatarPublication> publication,std::uint64_t source_buffer_epoch)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);impl->observe_image_disable();impl->latest=std::move(publication);if(!impl->latest||impl->disabled||impl->context.uncertain){impl->view_publications.reset();impl->revoke_preparation();return;}
+    try{std::lock_guard<std::mutex> lock(impl->mutex);if(!impl->replacement_enabled)return;impl->observe_image_disable();impl->latest=std::move(publication);if(!impl->latest||impl->disabled||impl->context.uncertain){impl->view_publications.reset();impl->revoke_preparation();return;}
         impl->view_publications=impl->latest;
         impl->latest_source={};
         if(impl->replacement) {
@@ -1520,7 +1535,7 @@ void NativeBackend::command_begin(VkCommandBuffer command,const VkCommandBufferB
         bool retiring=false;impl->each_view(command,[&](VkCommandBuffer,const Recording& item){retiring=retiring||static_cast<bool>(item.bundle);});const auto started=std::chrono::steady_clock::now();
         impl->retire_views(command,"valid-original-rebegin");auto& r=impl->commands[command];
         if(retiring)impl->resource_timing(2,started);
-        impl->transparency_trace.begin(r.transparency,command);r.eligible=!info.pNext&&info.flags==VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        impl->transparency_trace.begin(r.transparency,command);r.eligible=impl->replacement_enabled&&!info.pNext&&info.flags==VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     }catch(...){}
 }
 void NativeBackend::allocated(const VkCommandBufferAllocateInfo& info,const VkCommandBuffer* commands)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);if(!commands||info.commandBufferCount>512||impl->pools.size()+info.commandBufferCount>512)return;for(uint32_t i=0;i<info.commandBufferCount;++i)impl->pools[commands[i]]=info.commandPool;}catch(...){} }
@@ -1569,6 +1584,7 @@ void NativeBackend::before_attachment_clear(VkCommandBuffer command)noexcept {
 }
 void NativeBackend::before_rendering(VkCommandBuffer command,const VkRenderingInfo&,const char* release_trigger)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;
+        if(!impl->replacement_enabled)return;
         if(!r.bundle && r.pass.supported && r.pass.kind==NativePipelineKind::visibility){const auto extent=std::to_string(r.pass.extent.width)+"x"+std::to_string(r.pass.extent.height);
             impl->notice("first-visibility-release extent="+extent+" trigger="+(release_trigger?release_trigger:"unspecified")+" eligible="+std::to_string(r.eligible)+" tainted="+std::to_string(r.tainted)+" producer="+std::to_string(r.compute_producer)+" counted="+std::to_string(static_cast<bool>(r.first_count)),"first-release-"+extent);}
         if(!r.eligible||r.tainted||r.bundle||!r.pass.supported||r.pass.kind!=NativePipelineKind::visibility||impl->disabled)return;
@@ -1643,12 +1659,13 @@ void NativeBackend::before_end_rendering(VkCommandBuffer command)noexcept {
 void NativeBackend::end_rendering(VkCommandBuffer command)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){auto& r=found->second;if(r.bundle&&r.bundle->material_plan.mixed&&r.bundle->oit_window.active){r.bundle->oit_window.end(false);r.bundle->invalid=true;}if(r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer)r.view_gbuffer=true;r.pass_active=false;r.observed_oit_active=false;}}catch(...){} }
 bool NativeBackend::pose_capture_boundary(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);
-        return found!=impl->commands.end()&&found->second.eligible&&found->second.pass_active&&
+        return impl->replacement_enabled&&found!=impl->commands.end()&&found->second.eligible&&found->second.pass_active&&
             found->second.pass.supported&&found->second.pass.kind==NativePipelineKind::gbuffer&&!impl->context.uncertain;
     }catch(...){return false;}
 }
 void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uint32_t x,std::uint32_t y,std::uint32_t z)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;r.compute_producer=true;
+        if(!impl->replacement_enabled&&!r.bundle)return;
         impl->mixed_dispatch(r,command,capture_owner,x,y,z);
         impl->observe_volume(r,command,capture_owner,x,y,z);
         if(!r.bundle || !capture_owner)return;
@@ -1722,6 +1739,7 @@ void NativeBackend::uncovered_draw(VkCommandBuffer command,const char* command_n
 void NativeBackend::before_native_draw(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);if(!impl->replacement)return;
         const auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;
+        if(!impl->replacement_enabled&&!r.bundle)return;
         impl->mixed_late(r,command);impl->observe_transparent_draw(r,command);
         impl->observe_ownership_draw(r,impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS));
         impl->cover_native_draw(r,command);

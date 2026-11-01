@@ -20,6 +20,8 @@ class ModMenuTests(unittest.TestCase):
             binary = Path(folder) / (name + '.exe')
             command = [compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static', str(root / 'tests' / (name + '.cpp'))]
             command.extend(str(root / 'src' / source) for source in sources)
+            if 'mod_settings_service.cpp' in sources:
+                command.append(str(root/'tests/standalone_fixture_context.cpp'))
             if name in ('mod_present_lease', 'mod_menu_gpu', 'mod_overlay', 'mod_overlay_faults'):
                 command.append('-I' + os.environ['EVRM_VULKAN_INCLUDE_DIRECTORY'])
             if name in ('mod_menu_gpu', 'mod_overlay', 'mod_overlay_faults'):

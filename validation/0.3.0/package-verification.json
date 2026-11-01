@@ -1,0 +1,34 @@
+{
+  "version": "0.3.0",
+  "archiveSha256": "519c0141ad00faa6c51a800aee5cf28c5d8fc5aaa415c542c889fb37f4748d0e",
+  "runtimeSha256": "9c63410651703633268648fe346d435dc3a43040a82dc00c0c91a12be1473524",
+  "bootstrapSha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+  "runtimeVersion": "0.3.0",
+  "bootstrapVersion": "0.2.0-standalone-dev",
+  "runtimeHas16BitPngInputCompatibility": true,
+  "files": 42,
+  "allManifestHashesVerified": true,
+  "exactSelectedDllsVerified": true,
+  "manifestEntries": 41,
+  "members": 42,
+  "repeatedZipIdentical": true,
+  "sampleUnchanged": true,
+  "sourceDifferencesFromRuntimeBuildArePackagingOnly": [
+    "portable/bootstrap/bootstrap.rc",
+    "portable/package_standalone_release.py",
+    "portable/standalone_docs/README.txt",
+    "portable/standalone_docs/RELEASE-NOTES.md"
+  ],
+  "sourcePinsVerified": true,
+  "status": "passed",
+  "packagingTestsPassed": 14,
+  "combinedCandidateManualValidation": "pending",
+  "laptopValidation": "pending",
+  "nexusUpdated": false,
+  "freshCuratedSourceVerification": {
+    "methods": 31,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "14 texture-depth checks, 14 packaging checks, 3 model/material importer integration checks; CPU fixtures only; no new candidate DLL execution"
+  }
+}

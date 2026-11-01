@@ -1,6 +1,7 @@
 #define VK_NO_PROTOTYPES
 #include "runtime_log.hpp"
 #include "gpu_probe.hpp"
+#include "standalone_startup.hpp"
 #include "native_submit.hpp"
 #include "gpu_probe_capture_frames.hpp"
 #include "fallback_diagnostics.hpp"
@@ -164,6 +165,7 @@ struct GpuProbe::Impl {
     VkPhysicalDeviceMemoryProperties memory_properties{};
     std::vector<VkQueueFamilyProperties> queue_properties;
     std::filesystem::path directory;
+    bool active=false;
     bool anchor_enabled=false;
     VkDeviceSize uniform_alignment=0;
     std::set<uint64_t> requested_frames;
@@ -466,12 +468,12 @@ GpuProbe::GpuProbe(VkInstance instance, VkPhysicalDevice physical, VkDevice devi
                    PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProcAddr gdpa,
                    PFN_vkSetDeviceLoaderData set_loader_data) : impl(std::make_unique<Impl>()) {
     impl->device = device; impl->gdpa = gdpa; impl->set_loader_data = set_loader_data;
-    const auto path = environment(L"ENSHROUDED_VRM_CAPTURE_DIR");
-    if (path.empty()) return;
-    impl->directory = path;
-    impl->anchor_enabled=environment(L"ENSHROUDED_VRM_CAPTURE_PLAYER_ANCHOR")==L"1";
-    std::filesystem::create_directories(impl->directory);
-    impl->requested_frames=probe_capture_frames(environment(L"ENSHROUDED_VRM_CAPTURE_FRAMES"));
+    const auto& startup=runtime_startup_context();
+    if(!startup.ready())return;
+    // GPU readback is required for the avatar, independently of writable disk
+    // storage. File captures remain off in the standalone player path.
+    impl->directory=startup.capture_directory;
+    impl->active=true;
     const auto memory = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(gipa(instance, "vkGetPhysicalDeviceMemoryProperties"));
     const auto families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(gipa(instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
     if (!memory || !families) throw std::runtime_error("missing physical-device observation functions");
@@ -490,7 +492,7 @@ GpuProbe::~GpuProbe() {
     std::lock_guard<std::mutex> lock(impl->readback_mutex);
     for(auto& slot:impl->async_slots){impl->drain_slot(slot);impl->release_slot(slot);}
 }
-bool GpuProbe::enabled() const { return !impl->directory.empty(); }
+bool GpuProbe::enabled() const { return impl->active; }
 bool GpuProbe::player_anchor_capture_enabled() const {return enabled()&&impl->anchor_enabled;}
 void GpuProbe::capture_snapshot(const GpuSnapshot& snapshot,uint64_t frame) noexcept {
     if(!player_anchor_capture_enabled())return;

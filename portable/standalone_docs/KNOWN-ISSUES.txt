@@ -1,0 +1,48 @@
+EnshroudedVRM 0.3.0 preview — coverage and limits
+
+Isolated forwarding/discovery tests have exercised Windows 10 build 19045 x64
+with Vulkan loader 1.4.350.0. Normal Steam launch, F8, sample/model loading,
+original-character toggling and restart persistence passed desktop manual tests.
+Laptop validation, Windows 11, other loader versions and combined loaders remain
+unverified at publication. Check the accompanying exact-hash release evidence.
+
+An existing vulkan-1.dll is an installation conflict. Do not overwrite it,
+rename it or chain it. The preview requires Windows in C:\Windows. A previously
+loaded system Vulkan module, or System32-only loading, can bypass local discovery.
+Other Windows-directory layouts, Windows 11 and other loaders are unverified.
+Never copy a Windows system DLL into the game folder.
+EML/ShroudForge coexistence from the old script route does not establish
+coexistence for this route. Multiplayer is unchanged and remains unclaimed.
+
+Administrator launches and explicit Vulkan layer search/disable overrides may
+prevent discovery. Those settings are respected. Network/linked installation
+paths and paths containing semicolons are declined. Use a normal local path.
+
+The exact game executable and package files are checked before avatar hooks.
+If a supported game enters the runtime but package validation fails, only a
+fresh private diagnostic is attempted; no preference import or service starts
+just to report the failure. Unavailable private storage may prevent that log.
+Game updates, changed files or invalid compatibility metadata can disable the
+mod while leaving the original character. Do not bypass the build checks.
+
+The layer manifest is checked before discovery and held read-only until game
+exit. Close the game before updating files. Unrelated JSON files in Runtime
+are not exposed by this bootstrap. User-supplied broken layer paths/manifests
+belong to their own configuration and are not repaired or overridden.
+
+No runtime entry means no F8 and possibly no new log. Even a working bootstrap
+cannot guarantee a deferred diagnostic callback if neither the layer nor a
+forwarded API is used. Treat only a fresh session marker as current evidence.
+Prior log tails are labelled as previous sessions; startup history is bounded
+to five files and 256 KiB. Existing runtime diagnostic limits remain in place.
+
+One running game instance is supported initially. Preference writes remain
+atomic, but simultaneous games sharing one user settings store are unsupported.
+Unavailable user storage uses safe defaults and reports that settings cannot
+be saved; it does not request administrator access or choose another folder.
+
+Existing avatar limits, local voice requirements, shape support and shader
+preset behavior from 0.2.0 still apply. No performance/FPS claim for actual
+Steam gameplay follows from isolated startup measurements.
+
+Embedded 16-bit-per-channel PNG textures are converted to RGBA8 during import. Rendering keeps the existing texture format and memory cost. Higher-depth decoding requires temporary workspace, so large images can still be declined by the existing image-memory limits.

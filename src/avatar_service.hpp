@@ -12,6 +12,7 @@ struct AvatarServiceOptions {
     AvatarSettingsLoad (*preferences_reader)(const std::filesystem::path&,void*)=nullptr;
     bool (*input_released)(std::uintptr_t,void*)noexcept=nullptr;
     void* context=nullptr;
+    bool save_available=true;
 };
 class AvatarService {
 public:
@@ -23,6 +24,8 @@ public:
     AvatarCandidatePtr candidate()const noexcept;
     AvatarCandidatePtr selection()const noexcept;
     std::uint64_t desired_generation()const noexcept;
+    bool replacement_enabled()const noexcept;
+    bool set_replacement_enabled(bool)noexcept;
     bool request_model(const std::string&)noexcept;
     bool request_browse(std::uintptr_t)noexcept;
     void cancel_request()noexcept;

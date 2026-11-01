@@ -5,6 +5,7 @@
 #include "graphics_state.hpp"
 #include "avatar_renderer.hpp"
 #include "avatar_runtime.hpp"
+#include "standalone_startup.hpp"
 #include "avatar_device_request.hpp"
 #include "device_features.hpp"
 #include "command_trace_runtime.hpp"
@@ -49,6 +50,7 @@ struct InstanceState {
     PFN_GetPhysicalDeviceProcAddr get_physical_proc{};
     PFN_vkDestroyInstance destroy{};
     uint32_t api_version = VK_API_VERSION_1_0;
+    bool active=false;
     std::mutex surface_mutex;
     std::unordered_map<VkSurfaceKHR,HWND> surfaces;
 };
@@ -290,12 +292,14 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateInstance(
     const VkResult result = next_create(info, allocator, instance);
     if (result != VK_SUCCESS) return result;
     const auto next_destroy = reinterpret_cast<PFN_vkDestroyInstance>(next_get_proc(*instance, "vkDestroyInstance"));
+    evrm::initialize_runtime_startup_environment();
     try {
         auto state = std::make_shared<InstanceState>();
         state->handle = *instance;
         state->get_proc = next_get_proc;
         state->get_physical_proc = next_physical_proc;
         state->destroy = next_destroy;
+        state->active=evrm::runtime_startup_context().ready();
         if (info->pApplicationInfo && info->pApplicationInfo->apiVersion)
             state->api_version = info->pApplicationInfo->apiVersion;
         {
@@ -353,6 +357,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
     if (result != VK_SUCCESS) return result;
     log_device_capabilities(parent, physical, *info, features);
     const auto next_destroy = reinterpret_cast<PFN_vkDestroyDevice>(next_get_proc(*device, "vkDestroyDevice"));
+    const auto& startup=evrm::runtime_startup_context();
     try {
         auto state = std::make_shared<DeviceState>();
         state->handle = *device;
@@ -360,14 +365,13 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
         state->get_proc = next_get_proc;
         state->destroy = next_destroy;
         state->present = reinterpret_cast<PFN_vkQueuePresentKHR>(next_get_proc(*device, "vkQueuePresentKHR"));
-        state->graphics = std::make_shared<evrm::GraphicsState>(*device, next_get_proc);
+        if(startup.ready())state->graphics = std::make_shared<evrm::GraphicsState>(*device, next_get_proc);
         try{
-            if(evrm::mod_menu_device_supported(*info))state->overlay=std::make_shared<evrm::ModOverlay>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,true);
-            else evrm::log_event("mod-menu.unavailable reason=present-completion-feature");
+            if(startup.ready()&&evrm::mod_menu_device_supported(*info))state->overlay=std::make_shared<evrm::ModOverlay>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,true);
+            else if(startup.ready())evrm::log_event("mod-menu.unavailable reason=present-completion-feature");
         }catch(...){evrm::log_event("mod-menu.initialization-unavailable");}
         try {
-            wchar_t enabled[4]{};
-            if (GetEnvironmentVariableW(L"ENSHROUDED_VRM_DEFER_RENDERING_PROOF", enabled, 4) == 1 && enabled[0] == L'1') {
+            if (startup.ready()) {
                 if (evrm::rendering_command_coverage_supported(parent->api_version, features)) {
                     const auto get_families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
                         parent->get_proc(parent->handle, "vkGetPhysicalDeviceQueueFamilyProperties"));
@@ -390,27 +394,25 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
             wchar_t enabled[4]{}, directory[32768]{};
             const auto flag_size = GetEnvironmentVariableW(L"ENSHROUDED_VRM_TRACE_COMMANDS", enabled, 4);
             const auto directory_size = GetEnvironmentVariableW(L"ENSHROUDED_VRM_TRACE_DIR", directory, 32768);
-            if (flag_size == 1 && enabled[0] == L'1' && directory_size && directory_size < 32768) {
+            if (startup.ready() && flag_size == 1 && enabled[0] == L'1' && directory_size && directory_size < 32768) {
                 state->trace = std::make_shared<evrm::CommandTraceRuntime>(std::filesystem::path(directory));
                 evrm::log_event("command-trace.enabled metadata-only; marker required");
             }
         } catch (...) { evrm::log_event("command-trace.initialization.failed"); }
         try {
-            state->probe = std::make_shared<evrm::GpuProbe>(parent->handle, physical, *device, parent->get_proc, next_get_proc, set_loader_data);
+            if(startup.ready())state->probe = std::make_shared<evrm::GpuProbe>(parent->handle, physical, *device, parent->get_proc, next_get_proc, set_loader_data);
         } catch (...) { evrm::log_event("probe.initialization.failed; original rendering retained"); }
         try {
-            state->avatar = std::make_shared<evrm::AvatarRenderer>(parent->handle, physical, *device, parent->get_proc, next_get_proc, set_loader_data);
+            if(startup.ready())state->avatar = std::make_shared<evrm::AvatarRenderer>(parent->handle, physical, *device, parent->get_proc, next_get_proc, set_loader_data);
         } catch (const std::exception& error) { evrm::log_event("avatar.initialization.failed " + std::string(error.what())); }
         try {
-            wchar_t native_flag[4]{},replacement_flag[4]{},shader_path[32768]{};
-            const bool replacement=GetEnvironmentVariableW(L"ENSHROUDED_VRM_NATIVE_REPLACEMENT",replacement_flag,4)==1&&replacement_flag[0]==L'1';
-            const bool additive=GetEnvironmentVariableW(L"ENSHROUDED_VRM_NATIVE_ADDITIVE",native_flag,4)==1&&native_flag[0]==L'1';
+            const bool replacement=startup.ready();
+            const bool additive=false;
             if(additive||replacement)
                 evrm::log_event("native-additive.gate request-api="+std::to_string(parent->api_version)+" device-shape="+std::to_string(evrm::native_rendering_environment_supported(parent->api_version,features)));
             if ((additive||replacement) && state->deferred && state->avatar && state->avatar->enabled() &&
-                evrm::native_rendering_environment_supported(parent->api_version,features) &&
-                GetEnvironmentVariableW(L"ENSHROUDED_VRM_SHADERS",shader_path,32768)>0) {
-                state->native=std::make_shared<evrm::NativeBackend>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,std::filesystem::path(shader_path),true,replacement,
+                evrm::native_rendering_environment_supported(parent->api_version,features)) {
+                state->native=std::make_shared<evrm::NativeBackend>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,startup.runtime_directory/L"shaders",true,replacement,
                     features.descriptor_binding_partially_bound.available&&features.descriptor_binding_partially_bound.enabled,
                     features.complete&&features.mesh_shader.available&&features.mesh_shader.enabled&&std::find(features.enabled_extensions.begin(),features.enabled_extensions.end(),"VK_EXT_mesh_shader")!=features.enabled_extensions.end());
                 evrm::log_event(replacement?"native-replacement.enabled development-only; shared-commit; opaque-mask-only":"native-additive.enabled original-body-retained; invalid-history; opaque-mask-only");
@@ -421,8 +423,10 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
             devices.emplace(dispatch_key(*device), std::move(state));
         }
         evrm::log_event("device.created");
-        evrm::initialize_voice_inputs();
-        evrm::initialize_mod_settings_service();
+        if(startup.ready()){
+            evrm::initialize_voice_inputs();
+            evrm::initialize_mod_settings_service(startup.state_directory);
+        }
         return result;
     } catch (...) {
         if (next_destroy) next_destroy(*device, allocator);
@@ -459,10 +463,12 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
     bool native_pose_complete = false;
     evrm::AvatarCandidatePtr avatar_candidate;
     auto* avatar_service=evrm::avatar_runtime_service();
+    const bool replacement_enabled=avatar_service&&avatar_service->replacement_enabled();
+    if(!retry&&state->native)state->native->set_replacement_enabled(replacement_enabled);
     if(!retry&&state->native&&state->avatar&&state->probe&&avatar_service){
         uint32_t family=UINT32_MAX;
         if(state->probe->queue_family(queue,family)){
-            avatar_candidate=evrm::avatar_device_request(*avatar_service,state->avatar->prepared_model());
+            if(replacement_enabled)avatar_candidate=evrm::avatar_device_request(*avatar_service,state->avatar->prepared_model());
             const auto upload=state->native->prepare_model(queue,family,avatar_candidate);
             std::string error;
             if(!state->avatar->stage_candidate(avatar_candidate,upload==evrm::NativeAvatarUploadState::Ready,error)&&avatar_candidate)
@@ -472,7 +478,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
         }
     }
     const auto native_buffer_epoch=state->native?state->native->state().buffer_epoch():0;
-    if (!retry && info && state->avatar && state->probe && state->graphics)
+    if (!retry && replacement_enabled && info && state->avatar && state->probe && state->graphics)
         native_pose_complete=state->avatar->before_present(queue, *info, *state->probe, *state->graphics, consumed,native_buffer_epoch);
     if(!retry&&avatar_candidate&&avatar_service&&state->native&&state->avatar){
         struct Activation {evrm::NativeBackend* backend;evrm::AvatarRenderer* renderer;const evrm::AvatarCandidate* candidate=nullptr;};
@@ -490,7 +496,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
             evrm::log_event_lazy([&]{return "avatar-switch.activation-ms generation="+std::to_string(avatar_candidate->generation)+" elapsed="+std::to_string(elapsed);});
         }
     }
-    if (!retry && state->native && state->avatar && state->probe) {
+    if (!retry && replacement_enabled && state->native && state->avatar && state->probe) {
         uint32_t family=UINT32_MAX;
         const auto publication=native_pose_complete?state->avatar->native_publication():nullptr;
         if(state->probe->queue_family(queue,family))state->native->publish(queue,family,publication,publication?publication->source_buffer_epoch:0);
@@ -505,10 +511,12 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
     if(info&&state->overlay){
         const auto family=queue_guard.family;
         const bool accessible=state->graphics&&info->swapchainCount==1&&info->pSwapchains&&info->pImageIndices&&state->graphics->swapchain_accessible(info->pSwapchains[0],info->pImageIndices[0],family);
-        evrm::ModMenuStatus status;status.voice=evrm::selected_voice_mouth_snapshot().activity;status.starting=evrm::selected_voice_starting();status.save_failed=evrm::mod_settings_save_failed();
+        const auto& startup=evrm::runtime_startup_context();
+        evrm::ModMenuStatus status;status.voice=evrm::selected_voice_mouth_snapshot().activity;status.starting=evrm::selected_voice_starting();status.save_failed=!startup.state_writable||evrm::mod_settings_save_failed();
+        status.startup_ready=startup.ready();status.startup_version=startup.version.c_str();
         status.avatar=evrm::avatar_runtime_snapshot();
         status.microphone=evrm::local_microphone_state();status.microphones=evrm::local_microphone_devices();
-        if(state->avatar)status.mouth=state->avatar->mouth_support();
+        if(replacement_enabled&&state->avatar)status.mouth=state->avatar->mouth_support();
         if(state->native&&state->native->mouth_gpu_unavailable())status.mouth=evrm::ModMouthSupport::Unavailable;
         state->overlay->before_present(queue,family,*info,consumed,accessible,status,menu);presenting=menu.view();
     }
@@ -547,6 +555,7 @@ EVRM_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance insta
     if (std::strcmp(name, "vkDestroyDevice") == 0) return as_proc(vkDestroyDevice);
     const auto state = instance_state(instance);
     if (!state) return nullptr;
+    if(!state->active)return state->get_proc(instance,name);
     if(!std::strcmp(name,"vkCreateWin32SurfaceKHR")&&state->get_proc(instance,name))return as_proc(vkCreateWin32SurfaceKHR);
     if(!std::strcmp(name,"vkDestroySurfaceKHR")&&state->get_proc(instance,name))return as_proc(vkDestroySurfaceKHR);
 #define EVRM_INSTANCE_HOOK(name_) if (std::strcmp(name, #name_) == 0 && state->get_proc(instance, name)) return as_proc(name_);
@@ -564,6 +573,7 @@ EVRM_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, c
     if (std::strcmp(name, "vkGetDeviceProcAddr") == 0) return as_proc(vkGetDeviceProcAddr);
     const auto state = device_state(device);
     if (!state) return nullptr;
+    if(!state->parent->active && std::strcmp(name,"vkDestroyDevice"))return state->get_proc(device,name);
 #define EVRM_DEVICE_HOOK(name_) if (std::strcmp(name, #name_) == 0 && state->get_proc(device, name)) return as_proc(name_);
     EVRM_DEVICE_HOOK_NAMES(EVRM_DEVICE_HOOK)
     EVRM_GRAPHICS_HOOK_NAMES(EVRM_DEVICE_HOOK)

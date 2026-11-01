@@ -14,6 +14,7 @@
 #include "mod_settings_service.hpp"
 #include "fallback_diagnostics.hpp"
 #include "avatar_runtime.hpp"
+#include "standalone_startup.hpp"
 #include "avatar_switch_transaction.hpp"
 #include <algorithm>
 #include <cmath>
@@ -35,7 +36,6 @@ std::wstring env(const wchar_t* name) {
     value.resize(n);
     return value;
 }
-std::string narrow(const std::wstring& value) { return std::string(value.begin(),value.end()); }
 void check(VkResult result,const char* operation) {if(result!=VK_SUCCESS)throw std::runtime_error(std::string(operation)+": "+std::to_string(result));}
 vrm::Matrix product(const vrm::Matrix& a,const vrm::Matrix& b) {
     vrm::Matrix out{};for(int c=0;c<4;++c)for(int r=0;r<4;++r)for(int k=0;k<4;++k)out[c*4+r]+=a[k*4+r]*b[c*4+k];return out;
@@ -628,25 +628,20 @@ struct AvatarRenderer::Impl {
 #undef V
 };
 AvatarRenderer::AvatarRenderer(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr gipa,PFN_vkGetDeviceProcAddr gdpa,PFN_vkSetDeviceLoaderData set_loader):impl(std::make_unique<Impl>()) {
-    const auto path=env(L"ENSHROUDED_VRM_MODEL");
-    // A configured launch may start without an avatar. F8 and saved service
-    // preferences choose it later; unrelated Vulkan clients stay dormant.
-    if(path.empty()&&env(L"ENSHROUDED_VRM_PROFILE").empty())return;
+    const auto& startup=runtime_startup_context();
+    if(!startup.ready()||!startup.bridge)return;
     impl->device=device;impl->gdpa=gdpa;impl->set_loader=set_loader;
     const auto get_memory=reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(gipa(instance,"vkGetPhysicalDeviceMemoryProperties"));get_memory(physical,&impl->memory);
     const auto get_queues=reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(gipa(instance,"vkGetPhysicalDeviceQueueFamilyProperties"));
     uint32_t queue_count=0;get_queues(physical,&queue_count,nullptr);impl->queue_properties.resize(queue_count);get_queues(physical,&queue_count,impl->queue_properties.data());impl->queue_properties.resize(queue_count);
-    impl->bridge=std::make_unique<EnshroudedBridge>(std::filesystem::path(env(L"ENSHROUDED_VRM_PROFILE")),std::filesystem::path(env(L"ENSHROUDED_VRM_CATALOG")),narrow(env(L"ENSHROUDED_VRM_VERIFIED_BUILD")));
+    impl->bridge=std::make_unique<EnshroudedBridge>(*startup.bridge);
     if(!impl->bridge->ready())throw std::runtime_error("Game pose profile: "+impl->bridge->error());
-    impl->shader_directory=std::filesystem::path(env(L"ENSHROUDED_VRM_SHADERS"));
-    const auto offset=env(L"ENSHROUDED_VRM_DEBUG_OFFSET");if(!offset.empty())impl->debug_offset=std::stof(offset);
-    impl->native_replacement=env(L"ENSHROUDED_VRM_NATIVE_REPLACEMENT")==L"1";
-    impl->native_mode=env(L"ENSHROUDED_VRM_NATIVE_ADDITIVE")==L"1"||impl->native_replacement;
-    impl->gpu_skinning=env(L"ENSHROUDED_VRM_GPU_SKINNING")!=L"0";
+    impl->shader_directory=startup.runtime_directory/L"shaders";
+    impl->native_replacement=true;
+    impl->native_mode=true;
+    impl->gpu_skinning=true;
     std::shared_ptr<const PreparedAvatar> initial;
-    if(auto* service=avatar_runtime_service())initial=service->active();
-    if(!initial&&!path.empty()){const auto loaded=load_prepared_avatar(std::filesystem::path(path).u8string());
-        if(loaded)initial=loaded.model;else log_event_lazy([&]{return "avatar.initial-import-failed "+loaded.error;});}
+    if(auto* service=avatar_runtime_service();service&&service->replacement_enabled())initial=service->active();
     if(initial)impl->model=std::make_unique<AvatarCpuModel>(initial,impl->native_replacement,impl->gpu_skinning);
     impl->active=bool(initial)||impl->native_mode;
     if(initial){log_event_lazy([&]{return "avatar.cpu-ready title="+initial->name+" vertices="+std::to_string(initial->asset->vertex_count);});

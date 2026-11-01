@@ -8,8 +8,9 @@
 namespace {
 void need(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
 template<class F>void until(F&& fn,const char* reason){const auto end=GetTickCount64()+5000;while(!fn()&&GetTickCount64()<end)Sleep(3);need(fn(),reason);}
-struct Control {std::shared_ptr<const evrm::PreparedAvatar> model;std::atomic<bool> entered{false},release{false},hold_preferences{false},preferences_entered{false};std::atomic<unsigned> commits{0},picker_calls{0};};
+struct Control {std::shared_ptr<const evrm::PreparedAvatar> model;std::atomic<bool> entered{false},release{false},hold_preferences{false},preferences_entered{false};std::atomic<unsigned> commits{0},picker_calls{0},loads{0};};
 evrm::AvatarLoadResult load(const std::string& path,void* raw){auto& c=*static_cast<Control*>(raw);
+    ++c.loads;
     if(path.find("throw")!=std::string::npos)throw std::runtime_error("Synthetic loader exception");
     if(path.find("slow")!=std::string::npos){c.entered=true;while(!c.release.load())Sleep(1);}
     if(path.find("bad")!=std::string::npos)return {{},"Synthetic import failure"};
@@ -76,5 +77,30 @@ int wmain(int argc,wchar_t** argv){try{
         need(service.request_model("C:\\fixture\\below.vrm"),"incompatible choice");until([&]{return service.snapshot()->state==evrm::AvatarLoadState::Error;},"incompatible choice stayed preparing without current model");
         need(!service.active()&&!service.candidate(),"incompatible empty-state choice activated");
         need(service.request_model("C:\\fixture\\recovery.vrm"),"empty recovery choice");until([&]{return bool(service.candidate());},"valid empty-state recovery missing");need(service.commit_candidate(service.candidate(),commit,&c)&&service.active(),"empty-state recovery commit");}
+    options.directory=folder/L"disabled";std::filesystem::create_directory(options.directory);options.initial.reset();
+    auto disabled_prefs=file_prefs;disabled_prefs.replacement_enabled=false;
+    need(evrm::write_avatar_preferences(options.directory/L"avatar-settings.json",disabled_prefs),"disabled startup preferences");
+    c.loads=0;
+    {evrm::AvatarService service(options);until([&]{return service.snapshot()->preferences_loaded;},"disabled startup preferences not read");
+        need(!service.request_model("C:\\fixture\\unexpected.vrm")&&!service.request_browse(0),"model request accepted while original character selected");
+        need(!service.replacement_enabled()&&!service.active()&&!service.candidate()&&!c.loads,"disabled startup loaded saved VRM");
+        need(service.snapshot()->path==disabled_prefs.selected_path,"disabled startup lost remembered model label");
+        need(service.set_replacement_enabled(true),"enable saved model");until([&]{return bool(service.candidate());},"saved model not requested on enable");
+        need(service.commit_candidate(service.candidate(),commit,&c),"saved model activation failed");
+        const auto cached=service.active();
+        need(service.set_whole_preset(cached->fingerprint,evrm::AvatarShaderPreset::Matte),"toggle profile setup");
+        c.entered=false;c.release=false;need(service.request_model("C:\\fixture\\slow-toggle.vrm"),"pending toggle request");
+        until([&]{return c.entered.load();},"pending toggle loader did not start");
+        const auto before=service.desired_generation();need(service.set_replacement_enabled(false),"disable replacement");
+        need(service.desired_generation()>before&&!service.candidate()&&service.active()==cached,"disable did not invalidate pending request or discarded cached model");
+        need(!service.adopt_selection(service.selection(),commit,&c),"disabled model adopted by another device");
+        c.release=true;
+        until([&]{const auto disk=evrm::read_avatar_preferences(options.directory/L"avatar-settings.json");return disk.status==evrm::AvatarSettingsStatus::Loaded&&!disk.preferences.replacement_enabled;},"disabled state not saved");
+        const auto saved=evrm::read_avatar_preferences(options.directory/L"avatar-settings.json").preferences;
+        need(saved.selected_path==cached->path&&!saved.recent.empty()&&!saved.profiles.empty(),"disable erased selection/history/appearance");
+        need(!service.candidate()&&service.active()==cached,"late load committed while disabled");const auto loads=c.loads.load();
+        for(int n=0;n<6;++n)need(service.set_replacement_enabled(true)&&service.set_replacement_enabled(false),"rapid toggle failed");
+        need(service.set_replacement_enabled(true)&&service.active()==cached&&c.loads==loads,"cached restore reloaded model");
+        need(service.snapshot()->profile->whole==evrm::AvatarShaderPreset::Matte,"toggle erased shader preset");}
     std::cout<<"PASS background model latest-wins/commit/cancel/error recovery, live appearance, successful-only persistence and late-file isolation; no dialog opened\n";return 0;
 }catch(const std::exception& error){std::cerr<<"FAIL "<<error.what()<<'\n';return 1;}}

@@ -1,0 +1,3 @@
+# Native/source provenance pins use exact bytes on every checkout.
+# -text prevents EOL conversion without disabling ordinary text diffs.
+* -text

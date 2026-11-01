@@ -1,6 +1,7 @@
 #include "mod_settings_service.hpp"
 #include "voice_inputs.hpp"
 #include "runtime_log.hpp"
+#include "standalone_startup.hpp"
 #include <atomic>
 #include <memory>
 namespace evrm {
@@ -8,7 +9,7 @@ namespace {
 ModSettingsMailbox mailbox;
 std::mutex changes;
 std::atomic<bool> loaded{false},save_failed{false};
-struct Service {std::filesystem::path path;HANDLE event=nullptr,thread=nullptr;};
+struct Service {std::filesystem::path path;HANDLE event=nullptr,thread=nullptr;bool save_available=false;};
 std::atomic<Service*> service{nullptr};
 void apply_voice()noexcept{
     request_voice_inputs(mailbox.snapshot());
@@ -29,7 +30,7 @@ DWORD WINAPI run(void* raw)noexcept{
                 const auto result=WaitForSingleObject(state.event,DWORD(deadline-now));if(result==WAIT_FAILED)return 0;
                 const auto current=mailbox.ticket();if(current!=ticket){ticket=current;deadline=GetTickCount64()+300;}}
             const auto value=ticket?ticket->settings:ModSettings{};
-            const auto saved=write_mod_settings(state.path,value);save_failed.store(!saved,std::memory_order_release);
+            const auto saved=state.save_available&&write_mod_settings(state.path,value);save_failed.store(!saved,std::memory_order_release);
             log_event(saved?"mod-settings.saved":"mod-settings.save-failed");
         }
     }catch(...){save_failed.store(true,std::memory_order_release);loaded.store(true,std::memory_order_release);log_event("mod-settings.background-failed");}
@@ -37,12 +38,13 @@ DWORD WINAPI run(void* raw)noexcept{
 }
 }
 void initialize_mod_settings_service(const std::filesystem::path& directory)noexcept{
+    const auto& startup=runtime_startup_context();if(!startup.ready())return;
     static std::once_flag once;try{std::call_once(once,[&]{
         HMODULE pinned=nullptr;if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,reinterpret_cast<LPCWSTR>(&run),&pinned))return;
         auto state=std::make_unique<Service>();auto root=directory;
-        if(root.empty()){wchar_t capture[32768]{};const auto count=GetEnvironmentVariableW(L"ENSHROUDED_VRM_CAPTURE_DIR",capture,32768);
-            if(count&&count<32768)root=std::filesystem::path(capture).parent_path();}
+        if(root.empty())root=startup.state_directory;
         if(root.empty()){loaded=true;save_failed=true;return;}
+        state->save_available=startup.state_writable;save_failed=!state->save_available;
         state->path=root/L"mod-settings.json";state->event=CreateEventW(nullptr,FALSE,FALSE,nullptr);
         if(!state->event){loaded=true;save_failed=true;return;}
         // Publish under the same short lock as live changes so a request cannot
@@ -55,6 +57,7 @@ void initialize_mod_settings_service(const std::filesystem::path& directory)noex
 }
 ModSettings mod_settings_snapshot()noexcept{return mailbox.snapshot();}
 bool request_mod_settings(const ModSettings& value)noexcept{
+    if(!runtime_startup_context().ready())return false;
     try{std::lock_guard<std::mutex> guard(changes);if(!mailbox.update(value))return false;apply_voice();
         if(auto* state=service.load(std::memory_order_acquire))SetEvent(state->event);
         return true;

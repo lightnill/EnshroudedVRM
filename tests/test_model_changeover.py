@@ -13,7 +13,8 @@ class ModelChangeoverTests(unittest.TestCase):
             binary = Path(folder) / 'tool_slot_lifecycle.exe'
             command = [compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static',
                        '-DEVRM_NATIVE_TOOL_SLOTS_TESTING', str(root/'tests/tool_slot_lifecycle.cpp'),
-                       str(root/'src/native_tool_slots_runtime.cpp'), str(root/'src/native_tool_slots.cpp'), '-o', str(binary)]
+                       str(root/'src/native_tool_slots_runtime.cpp'), str(root/'src/native_tool_slots.cpp'),
+                       str(root/'tests/standalone_fixture_context.cpp'), '-o', str(binary)]
             built = subprocess.run(command, capture_output=True, text=True, timeout=180)
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30)

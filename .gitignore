@@ -1,4 +1,4 @@
-# Avatar assets and private diagnostics must never be committed.
+# Personal avatar assets and private diagnostics are excluded.
 *.vrm
 *.glb
 *.gltf
@@ -9,6 +9,7 @@
 *.jpeg
 *.webp
 *.bin
+*.wav
 Avatars/
 State/
 work/
@@ -26,3 +27,7 @@ __pycache__/
 *.dll
 *.o
 *.zip
+.superpowers/
+
+# The creator explicitly authorized this exact bundled sample.
+!portable/standalone_assets/vroid-sample.vrm

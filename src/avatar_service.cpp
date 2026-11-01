@@ -72,6 +72,7 @@ struct AvatarService::Impl {
     std::uint64_t revision=0,style_revision=0,prefs_revision=0,saved_revision=0,save_due=0;
     HANDLE event=nullptr,thread=nullptr;
     explicit Impl(AvatarServiceOptions value):options(std::move(value)),active_(options.initial){
+        save_failed=!options.save_available;
         if(options.initial)selection_=std::make_shared<const AvatarCandidate>(AvatarCandidate{1,options.initial});
         update_appearance();publish();event=CreateEventW(nullptr,FALSE,FALSE,nullptr);
         if(event)thread=CreateThread(nullptr,0,[](void* raw)->DWORD{static_cast<Impl*>(raw)->run();return 0;},this,0,nullptr);
@@ -79,7 +80,9 @@ struct AvatarService::Impl {
     ~Impl(){stopping=true;if(event)SetEvent(event);if(thread){WaitForSingleObject(thread,INFINITE);CloseHandle(thread);}if(event)CloseHandle(event);}
     std::shared_ptr<const AvatarMenuSnapshot> make_snapshot(const std::shared_ptr<const PreparedAvatar>& model,const AvatarPreferences& preferences,AvatarLoadState next,const std::string& message,bool new_style){
         auto result=std::make_shared<AvatarMenuSnapshot>();result->state=next;result->preferences_loaded=loaded;result->save_failed=save_failed;result->revision=revision+1;
+        result->replacement_enabled=preferences.replacement_enabled;
         result->error=message.substr(0,256);result->choices=choices;
+        if(!model&&!preferences.selected_path.empty()){result->path=preferences.selected_path;result->name=std::filesystem::u8path(preferences.selected_path).filename().u8string();}
         if(model){result->name=model->name;result->path=model->path;result->fingerprint=model->fingerprint;
             if(new_style){result->materials=std::make_shared<const std::vector<std::string>>(model->material_names);
                 result->appearance=std::make_shared<const AvatarAppearance>(resolve_avatar_appearance(preferences,model->fingerprint,model->material_names,style_revision+1));
@@ -126,7 +129,8 @@ struct AvatarService::Impl {
             {std::lock_guard<std::mutex> lock(changes);loaded=true;
                 if(disk.status==AvatarSettingsStatus::Loaded){prefs=disk.preferences;update_appearance();
                     const auto model=std::atomic_load(&active_);
-                    if(!edited&&!prefs.selected_path.empty()&&(!model||!same_path(prefs.selected_path,model->path)))request_locked(prefs.selected_path,false,0,false);}
+                    if(!prefs.replacement_enabled)request_locked({},false,0,false);
+                    else if(!edited&&!prefs.selected_path.empty()&&(!model||!same_path(prefs.selected_path,model->path)))request_locked(prefs.selected_path,false,0,false);}
                 if(disk.status==AvatarSettingsStatus::Invalid||disk.status==AvatarSettingsStatus::UnsupportedVersion||disk.status==AvatarSettingsStatus::Unavailable)error="Saved avatar preferences unavailable";
                 publish();}
             std::uint64_t handled=0;
@@ -162,7 +166,7 @@ struct AvatarService::Impl {
                 AvatarPreferences saving;std::uint64_t saving_revision=0;DWORD timeout=INFINITE;
                 {std::lock_guard<std::mutex> lock(changes);if(prefs_revision!=saved_revision){const auto now=GetTickCount64();
                     if(now>=save_due){saving=prefs;saving_revision=prefs_revision;}else timeout=DWORD(save_due-now);}}
-                if(saving_revision){const auto saved=!options.directory.empty()&&write_avatar_preferences(path,saving);
+                if(saving_revision){const auto saved=options.save_available&&!options.directory.empty()&&write_avatar_preferences(path,saving);
                     std::lock_guard<std::mutex> lock(changes);saved_revision=saving_revision;save_failed=!saved;publish();continue;}
                 // Recheck a newly queued request before sleeping; the event also
                 // covers a request that arrives after this check.
@@ -185,9 +189,24 @@ AvatarCandidatePtr AvatarService::candidate()const noexcept{return ready()?std::
 AvatarCandidatePtr AvatarService::selection()const noexcept{return ready()?std::atomic_load(&impl_->selection_):nullptr;}
 std::uint64_t AvatarService::desired_generation()const noexcept{return impl_?impl_->desired.load(std::memory_order_acquire):0;}
 bool AvatarService::request_model(const std::string& path)noexcept{if(!ready()||!valid_avatar_path(path))return false;
-    try{std::lock_guard<std::mutex> lock(impl_->changes);return impl_->request_locked(path,false,0,true);}catch(...){SetEvent(impl_->event);return false;}}
+    try{std::lock_guard<std::mutex> lock(impl_->changes);return impl_->prefs.replacement_enabled&&impl_->request_locked(path,false,0,true);}catch(...){SetEvent(impl_->event);return false;}}
 bool AvatarService::request_browse(std::uintptr_t owner)noexcept{if(!ready())return false;
-    try{std::lock_guard<std::mutex> lock(impl_->changes);return impl_->request_locked({},true,owner,true);}catch(...){SetEvent(impl_->event);return false;}}
+    try{std::lock_guard<std::mutex> lock(impl_->changes);return impl_->prefs.replacement_enabled&&impl_->request_locked({},true,owner,true);}catch(...){SetEvent(impl_->event);return false;}}
+bool AvatarService::replacement_enabled()const noexcept{const auto value=snapshot();return value&&value->preferences_loaded&&value->replacement_enabled;}
+bool AvatarService::set_replacement_enabled(bool enabled)noexcept{if(!ready())return false;
+    try{std::lock_guard<std::mutex> lock(impl_->changes);
+        if(!impl_->loaded)return false;
+        if(impl_->prefs.replacement_enabled==enabled)return true;
+        const auto generation=impl_->desired.load();if(generation==UINT64_MAX)return false;
+        auto prefs=impl_->prefs;prefs.replacement_enabled=enabled;
+        const auto model=active();const auto path=enabled&&!model?prefs.selected_path:std::string{};
+        const auto state=path.empty()?AvatarLoadState::Ready:AvatarLoadState::Loading;
+        auto request=std::make_shared<const Impl::Request>(Impl::Request{generation+1,path,0,false});
+        const auto next=impl_->make_snapshot(model,prefs,state,{},false);
+        impl_->prefs=std::move(prefs);impl_->request_=std::move(request);impl_->desired.store(generation+1,std::memory_order_release);
+        std::atomic_store(&impl_->candidate_,AvatarCandidatePtr{});impl_->edited=true;impl_->state=state;impl_->error.clear();++impl_->revision;
+        std::atomic_store(&impl_->snapshot_,next);impl_->dirty();return true;
+    }catch(...){return false;}}
 void AvatarService::cancel_request()noexcept{if(!ready())return;try{std::lock_guard<std::mutex> lock(impl_->changes);impl_->request_locked({},false,0,true);}catch(...) {}}
 void AvatarService::refresh_catalogue()noexcept{if(!ready())return;try{std::lock_guard<std::mutex> lock(impl_->changes);impl_->refresh=true;SetEvent(impl_->event);}catch(...) {}}
 bool AvatarService::set_whole_preset(const std::string& fingerprint,AvatarShaderPreset preset)noexcept{if(!ready())return false;
@@ -205,7 +224,7 @@ bool AvatarService::reset_materials(const std::string& fingerprint)noexcept{if(!
 bool AvatarService::commit_candidate(const AvatarCandidatePtr& candidate,bool(*activate)(void*,const AvatarCandidate&)noexcept,void* context)noexcept{
     if(!ready()||!candidate||!activate)return false;
     try{std::lock_guard<std::mutex> lock(impl_->changes);
-        if(!impl_->current(candidate->generation)||std::atomic_load(&impl_->candidate_)!=candidate)return false;
+        if(!impl_->prefs.replacement_enabled||!impl_->current(candidate->generation)||std::atomic_load(&impl_->candidate_)!=candidate)return false;
         auto prefs=impl_->prefs;remember(prefs,*candidate->model);if(!valid_avatar_preferences(prefs))return false;
         // Allocate every commit snapshot before the renderer/backend handoff.
         const auto next=impl_->make_snapshot(candidate->model,prefs,AvatarLoadState::Ready,{},true);
@@ -219,7 +238,7 @@ bool AvatarService::commit_candidate(const AvatarCandidatePtr& candidate,bool(*a
 bool AvatarService::adopt_selection(const AvatarCandidatePtr& selected,bool(*activate)(void*,const AvatarCandidate&)noexcept,void* context)noexcept{
     if(!ready()||!selected||!activate)return false;
     try{std::lock_guard<std::mutex> lock(impl_->changes);
-        if(std::atomic_load(&impl_->selection_)!=selected)return false;
+        if(!impl_->prefs.replacement_enabled||std::atomic_load(&impl_->selection_)!=selected)return false;
         // Same lock order and prepared GPU/pose callback as the first device;
         // adopting does not rewrite global selection, preferences or a proposal.
         if(!activate(context,*selected))return false;

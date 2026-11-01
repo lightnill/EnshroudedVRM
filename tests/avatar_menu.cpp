@@ -13,8 +13,14 @@ int main(){try{
     status.avatar=snapshot;bool expanded=false,close=false;evrm::ModMenuLayout layout;evrm::ModMenuPlacement placement;evrm::AvatarMenuAction action,last;
     const auto frame=[&]{ImGui::NewFrame();evrm::draw_mod_menu(settings,status,expanded,close,placement,&layout,&action);ImGui::Render();if(action.kind!=evrm::AvatarActionKind::None)last=action;};
     const auto click=[&](evrm::ModMenuRect r){require(r.x1>r.x0&&r.y1>r.y0,"control has no bounds");last={};io.AddMousePosEvent((r.x0+r.x1)/2,(r.y0+r.y1)/2);frame();io.AddMouseButtonEvent(0,true);frame();io.AddMouseButtonEvent(0,false);frame();frame();};
-    frame();frame();click(layout.model);click(layout.second_model);
+    frame();frame();click(layout.model);const auto second_model=layout.second_model;click(second_model);
     require(last.kind==evrm::AvatarActionKind::SelectModel&&last.path=="C:\\fixture\\B.vrm","model choice not emitted");
+    snapshot->replacement_enabled=false;frame();frame();click(layout.model);click(second_model);
+    require(last.kind==evrm::AvatarActionKind::None,"disabled replacement still accepted model selection");
+    click(layout.replacement_toggle);require(last.kind==evrm::AvatarActionKind::SetReplacementEnabled&&last.replacement_enabled,"original-character toggle did not restore replacement");
+    snapshot->replacement_enabled=true;frame();frame();
+    click(layout.replacement_toggle);require(last.kind==evrm::AvatarActionKind::SetReplacementEnabled&&!last.replacement_enabled,"original-character toggle did not disable replacement");
+    frame();frame();
     snapshot->preferences_loaded=false;frame();click(layout.appearance);require(placement.appearance_expanded,"appearance did not expand");click(layout.whole);
     require(layout.whole_matte.x1<=layout.whole_matte.x0&&last.kind==evrm::AvatarActionKind::None,"appearance edits opened before saved profiles loaded");
     snapshot->preferences_loaded=true;frame();frame();click(layout.whole);click(layout.whole_matte);

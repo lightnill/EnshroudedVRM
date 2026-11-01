@@ -37,8 +37,17 @@ int wmain(int argc,wchar_t** argv){try{
         std::string(R"({"schemaVersion":1,"selectedModel":"","recentModels":[],"profiles":[],"profiles":[]})"),
         std::string(R"({"schemaVersion":1,"selectedModel":"","recentModels":[],"profiles":[{"fingerprint":"bad","preset":"matte","overrides":[]}]})")}){
         write(file,bad);loaded=read_avatar_preferences(file);need(loaded.status==AvatarSettingsStatus::Invalid&&loaded.preferences.profiles.empty(),"malformed schema activated a profile");}
-    auto future=empty;future.replace(future.find(":1"),2,":2");write(file,future);need(read_avatar_preferences(file).status==AvatarSettingsStatus::UnsupportedVersion,"future version accepted");
-    write(file,empty);need(read_avatar_preferences(file).status==AvatarSettingsStatus::Loaded,"empty valid schema rejected");
+    auto future=empty;future.replace(future.find(":1"),2,":3");write(file,future);need(read_avatar_preferences(file).status==AvatarSettingsStatus::UnsupportedVersion,"future version accepted");
+    write(file,empty);need(read_avatar_preferences(file).status==AvatarSettingsStatus::Loaded&&read_avatar_preferences(file).preferences.replacement_enabled,"legacy preference changed replacement behavior");
+    const std::string disabled=R"({"schemaVersion":2,"replacementEnabled":false,"selectedModel":"C:\\avatars\\remembered.vrm","recentModels":["C:\\avatars\\remembered.vrm"],"profiles":[]})";
+    write(file,disabled);loaded=read_avatar_preferences(file);
+    need(loaded.status==AvatarSettingsStatus::Loaded&&loaded.preferences.selected_path=="C:\\avatars\\remembered.vrm","saved original-character choice rejected or selected model erased");
+    need(write_avatar_preferences(file,loaded.preferences),"disabled preference save failed");
+    std::ifstream saved_file(file);const std::string saved((std::istreambuf_iterator<char>(saved_file)),{});
+    need(saved.find("\"replacementEnabled\": false")!=std::string::npos,"saving disabled preference re-enabled replacement");
+    for(const auto& flag:{std::string("null"),std::string("0"),std::string("\"false\"")}){
+        auto bad=disabled;bad.replace(bad.find("false"),5,flag);write(file,bad);
+        need(read_avatar_preferences(file).status==AvatarSettingsStatus::Invalid,"non-boolean replacement preference accepted");}
     need(!set_avatar_material(prefs,a,4096,"Skin",AvatarShaderPreset::Matte),"out-of-range material accepted");
     std::cout<<"PASS avatar preset inheritance, independent material identities, content profiles, schema bounds and atomic persistence\n";return 0;
 }catch(const std::exception& error){std::cerr<<"FAIL "<<error.what()<<'\n';return 1;}}

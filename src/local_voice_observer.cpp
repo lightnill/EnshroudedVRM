@@ -1,4 +1,5 @@
 #include "local_voice_observer.hpp"
+#include "standalone_startup.hpp"
 #include "local_voice_observation.hpp"
 #include "runtime_log.hpp"
 #include "sha256.hpp"
@@ -213,6 +214,7 @@ void perform_setup(void*)noexcept {
 }
 }
 void initialize_local_voice_observer() noexcept {
+    if(!runtime_startup_context().ready())return;
     static std::once_flag once;
     try{std::call_once(once,[]{try{
         HMODULE pinned=nullptr;
@@ -224,6 +226,7 @@ void initialize_local_voice_observer() noexcept {
         catch(...){log_event("voice-observer.declined reason=initialization");}});}catch(...){}
 }
 void request_local_voice_feature(bool enabled,VoiceAnalysisTuning tuning)noexcept {
+    if(!runtime_startup_context().ready())return;
     std::lock_guard<std::mutex> guard(request_mutex);
     tuning.sensitivity=std::isfinite(tuning.sensitivity)?std::clamp(tuning.sensitivity,0.f,1.f):.5f;
     tuning.smoothing_ms=std::clamp(tuning.smoothing_ms,20u,140u);std::uint32_t bits=0;std::memcpy(&bits,&tuning.sensitivity,4);
@@ -234,6 +237,7 @@ void request_local_voice_feature(bool enabled,VoiceAnalysisTuning tuning)noexcep
     if(enabled){setup_needed.store(true,std::memory_order_release);service_local_voice_feature_requests();}
 }
 void service_local_voice_feature_requests()noexcept {
+    if(!runtime_startup_context().ready())return;
     if(!requested.load(std::memory_order_acquire)||!setup_needed.load(std::memory_order_acquire))return;
     auto* setup=setup_dispatcher.load(std::memory_order_acquire);
     if(!setup){declined.store(true);return;}

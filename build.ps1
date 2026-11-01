@@ -26,7 +26,7 @@ $taskSavedPath = $env:PATH
 try {
     $env:PATH = $CompilerDirectory + ';' + $env:PATH
     $taskFlags = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static', ('-I' + $VulkanIncludeDirectory))
-    if($PortableRelease){$taskFlags+=@('-fstack-protector-strong',('-ffile-prefix-map='+$taskWorkspaceRoot+'=.'),'-Wl,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp')}
+    if($PortableRelease){$taskFlags+=@('-fstack-protector-strong',('-ffile-prefix-map='+$taskProjectRoot+'=.'),'-Wl,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp')}
     if ($Target -eq 'All' -or $Target -eq 'Bridge') {
         if (-not (Test-Path -LiteralPath $ShaderCompiler)) { throw 'Shader compiler not found.' }
         $taskShaderOutput = Join-Path $OutputDirectory 'shaders'
@@ -63,13 +63,14 @@ try {
         $taskSources += @('voice_setup.cpp','mod_settings.cpp','mod_settings_service.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('microphone_backend.cpp','microphone_source.cpp','voice_inputs.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('avatar_settings.cpp','avatar_model.cpp','avatar_service.cpp','avatar_runtime.cpp','native_avatar_assets.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('standalone_startup.cpp','standalone_startup_runtime.cpp','standalone_startup_environment.cpp','standalone_files.cpp','standalone_settings.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('mod_input_state.cpp','mod_input_win32.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('mod_menu.cpp','mod_menu_gpu.cpp','mod_overlay.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskFlags+=('-I'+(Join-Path $taskProjectRoot 'vendor/imgui'))
         foreach($taskGuiSource in @('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp','backends/imgui_impl_vulkan.cpp')){
             $taskGuiObject=Join-Path $OutputDirectory ('gui-'+[IO.Path]::GetFileNameWithoutExtension($taskGuiSource)+'.o')
             $taskGuiFlags=@('-std=c++17','-O2','-fstack-protector-strong','-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES',('-I'+$VulkanIncludeDirectory),('-I'+(Join-Path $taskProjectRoot 'vendor/imgui')))
-            if($PortableRelease){$taskGuiFlags+=('-ffile-prefix-map='+$taskWorkspaceRoot+'=.')}
+            if($PortableRelease){$taskGuiFlags+=('-ffile-prefix-map='+$taskProjectRoot+'=.')}
             & $taskCompiler @taskGuiFlags '-c' (Join-Path $taskProjectRoot ('vendor/imgui/'+$taskGuiSource)) '-o' $taskGuiObject
             if($LASTEXITCODE -ne 0){throw 'Pinned UI dependency compilation failed'}
             $taskSources+=$taskGuiObject
@@ -78,7 +79,7 @@ try {
         foreach($taskHookSource in @('buffer','hook','trampoline','hde/hde64')){
             $taskHookObject=Join-Path $OutputDirectory ('minhook-'+[IO.Path]::GetFileName($taskHookSource)+'.o')
             $taskHookFlags=@('-std=c11','-O2','-fstack-protector-strong')
-            if($PortableRelease){$taskHookFlags+=('-ffile-prefix-map='+$taskWorkspaceRoot+'=.')}
+            if($PortableRelease){$taskHookFlags+=('-ffile-prefix-map='+$taskProjectRoot+'=.')}
             & (Join-Path $CompilerDirectory 'gcc.exe') @taskHookFlags '-c' (Join-Path $taskProjectRoot ('vendor/minhook/src/'+$taskHookSource+'.c')) '-o' $taskHookObject
             if($LASTEXITCODE -ne 0){throw 'MinHook source compilation failed'}
             $taskSources+=$taskHookObject
@@ -89,7 +90,7 @@ try {
             if($LASTEXITCODE -ne 0){throw 'Runtime release metadata compilation failed'}
             $taskSources+=$taskResourceObject
         }
-        & $taskCompiler @taskFlags '-shared' @taskSources '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll')
+        & $taskCompiler @taskFlags '-shared' @taskSources '-Wl,--image-base,0x190000000' '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-lshell32' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll')
         if ($LASTEXITCODE -ne 0) { throw "Bridge compilation failed: $LASTEXITCODE" }
         $taskVoiceSdk = Join-Path $taskProjectRoot 'vendor/oculus-lipsync/Win64/OVRLipSync.dll'
         if ((Get-FileHash -LiteralPath $taskVoiceSdk -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7') { throw 'Official voice detector pin mismatch' }

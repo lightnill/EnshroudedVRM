@@ -88,7 +88,7 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
     const auto& io=ImGui::GetIO();const float width=std::max(96.f,std::min(504.f,io.DisplaySize.x-24));
     if(ImGui::IsMouseClicked(0))placement.dragging=false;
     const float wanted_height=(expanded?(settings.voice_source==VoiceInputSource::Microphone?812.f:716.f):372.f)+
-        (status.avatar?(placement.appearance_expanded?510.f:200.f):0.f);
+        (status.avatar?(placement.appearance_expanded?550.f:240.f)+(!status.avatar->replacement_enabled?60.f:0.f):0.f);
     const float height=std::max(80.f,std::min(wanted_height,io.DisplaySize.y-24));
     if(!placement.initialized){placement.x=(io.DisplaySize.x-width)*.5f;placement.y=(io.DisplaySize.y-height)*.5f;placement.initialized=true;}
     if(placement.dragging){if(io.MouseDown[0]&&ImGui::IsMousePosValid(&io.MousePos)){placement.x=io.MousePos.x-placement.grab_x;placement.y=io.MousePos.y-placement.grab_y;}
@@ -169,6 +169,13 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
         const auto& avatar=*status.avatar;
         const auto emit=[&](AvatarActionKind kind){if(action){action->kind=kind;action->fingerprint=avatar.fingerprint;}};
         ImGui::Dummy({0,3});ImGui::Separator();ImGui::TextUnformatted("Avatar");
+        bool original=!avatar.replacement_enabled;
+        ImGui::BeginDisabled(!avatar.preferences_loaded);
+        if(ImGui::Checkbox("No model replacement",&original)){emit(AvatarActionKind::SetReplacementEnabled);if(action)action->replacement_enabled=!original;}
+        if(layout)layout->replacement_toggle=last_rect();
+        ImGui::EndDisabled();
+        if(original){ImGui::SetWindowFontScale(.8f);ImGui::TextWrapped("Original game character active. Your VRM and shader settings are remembered.");ImGui::SetWindowFontScale(1);}
+        ImGui::BeginDisabled(original||!avatar.preferences_loaded);
         ImGui::SetNextItemWidth(std::max(48.f,inner-100));
         const bool models=ImGui::BeginCombo("##avatar-model",avatar.name.empty()?"Choose a VRM model":avatar.name.c_str());
         if(layout)layout->model=last_rect();
@@ -193,6 +200,8 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
         if(!avatar.error.empty())ImGui::TextWrapped("%s",avatar.error.c_str());
         if(avatar.save_failed)ImGui::TextWrapped("Avatar settings could not be saved.");
         ImGui::SetWindowFontScale(1);
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(original);
         if(ImGui::Button(placement.appearance_expanded?"-  Appearance presets":"+  Appearance presets",{inner,36}))placement.appearance_expanded=!placement.appearance_expanded;
         if(layout)layout->appearance=last_rect();
         if(placement.appearance_expanded){
@@ -234,10 +243,12 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
             if(layout)layout->reset_materials=last_rect();
             ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Game lighting keeps the current look. Matte reduces shine. Individual overrides stay when the whole model preset changes. Changes save automatically for each model.");ImGui::SetWindowFontScale(1);ImGui::EndDisabled();
         }
+        ImGui::EndDisabled();
     }
     ImGui::Dummy({0,1});ImGui::SetWindowFontScale(.75f);
     if(status.save_failed)ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled),"Settings could not be saved.");
-    else ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled),"Escape to close");
+    else ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled),status.startup_ready?"Ready · Escape to close":"Escape to close");
+    if(status.startup_version&&ImGui::IsItemHovered())ImGui::SetTooltip("EnshroudedVRM %s",status.startup_version);
     if(layout)layout->scroll_max_y=ImGui::GetScrollMaxY();
     ImGui::SetWindowFontScale(1);ImGui::End();if(close)placement.dragging=false;return changed;
 }

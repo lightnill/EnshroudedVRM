@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include "native_tool_slots.hpp"
+#include "standalone_startup.hpp"
 #include "native_publication.hpp"
 #include "native_tool_pose_window.hpp"
 #include "native_tool_call_patch.hpp"
@@ -127,7 +128,7 @@ void clear_locked(const void*owner)noexcept {
  else log_event("tool-slots.restore-declined original-forwarding-retained");
 }
 }
-NativeToolSlots::NativeToolSlots()noexcept {wchar_t value[4]{};enabled_=GetEnvironmentVariableW(L"ENSHROUDED_VRM_TOOL_SLOTS",value,4)==1&&value[0]==L'1';profile_callbacks.store(enabled_,std::memory_order_relaxed);}
+NativeToolSlots::NativeToolSlots()noexcept {enabled_=runtime_startup_context().ready();profile_callbacks.store(enabled_,std::memory_order_relaxed);}
 SecondaryHandContactMode read_native_hand_contact_mode(const NativeAvatarPublication&p,U now,U&owned,U*observed)noexcept {return read_contact_mode(self,p,now,owned,observed);}
 NativeToolSlots::~NativeToolSlots(){clear();}
 void NativeToolSlots::disable()noexcept {if(!enabled_)return;try{std::lock_guard<std::mutex> lock(control_mutex);if(control_owner==this)store_snapshot({});}catch(...){} }

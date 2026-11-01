@@ -25,6 +25,7 @@ enum class ModSettingsStatus:std::uint8_t {Missing,Loaded,Invalid,Unavailable,Un
 struct ModSettingsLoad {ModSettings settings{};ModSettingsStatus status=ModSettingsStatus::Unavailable;};
 ModSettingsLoad read_mod_settings(const std::filesystem::path&)noexcept;
 bool write_mod_settings(const std::filesystem::path&,const ModSettings&)noexcept;
+bool create_mod_settings(const std::filesystem::path&,const ModSettings&)noexcept;
 class ModSettingsMailbox {
 public:
     struct Ticket {ModSettings settings{};std::uint64_t generation=0;};

@@ -1,0 +1,17 @@
+Press F8 in game (or your saved menu key).
+
+Avatar: Browse for a local VRM or refresh the installed Avatars folder.
+The included vroid-sample.vrm by Lightnill is an optional starting model.
+No model replacement: use the original game character while retaining your
+selected VRM and its shader settings. Model/appearance controls are greyed out
+until replacement is enabled again. This choice saves automatically.
+Appearance: choose a whole-model preset; individual materials can override it.
+Voice to viseme: click to enable; expand for strength, sensitivity and smoothing.
+Voice source: Game voice, or Local microphone for offline use. Local microphone
+offers Windows default and a device list. Silence/rest behavior is unchanged.
+
+The dark menu can be moved by dragging its header. Escape closes it.
+Preferences save automatically in your user folder. A save warning means live
+changes are usable but might not survive restart. Hover the footer for version.
+No manual vowel calibration is required. No audio is bundled. The sample avatar
+has separate embedded permissions; see Avatars/README.txt.

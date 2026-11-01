@@ -5,7 +5,7 @@ enum class AvatarLoadState:std::uint8_t {Ready,Loading,Preparing,Choosing,Error}
 struct AvatarChoice {std::string path,name;};
 struct AvatarMenuSnapshot {
     AvatarLoadState state=AvatarLoadState::Ready;
-    bool preferences_loaded=false,save_failed=false;
+    bool preferences_loaded=false,save_failed=false,replacement_enabled=true;
     std::uint64_t revision=0;
     std::string name,path,fingerprint,error;
     std::shared_ptr<const std::vector<AvatarChoice>> choices;
@@ -13,11 +13,12 @@ struct AvatarMenuSnapshot {
     std::shared_ptr<const AvatarAppearance> appearance;
     std::shared_ptr<const AvatarProfile> profile;
 };
-enum class AvatarActionKind:std::uint8_t {None,SelectModel,Browse,SetWholePreset,SetMaterialPreset,ResetMaterials,CancelLoad,RefreshCatalogue};
+enum class AvatarActionKind:std::uint8_t {None,SelectModel,Browse,SetWholePreset,SetMaterialPreset,ResetMaterials,CancelLoad,RefreshCatalogue,SetReplacementEnabled};
 struct AvatarMenuAction {
     AvatarActionKind kind=AvatarActionKind::None;
     std::string path,fingerprint;std::uint32_t material=0;
     std::optional<AvatarShaderPreset> preset;
+    bool replacement_enabled=true;
 };
 struct AvatarPickResult {std::string path,error;bool cancelled=false;};
 }

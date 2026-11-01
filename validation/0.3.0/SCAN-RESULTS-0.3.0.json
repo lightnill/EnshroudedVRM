@@ -1,0 +1,79 @@
+{
+  "version": "0.3.0",
+  "archiveSha256": "519c0141ad00faa6c51a800aee5cf28c5d8fc5aaa415c542c889fb37f4748d0e",
+  "archiveBytes": 29343052,
+  "files": [
+    {
+      "path": "vulkan-1.dll",
+      "sha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true
+      },
+      "virusTotal": {
+        "analysisDate": "2026-11-01T00:13:47Z",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 71,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 4
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+        "source": "Existing exact-hash report; no inherited claim for changed bytes"
+      }
+    },
+    {
+      "path": "EnshroudedVRM/Runtime/enshrouded_vrm_runtime.dll",
+      "sha256": "9c63410651703633268648fe346d435dc3a43040a82dc00c0c91a12be1473524",
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true
+      },
+      "virusTotal": {
+        "analysisDate": "2026-10-31T23:34:23Z",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 71,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 4
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/9c63410651703633268648fe346d435dc3a43040a82dc00c0c91a12be1473524",
+        "source": "Existing exact-hash report; no inherited claim for changed bytes"
+      }
+    },
+    {
+      "path": "EnshroudedVRM-0.3.0.zip",
+      "sha256": "519c0141ad00faa6c51a800aee5cf28c5d8fc5aaa415c542c889fb37f4748d0e",
+      "bitdefender": {
+        "issues": 0,
+        "unscannedObjects": 0,
+        "hashUnchanged": true
+      },
+      "virusTotal": {
+        "analysisDate": "2026-11-01T01:06:09Z",
+        "stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 67,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 7
+        },
+        "reportUrl": "https://www.virustotal.com/gui/file/519c0141ad00faa6c51a800aee5cf28c5d8fc5aaa415c542c889fb37f4748d0e",
+        "source": "Existing exact-hash report; no inherited claim for changed bytes"
+      }
+    }
+  ]
+}

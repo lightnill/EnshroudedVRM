@@ -127,10 +127,13 @@ AvatarSettingsLoad read_avatar_preferences(const std::filesystem::path& path)noe
             else if(event==nlohmann::json::parse_event_t::object_end&&!objects.empty())objects.pop_back();
             return true;},false);
         if(duplicate||!json.is_object()||!json.contains("schemaVersion")||!json["schemaVersion"].is_number_integer())return result;
-        if(json["schemaVersion"]!=1){result.status=AvatarSettingsStatus::UnsupportedVersion;return result;}
-        if(json.size()!=4||!json.at("selectedModel").is_string()||!json.at("recentModels").is_array()||!json.at("profiles").is_array()||
+        const auto version=json["schemaVersion"].get<std::int64_t>();
+        if(version!=1&&version!=2){result.status=AvatarSettingsStatus::UnsupportedVersion;return result;}
+        if(json.size()!=(version==1?4u:5u)||(version==2&&!json.at("replacementEnabled").is_boolean())||
+            !json.at("selectedModel").is_string()||!json.at("recentModels").is_array()||!json.at("profiles").is_array()||
             json.at("recentModels").size()>16||json.at("profiles").size()>16)return result;
         AvatarPreferences prefs;prefs.selected_path=json.at("selectedModel").get<std::string>();
+        if(version==2)prefs.replacement_enabled=json.at("replacementEnabled").get<bool>();
         for(const auto& entry:json.at("recentModels")){if(!entry.is_string())return result;prefs.recent.push_back(entry.get<std::string>());}
         for(const auto& entry:json.at("profiles")){
             AvatarProfile item;if(!entry.is_object()||entry.size()!=3||!entry.at("fingerprint").is_string()||!preset(entry.at("preset"),item.whole)||
@@ -148,7 +151,7 @@ AvatarSettingsLoad read_avatar_preferences(const std::filesystem::path& path)noe
         result.preferences=std::move(prefs);result.status=AvatarSettingsStatus::Loaded;return result;
     }catch(...){return result;}
 }
-bool write_avatar_preferences(const std::filesystem::path& path,const AvatarPreferences& prefs)noexcept {
+static bool commit_avatar_preferences(const std::filesystem::path& path,const AvatarPreferences& prefs,bool replace)noexcept {
     std::filesystem::path temporary;bool own=false;try{
         if(!valid_avatar_preferences(prefs))return false;
         std::filesystem::path resolved;bool missing=false;if(!local_file(path,resolved,missing))return false;
@@ -156,7 +159,7 @@ bool write_avatar_preferences(const std::filesystem::path& path,const AvatarPref
         for(const auto& item:prefs.profiles){nlohmann::json overrides=nlohmann::json::array();
             for(const auto& value:item.overrides)overrides.push_back({{"materialIndex",value.index},{"materialName",value.name},{"preset",preset_name(value.preset)}});
             profiles.push_back({{"fingerprint",item.fingerprint},{"preset",preset_name(item.whole)},{"overrides",std::move(overrides)}});}
-        const nlohmann::json json={{"schemaVersion",1},{"selectedModel",prefs.selected_path},{"recentModels",prefs.recent},{"profiles",std::move(profiles)}};
+        const nlohmann::json json={{"schemaVersion",2},{"replacementEnabled",prefs.replacement_enabled},{"selectedModel",prefs.selected_path},{"recentModels",prefs.recent},{"profiles",std::move(profiles)}};
         const auto bytes=json.dump(2)+'\n';if(bytes.size()>max_file)return false;
         static std::atomic<unsigned> sequence{0};File file;
         for(unsigned n=0;n<8;++n){temporary=resolved;temporary+=L".tmp-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(sequence.fetch_add(1));
@@ -165,9 +168,11 @@ bool write_avatar_preferences(const std::filesystem::path& path,const AvatarPref
         if(!own)return false;
         DWORD written=0;const bool complete=WriteFile(file.value,bytes.data(),DWORD(bytes.size()),&written,nullptr)&&written==bytes.size()&&FlushFileBuffers(file.value);
         CloseHandle(file.value);file.value=INVALID_HANDLE_VALUE;
-        if(!complete||!local_file(path,resolved,missing)||!MoveFileExW(temporary.c_str(),resolved.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+        if(!complete||!local_file(path,resolved,missing)||!MoveFileExW(temporary.c_str(),resolved.c_str(),(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH)){
             DeleteFileW(temporary.c_str());return false;}
         return true;
     }catch(...){if(own)DeleteFileW(temporary.c_str());return false;}
 }
+bool write_avatar_preferences(const std::filesystem::path& path,const AvatarPreferences& prefs)noexcept{return commit_avatar_preferences(path,prefs,true);}
+bool create_avatar_preferences(const std::filesystem::path& path,const AvatarPreferences& prefs)noexcept{return commit_avatar_preferences(path,prefs,false);}
 }

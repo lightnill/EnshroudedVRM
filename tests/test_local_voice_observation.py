@@ -51,7 +51,7 @@ class LocalVoiceObservationTests(unittest.TestCase):
                 objects.append(str(obj))
             binary = folder / 'voice_hook.exe'
             command = [compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static',
-                       str(root / 'tests/local_voice_observer.cpp'), str(root / 'src/local_voice_observer.cpp'),
+                       str(root / 'tests/local_voice_observer.cpp'), str(root / 'src/local_voice_observer.cpp'), str(root/'tests/standalone_fixture_context.cpp'),
                        str(root / 'src/local_voice_observation.cpp'), str(root / 'src/local_voice_copy.cpp'), *[str(root / 'src' / name) for name in
                            ('voice_clock.cpp', 'voice_stream.cpp', 'voice_features.cpp', 'voice_profiles.cpp',
                             'voice_analyser.cpp', 'voice_automatic.cpp', 'voice_worker.cpp', 'voice_profile_io.cpp', 'voice_setup.cpp')], *objects, '-o', str(binary)]

@@ -45,6 +45,7 @@ public:
     void publish(VkQueue,std::uint32_t family,std::shared_ptr<const NativeAvatarPublication>,std::uint64_t source_buffer_epoch=0)noexcept;
     NativeAvatarUploadState prepare_model(VkQueue,std::uint32_t,const AvatarCandidatePtr&)noexcept;
     bool activate_model(const AvatarCandidate&,bool(*)(void*,std::uint64_t)noexcept,void*)noexcept;
+    void set_replacement_enabled(bool)noexcept;
     void pipeline_layout_created(VkPipelineLayout,const VkPipelineLayoutCreateInfo&)noexcept;
     void pipeline_layout_destroyed(VkPipelineLayout)noexcept;
     void command_begin(VkCommandBuffer,const VkCommandBufferBeginInfo&)noexcept;

@@ -15,6 +15,7 @@ namespace evrm {
 class NativeClipPipelines;
 class NativeBufferMemory;
 class NativeImageMemory;
+struct NativePoseOwner;
 #ifdef EVRM_NATIVE_BACKEND_TESTING
 // CPU fixture only. Normal production builds have no owner override API.
 struct NativeBackendTestOwner {
@@ -36,6 +37,7 @@ public:
     NativeBufferMemory* buffer_memory() noexcept;
     NativeImageMemory* image_memory() noexcept;
     bool mouth_gpu_unavailable()const noexcept;
+    std::shared_ptr<const NativePoseOwner> pose_owner(std::uint64_t source_epoch)noexcept;
     // Host source construction and native destroy/free use the same mutex.
     // try_only is for nonblocking coordination; the ordinary hook waits.
     std::unique_lock<std::mutex> native_source_guard(bool try_only=false);

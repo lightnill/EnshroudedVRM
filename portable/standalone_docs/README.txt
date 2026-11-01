@@ -1,13 +1,14 @@
-EnshroudedVRM 0.3.0 — standalone preview
+EnshroudedVRM 0.3.1 — standalone preview
 
-The release and avatar runtime are version 0.3.0. The bootstrap keeps its independent
+The release and avatar runtime are version 0.3.1. The bootstrap keeps its independent
 0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
 records the runtime and bootstrap versions separately.
 
-0.3.0 starts with the game through Steam and uses F8 for configuration. It keeps
-the audio lip sync, model switching and shader presets, and adds an optional
-sample avatar and a saved switch back to the original game character.
-Desktop testing has passed. Laptop validation is pending at publication.
+0.3.1 updates higher-fog compatibility, local-player ownership selection and
+recovery, transient GPU/menu/readback handling and local timing diagnostics.
+Start through Steam and configure in F8. Some fallbacks, preview identification
+and base-area stutters remain under investigation; see KNOWN-ISSUES.txt.
+No gameplay performance improvement is claimed for the complete package.
 
 INSTALL
 This preview is validated only with Windows installed in C:\Windows.
@@ -16,7 +17,8 @@ other Vulkan loader versions have not been validated.
 
 1. Close Enshrouded. In Steam, use Manage > Browse local files.
 2. Check for an existing vulkan-1.dll beside enshrouded.exe. If one is already
-   there, stop: do not overwrite, rename or chain another mod's DLL.
+   there from another mod, stop: do not overwrite, rename or chain it. Update
+   only a known EnshroudedVRM installation with the game closed.
 3. Copy these two entries from this ZIP beside enshrouded.exe:
      vulkan-1.dll
      EnshroudedVRM (folder)

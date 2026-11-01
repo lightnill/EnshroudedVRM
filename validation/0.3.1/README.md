@@ -1,0 +1,7 @@
+# 0.3.1 verification
+
+The exact release ZIP has 42 members; all 41 manifest entries and 259 source pins were verified. Two independent package assemblies were byte-identical. All 47 selected CPU/source/import/package checks passed. The runtime was rebuilt with only its version-resource section changed relative to the selected local diagnostic build. No new candidate DLL/game/GPU execution was performed for this release.
+
+`package-verification.json` binds the source, compiled shaders and every package member to the release. `SCAN-RESULTS-0.3.1.json` records the exact DLL/ZIP reports and analysis dates. Bitdefender reported zero issues and zero unscanned objects for the three DLLs, all extracted members and the ZIP. VirusTotal reported zero malicious/suspicious detections: runtime 71 undetected, ZIP 57 undetected, retained bootstrap 71 undetected, retained SDK 70 undetected. The ZIP has 11 timeouts and exceeds full-content inspection limits; the SDK report has one engine failure. All reports also have unsupported engines. These are coverage gaps, not a guarantee of safety.
+
+Some camera/scene/menu fallbacks, survivor-preview identity ambiguity and voxel-base stutters remain unresolved. User comparisons found stutters even with the mod completely disabled, with fewer than with the mod active. No measured gameplay FPS improvement is claimed. This remains a local-avatar preview; multiplayer synchronization is not implemented.

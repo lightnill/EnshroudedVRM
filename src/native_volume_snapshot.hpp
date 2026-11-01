@@ -23,9 +23,9 @@ struct NativeVolumeSnapshotSource {
 struct NativeVolumeSnapshotCapabilities {
     VkPhysicalDeviceLimits limits{};
     VkPhysicalDeviceMemoryProperties memory{};
-    // E5B9G9R9, R16_UNORM, RGBA32F, R32F: optimal tiling features.
-    std::array<VkFormatFeatureFlags,4> formats{};
-    // Actual queried 3D sampled|storage RGBA32F and R32F properties.
+    // Source R32_UINT/R16_UNORM, output R32_UINT/R32F, sampled RGB9E5 alias.
+    std::array<VkFormatFeatureFlags,5> formats{};
+    // Actual queried 3D sampled|storage mutable R32_UINT and R32F properties.
     std::array<VkImageFormatProperties,2> outputs{};
 };
 // One snapshot per primary recording. Caller proves exact fully covering native
@@ -34,8 +34,9 @@ struct NativeVolumeSnapshotCapabilities {
 // and retains every object until completion. No activation or commit writes.
 class NativeVolumeSnapshot {
 public:
-    static constexpr std::uint64_t voxel_limit=1048576;
     static constexpr VkDeviceSize memory_byte_limit=VkDeviceSize(64)*1024*1024;
+    // Preserve native packed radiance bits plus the original R32F visibility.
+    static constexpr std::uint64_t voxel_limit=memory_byte_limit/8;
     NativeVolumeSnapshot(VkDevice,PFN_vkGetDeviceProcAddr,
         const std::array<NativeVolumeSnapshotSource,2>&,const NativeVolumeSnapshotCapabilities&,
         const std::uint32_t* spirv,std::size_t word_count);

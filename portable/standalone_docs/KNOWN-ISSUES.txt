@@ -1,48 +1,60 @@
-EnshroudedVRM 0.3.0 preview — coverage and limits
+EnshroudedVRM 0.3.1 preview — coverage and limits
 
-Isolated forwarding/discovery tests have exercised Windows 10 build 19045 x64
-with Vulkan loader 1.4.350.0. Normal Steam launch, F8, sample/model loading,
-original-character toggling and restart persistence passed desktop manual tests.
-Laptop validation, Windows 11, other loader versions and combined loaders remain
-unverified at publication. Check the accompanying exact-hash release evidence.
+Desktop evidence covers Windows 10 build 19045 x64, Windows in C:\Windows,
+Vulkan loader 1.4.350.0 and Steam build 26082781/resource 1273043. Startup,
+F8, model loading and original-character persistence have manual evidence.
+The higher-fog compatibility correction was manually checked. Owner-recovery,
+menu/readback lifetime and profiling paths have CPU regression coverage.
+This exact versioned package is not a completed all-scene or laptop validation.
+Windows 11, other loaders/Windows-directory layouts and combined loaders remain
+unverified. Check the exact-hash release evidence; do not infer extra coverage.
 
-An existing vulkan-1.dll is an installation conflict. Do not overwrite it,
-rename it or chain it. The preview requires Windows in C:\Windows. A previously
-loaded system Vulkan module, or System32-only loading, can bypass local discovery.
-Other Windows-directory layouts, Windows 11 and other loaders are unverified.
-Never copy a Windows system DLL into the game folder.
-EML/ShroudForge coexistence from the old script route does not establish
-coexistence for this route. Multiplayer is unchanged and remains unclaimed.
+FOG, OWNERSHIP AND PERFORMANCE
+0.3.1 replaces the old fog snapshot extent restriction with a packed snapshot
+and checked actual allocation requirements, keeping the 64 MiB budget. A driver
+format/allocation limit can still decline replacement. Do not remove the budget.
+World-pose matching uses the locally verified player's owned instance IDs.
+Some lighting/camera/menu fallbacks remain under investigation; this is not a
+guarantee of replacement in every scene. Survivor-menu preview subject identity
+is not fully resolved. Current inventory/title preview behavior is retained;
+independent previews use their separate path, and a world-qualified shared
+source fails closed rather than granting another character world ownership.
+Large models can reduce FPS. Voxel-base stutters remain; they were reduced but
+not eliminated with the entire mod disabled. Local sampled CPU hook timings
+help investigate this. Scopes overlap and cannot be added as frame time; sparse
+samples can miss events/patterns and do not measure GPU duration. No gameplay
+FPS improvement is claimed. The original 250 ms pose limit and fresh owner
+verification remain; an expired pose is not held just to hide a fallback.
 
-Administrator launches and explicit Vulkan layer search/disable overrides may
-prevent discovery. Those settings are respected. Network/linked installation
-paths and paths containing semicolons are declined. Use a normal local path.
+INSTALLATION AND STARTUP
+An existing vulkan-1.dll from another mod is a conflict. Do not overwrite,
+rename or chain it. Only update a known EnshroudedVRM installation while the
+game is closed. Never copy a Windows system DLL into the game directory.
+A previously loaded system Vulkan loader or System32-only loading can bypass
+the game-local bootstrap. Nondefault Windows directories are unsupported.
+EML/ShroudForge observations for the old script route do not validate this
+standalone route. No multiplayer avatar synchronization is implemented.
+Administrator launches or explicit Vulkan layer overrides may prevent startup;
+those settings are respected. Network/linked paths and paths containing
+semicolons are declined. Use an ordinary local installation and Steam launch.
 
-The exact game executable and package files are checked before avatar hooks.
-If a supported game enters the runtime but package validation fails, only a
-fresh private diagnostic is attempted; no preference import or service starts
-just to report the failure. Unavailable private storage may prevent that log.
-Game updates, changed files or invalid compatibility metadata can disable the
-mod while leaving the original character. Do not bypass the build checks.
+Exact package/game checks precede optional hooks. Game updates or changed files
+can disable replacement while retaining the original character. Do not bypass
+compatibility checks. A layer manifest is held read-only until exit; close the
+game before replacing mod files. Unrelated Runtime JSON files are not exposed.
+No runtime entry means no F8 and possibly no fresh log. Treat only the current
+session marker as current evidence. Startup history and runtime logs are bounded.
+If package validation fails after runtime entry, only a fresh private diagnostic
+is attempted; preference import/services do not start just to report that error.
 
-The layer manifest is checked before discovery and held read-only until game
-exit. Close the game before updating files. Unrelated JSON files in Runtime
-are not exposed by this bootstrap. User-supplied broken layer paths/manifests
-belong to their own configuration and are not repaired or overridden.
-
-No runtime entry means no F8 and possibly no new log. Even a working bootstrap
-cannot guarantee a deferred diagnostic callback if neither the layer nor a
-forwarded API is used. Treat only a fresh session marker as current evidence.
-Prior log tails are labelled as previous sessions; startup history is bounded
-to five files and 256 KiB. Existing runtime diagnostic limits remain in place.
-
-One running game instance is supported initially. Preference writes remain
-atomic, but simultaneous games sharing one user settings store are unsupported.
-Unavailable user storage uses safe defaults and reports that settings cannot
-be saved; it does not request administrator access or choose another folder.
-
-Existing avatar limits, local voice requirements, shape support and shader
-preset behavior from 0.2.0 still apply. No performance/FPS claim for actual
-Steam gameplay follows from isolated startup measurements.
-
-Embedded 16-bit-per-channel PNG textures are converted to RGBA8 during import. Rendering keeps the existing texture format and memory cost. Higher-depth decoding requires temporary workspace, so large images can still be declined by the existing image-memory limits.
+SETTINGS, VOICE AND MODELS
+One running game instance is supported. Settings are saved atomically under
+%LOCALAPPDATA%/EnshroudedVRM/State. Unavailable storage uses safe defaults and
+reports a save warning; administrator access is not requested. Existing model,
+material and voice limitations remain. Game voice needs an online-capable
+session with voice active; Local microphone works offline independently of
+game mute/PTT. Capture is opt-in; microphone audio is not recorded or uploaded.
+Embedded 16-bit PNG textures are normalized to RGBA8; large images can still
+exceed the checked temporary decode-workspace limits. Full MToon and native
+armor fitting remain future work. Use F8 Game lighting/Matte and per-material
+presets to tune appearance.

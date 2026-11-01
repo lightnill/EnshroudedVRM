@@ -19,6 +19,7 @@ from package_script_release import SHADER_NAMES, SCRIPT_NAMES, VOICE_SDK_SHA256
 from package_script_release import VOICE_RUNTIME_INPUTS, MOUTH_RUNTIME_INPUTS, MENU_RUNTIME_INPUTS
 
 ACCEPTED_BASE_SHA256='6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26'
+OWNED_SHADER_SHA256={'native_volume_snapshot.comp.spv':'31305bfdccb504f29b719e08d06aa4557c2402bbd5da3b63b9da36bfaf938fd5'}
 _ROOT=Path(__file__).resolve().parents[1]
 TARGET_MEMBERS=tuple(re.findall(r'^\s*"([^"\r\n]+)"',(_ROOT/'src/standalone_package_members.hpp').read_text(),re.MULTILINE))
 SAMPLE_MEMBER='EnshroudedVRM/Avatars/vroid-sample.vrm'
@@ -44,6 +45,7 @@ STANDALONE_INPUTS=(
     'src/standalone_files.hpp','src/standalone_files.cpp','src/standalone_startup.hpp','src/standalone_startup.cpp',
     'src/standalone_startup_runtime.cpp','src/standalone_startup_environment.cpp','src/standalone_settings.hpp','src/standalone_settings.cpp',
     'src/standalone_package_members.hpp',
+    'src/native_pose_owner.hpp','src/runtime_hook_timing.hpp',
 )
 
 
@@ -174,7 +176,8 @@ def checked_shaders(path,base_info):
     for item in manifest['modules']:
         if not isinstance(item,dict) or set(item)!={'name','path','sha256'} or item['name'] not in SHADER_NAMES or item['name'] in result or not digest(item['sha256']):raise ValueError('shader module entry')
         data=read_local(item['path'],'shader',2*1024*1024)
-        if len(data)<20 or len(data)%4 or data[:4]!=b'\x03\x02\x23\x07' or sha(data)!=item['sha256'] or item['sha256']!=base_info['acceptedShaderModules'][item['name']]:raise ValueError('shader bytes changed from accepted 0.2.0')
+        expected=OWNED_SHADER_SHA256.get(item['name'],base_info['acceptedShaderModules'][item['name']])
+        if len(data)<20 or len(data)%4 or data[:4]!=b'\x03\x02\x23\x07' or sha(data)!=item['sha256'] or item['sha256']!=expected:raise ValueError('shader bytes differ from the explicit release pin')
         result[item['name']]=data
     if set(result)!=set(SHADER_NAMES):raise ValueError('complete shader set required')
     return result
@@ -204,7 +207,7 @@ def build_release(base_package,base_sha256,source_root,output,runtime_dll,runtim
           'startup':'normal Steam launch; standalone game-local bootstrap; F8 settings',
           'targetPlatform':'Windows x64; exact host/loader coverage is recorded separately for each candidate',
           'verificationStatus':'Not established by packaging; use separate evidence bound to these exact native/archive hashes',
-          'nativeMetadataVersion':'0.3.0','bootstrapMetadataVersion':'0.2.0-standalone-dev'}
+          'nativeMetadataVersion':'0.3.1','bootstrapMetadataVersion':'0.2.0-standalone-dev'}
     payload['EnshroudedVRM/BUILD-INFO.json']=encoded(info)
     if set(payload)!=set(TARGET_MEMBERS):raise ValueError('standalone member contract mismatch')
     manifest={'schema':'enshrouded-vrm-standalone-v1','version':version,'publication_status':publication_status,'game_sha256':original['game_sha256'],

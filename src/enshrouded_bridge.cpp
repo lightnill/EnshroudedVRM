@@ -1,4 +1,5 @@
 #include "enshrouded_bridge.hpp"
+#include "native_pose_owner.hpp"
 #include "../vendor/tinygltf/json.hpp"
 
 #include <algorithm>
@@ -6,13 +7,20 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <locale>
 #include <set>
+#include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace evrm {
 namespace {
 using Json = nlohmann::json;
 using Matrix = vrm::Matrix;
+struct PoseRejection : std::runtime_error {
+    std::string diagnostic;
+    PoseRejection(const char* reason,std::string detail):std::runtime_error(reason),diagnostic(detail.substr(0,3072)){}
+};
 constexpr double position_quantization = 2097151.0;
 constexpr double packed_position_scale = 131072.0;
 constexpr std::size_t instance_stride = 128, mesh_stride = 80, skin_stride = 48;
@@ -196,7 +204,7 @@ struct EnshroudedBridge::Impl {
         }
         require(!descriptors.empty(),"Empty player descriptor catalog");
     }
-    Match match(const Reader& mesh, std::size_t offset) const {
+    Match match(const Reader& mesh, std::size_t offset,std::uint32_t mesh_id,std::uint32_t instance_id,const Reader& instances) const {
         mesh.span(offset,mesh_stride); const auto it=descriptors.find(count_key(mesh.u32(offset+44),mesh.u32(offset+36)));
         if (it==descriptors.end()) return {};
         std::array<double,3> scale{},position{};
@@ -209,13 +217,28 @@ struct EnshroudedBridge::Impl {
             bool close=true;
             for (unsigned i=0;i<3;++i) close=close && std::abs(scale[i]-descriptor.native_scale[i])<=tolerance && std::abs(position[i]-descriptor.offset[i])<=tolerance;
             if (!close) continue;
-            require(!descriptor.reject,"Catalog rejects ambiguous palette signature");
+            if(descriptor.reject){
+                std::ostringstream detail;detail.imbue(std::locale::classic());detail.precision(17);
+                detail<<"mesh="<<mesh_id<<" instance="<<instance_id<<" vertices="<<mesh.u32(offset+44)<<" indices="<<mesh.u32(offset+36)<<" scale=[";
+                for(unsigned i=0;i<3;++i)detail<<(i?",":"")<<scale[i];
+                detail<<"] offset=[";for(unsigned i=0;i<3;++i)detail<<(i?",":"")<<position[i];
+                detail<<"] catalog-matches="<<descriptor.guids.size()<<" catalog-guids=[";
+                for(std::size_t i=0;i<std::min<std::size_t>(descriptor.guids.size(),2);++i){
+                    auto guid=descriptor.guids[i].substr(0,64);for(auto& c:guid)if(static_cast<unsigned char>(c)<32||static_cast<unsigned char>(c)>126)c='?';
+                    detail<<(i?",":"")<<guid;
+                }
+                detail<<']';const auto at=static_cast<std::size_t>(instance_id)*instance_stride;
+                if(at<=instances.size()&&instance_stride<=instances.size()-at)
+                    detail<<" model="<<instances.u32(at+120)<<" skin-offset="<<instances.u32(at+108);
+                throw PoseRejection("Catalog rejects ambiguous palette signature",detail.str());
+            }
             require(!result.found || (result.palette==descriptor.palette && result.auxiliary==descriptor.auxiliary),"Differing palette classifications match captured descriptor");
             result.found=true; result.palette=descriptor.palette;result.auxiliary=descriptor.auxiliary;guids.insert(descriptor.guids.begin(),descriptor.guids.end());
         }
         result.guids.assign(guids.begin(),guids.end()); return result;
     }
-    PlayerFrame read(const GpuSnapshot& snapshot) const {
+    PlayerFrame read(const GpuSnapshot& snapshot,const NativePoseOwner* owner) const {
+        if(owner)require(native_pose_owner_matches_snapshot(*owner,snapshot),"Local player pose owner source changed");
         const Reader camera(snapshot,"camera"),instances(snapshot,"instances"),skin(snapshot,"skin"),mesh(snapshot,"mesh-draw"),culled(snapshot,"culled-instances");
         camera.span(0,912); require(instances.size()>=instance_stride && instances.size()%instance_stride==0,"Truncated instance layout");
         require(culled.size()>=8 && culled.size()%8==0,"Truncated culled-instance layout"); PlayerFrame frame; frame.queue_family=snapshot.queue_family;
@@ -254,8 +277,9 @@ struct EnshroudedBridge::Impl {
           const auto end=first+static_cast<std::size_t>(drawn.instance_count)*8;
           for (std::size_t offset=first;offset<end;offset+=8) {
             const auto mesh_id=culled.u32(offset)&1048575u,instance_id=culled.u32(offset+4);
+            if(owner&&!native_pose_owner_contains(*owner,instance_id))continue;
             if (!visited.emplace(mesh_id,instance_id).second) continue;
-            const auto matched=match(mesh,static_cast<std::size_t>(mesh_id)*mesh_stride); if (!matched.found) continue;
+            const auto matched=match(mesh,static_cast<std::size_t>(mesh_id)*mesh_stride,mesh_id,instance_id,instances); if (!matched.found) continue;
             const auto instance_offset=static_cast<std::size_t>(instance_id)*instance_stride; instances.span(instance_offset,instance_stride);
             auto found=parts.find(instance_id);
             if (found!=parts.end()) {
@@ -289,7 +313,22 @@ struct EnshroudedBridge::Impl {
         }
         // Even an incomplete second actor is unsafe: ownership cannot be
         // inferred from palette order, model ID, camera distance or coverage.
-        require(groups.size()==1,"Ambiguous compatible actor groups"); const auto& selected=*groups.begin(); const auto& group=selected.second;
+        if(groups.size()!=1){
+            std::ostringstream detail;detail.imbue(std::locale::classic());detail.precision(17);
+            detail<<"groups="<<groups.size()<<" parts="<<parts.size();unsigned described=0;
+            for(const auto& candidate:groups){
+                if(described==4)break;
+                detail<<" group"<<described++<<"{joints="<<candidate.second.globals.size()<<" actor=[";
+                for(unsigned i=0;i<16;++i)detail<<(i?",":"")<<candidate.first[i];
+                detail<<"] parts=[";unsigned listed=0;
+                for(const auto& part:candidate.second.parts){if(listed==4)break;
+                    detail<<(listed++?";":"")<<"instance="<<part.instance_id<<",model="<<part.model_index<<",skin-offset="<<part.skin_matrix_offset;
+                }
+                detail<<"]}";
+            }
+            throw PoseRejection("Ambiguous compatible actor groups",detail.str());
+        }
+        const auto& selected=*groups.begin(); const auto& group=selected.second;
         for (const auto* name : required_semantics) require(group.globals.count(semantics.at(name))!=0,"Selected actor lacks core joint: "+std::string(name));
         for (const auto& semantic : semantics) {
             const auto found=group.globals.find(semantic.second); if (found==group.globals.end()) continue;
@@ -306,8 +345,9 @@ EnshroudedBridge::EnshroudedBridge(const std::filesystem::path& profile_path,con
 }
 bool EnshroudedBridge::ready() const noexcept { return static_cast<bool>(impl_); }
 const std::string& EnshroudedBridge::error() const noexcept { return error_; }
-PlayerFrame EnshroudedBridge::read_player_frame(const GpuSnapshot& snapshot) const noexcept {
-    try { require(static_cast<bool>(impl_),error_.empty()?"Pose bridge unavailable":error_); return impl_->read(snapshot); }
+PlayerFrame EnshroudedBridge::read_player_frame(const GpuSnapshot& snapshot,const NativePoseOwner* owner) const noexcept {
+    try { require(static_cast<bool>(impl_),error_.empty()?"Pose bridge unavailable":error_); return impl_->read(snapshot,owner); }
+    catch (PoseRejection& e) { PlayerFrame failed; failed.error=e.what();failed.diagnostic=std::move(e.diagnostic);return failed; }
     catch (const std::exception& e) { PlayerFrame failed; failed.error=e.what(); return failed; }
     catch (...) { PlayerFrame failed; failed.error="Unknown pose capture failure"; return failed; }
 }

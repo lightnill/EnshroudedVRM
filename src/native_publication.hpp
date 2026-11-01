@@ -8,11 +8,13 @@
 #include <array>
 
 namespace evrm {
+struct NativePoseOwner;
 struct NativeSecondaryContactBaseline {
     vrm::RetargetResult pose;
     std::array<ToolHandCorrection,2> hands;
 };
 struct NativeAvatarPublication {
+    std::shared_ptr<const NativePoseOwner> pose_owner;
     std::shared_ptr<const AvatarAppearance> appearance;
     vrm::MouthWeights mouth_weights{};
     std::shared_ptr<const vrm::Avatar> asset;

@@ -70,7 +70,7 @@ void GpuProbe::Impl::mark_submitted(VkQueue queue,const std::vector<AsyncSlot*>&
     }
     if(marker==VK_SUCCESS){
         for(auto* slot:selected){slot->queue=queue;slot->epoch=epoch;slot->sequence=++async_sequence;
-            slot->recorded=false;slot->pending=true;slot->publishable=publishable&&!slot->plan.reads.empty();}
+            slot->recorded=false;slot->pending=true;slot->publishable=publishable&&slot->publishable&&!slot->plan.reads.empty();}
         for(auto* slot:selected){marker=proc<PFN_vkQueueSubmit>("vkQueueSubmit")(queue,0,nullptr,slot->fence);if(marker!=VK_SUCCESS)break;}
     }
     if(marker!=VK_SUCCESS){

@@ -7,6 +7,7 @@
 #include <memory>
 
 namespace evrm {
+struct NativePoseOwner;
 
 struct SelectedPart {
     std::uint32_t instance_id = 0;
@@ -37,6 +38,8 @@ struct PlayerFrame {
     std::uint32_t queue_family = 0;
     std::size_t observed_joint_count = 0;
     std::string error;
+    // Bounded failure-only context for diagnostics; never ownership evidence.
+    std::string diagnostic;
     explicit operator bool() const { return error.empty() && !parts.empty(); }
 };
 
@@ -53,7 +56,7 @@ public:
     const std::string& error() const noexcept;
     // Requires submitted culled_spans in descriptor-relative 8-byte records.
     // Allocation capacity is never evidence that a culled record was drawn.
-    PlayerFrame read_player_frame(const GpuSnapshot&) const noexcept;
+    PlayerFrame read_player_frame(const GpuSnapshot&,const NativePoseOwner* = nullptr) const noexcept;
     static std::map<std::string, std::size_t> readback_limits();
 
 private:

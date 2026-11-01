@@ -1,16 +1,16 @@
-# EnshroudedVRM 0.3.0
+# EnshroudedVRM 0.3.1
 
 Play Enshrouded as your VRM avatar. By **lightnill**.
 
-0.3.0 changes startup to a standalone game-local Vulkan bootstrap. Install the mod, launch normally through Steam, and configure it in **F8**. Audio lip sync, model switching and whole-model/per-material shader presets remain available. An optional VRoid sample and a persistent **No model replacement** switch are included. Replacement is local to your client; multiplayer avatar synchronization is future work.
+0.3.1 updates avatar replacement for higher fog settings, improves local-player ownership selection and recovery, and includes transient GPU/readback fixes plus local performance diagnostics. Install the mod, launch normally through Steam, and configure it in **F8**. Audio lip sync, model switching, whole-model/per-material shader presets, the optional VRoid sample and the persistent **No model replacement** switch remain available. Replacement is local to your client; multiplayer avatar synchronization is future work.
 
-The release and avatar runtime are version 0.3.0. The bootstrap keeps its independent
+The release and avatar runtime are version 0.3.1. The bootstrap keeps its independent
 0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
 records the runtime and bootstrap versions separately.
 
 ## Install and play
 
-1. Download **EnshroudedVRM-0.3.0.zip** from [the 0.3.0 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.0).
+1. Download **EnshroudedVRM-0.3.1.zip** from [the 0.3.1 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.1).
 2. Close Enshrouded. In Steam, choose **Manage → Browse local files**.
 3. Check for an existing `vulkan-1.dll` beside `enshrouded.exe`. If it belongs to another mod, stop: do not overwrite, rename or chain it. Close the game before updating a known EnshroudedVRM installation.
 4. Copy the ZIP's `vulkan-1.dll` and `EnshroudedVRM` folder beside `enshrouded.exe`. Preserve your own models when updating the folder.
@@ -32,7 +32,9 @@ Embedded 16-bit-per-channel PNG textures are converted to RGBA8 during import. R
 
 Voice is opt-in. **Game voice** uses the game's local outgoing voice path and requires a session with active voice chat. **Local microphone** works offline, follows Windows default input unless you choose a device, and is independent of game mute/push-to-talk. Strength, sensitivity and smoothing are configurable. Processing stays local; audio is not recorded or uploaded and no extra viseme network data is sent.
 
-## Settings and upgrading from 0.2.0
+## Updating and saved settings
+
+To update an existing EnshroudedVRM installation, close the game and replace the included package files together. Keep your own VRMs and saved preferences. The retained bootstrap has its own independent version; do not mix runtime/shader files from other builds. A 0.2.0 script launcher is no longer used after installing this standalone package.
 
 Settings and bounded logs live in `%LOCALAPPDATA%/EnshroudedVRM/State`, independently of the game installation. For a first import from the old package, copy only `avatar-settings.json` and `mod-settings.json` from its State folder into `EnshroudedVRM/State` beside Runtime, then launch once. Existing user-folder preferences win and are never overwritten by import. Old launcher `settings.json` is not imported.
 
@@ -40,11 +42,13 @@ Older avatar settings are read compatibly. New saves use schema 2 to remember re
 
 ## Coverage and limits
 
-The standalone route has desktop evidence on **Windows 10 build 19045 x64**, Windows installed in **C:\Windows**, Vulkan loader **1.4.350**, and Steam build **26082781/resource 1273043**. Laptop validation is pending for this GitHub preview. Windows 11, other Vulkan loader versions, other Windows-directory layouts and combined-loader operation are not claimed as validated.
+The standalone route has desktop evidence on **Windows 10 build 19045 x64**, Windows installed in **C:\Windows**, Vulkan loader **1.4.350**, and Steam build **26082781/resource 1273043**. Desktop manual tests cover startup/F8/model selection, original-character switching and the fog compatibility fix. Laptop reports informed these fixes; this exact 0.3.1 package has not completed full cross-machine validation. Windows 11, other loader versions, other Windows-directory layouts and combined-loader operation remain unverified.
 
 An existing Vulkan loader loaded first, or a System32-only load, can bypass the local bootstrap. Other mods' `vulkan-1.dll` files conflict with this installation. Earlier EML/ShroudForge coexistence observations for the script route do not validate this route. Game-version and package checks intentionally decline unsupported or changed files. See [known issues](KNOWN-ISSUES.txt).
 
-Large avatars can reduce FPS. Isolated timings and test results do not establish a gameplay FPS improvement. The release provides [exact-hash validation and scan evidence](validation/0.3.0/README.md); unsupported engines and scan limits are coverage gaps.
+Higher fog settings no longer hit the old snapshot dimension limit. The fog snapshot uses a packed representation within the existing 64 MiB allocation budget; driver allocation requirements remain checked. Local-player ownership is used before matching model parts, so unrelated world characters are excluded from that selection.
+
+Occasional fallbacks and survivor/inventory preview identification remain under investigation. Base-area stutters can still occur: a complete VRM-off comparison reduced, but did not eliminate, them. The included sampled hook timings are diagnostic evidence; no gameplay FPS improvement is claimed. Large avatars can reduce FPS. The release provides [exact-hash validation and scan evidence](validation/0.3.1/README.md); unsupported engines and scan limits are coverage gaps.
 
 ## Remove
 

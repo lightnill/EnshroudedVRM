@@ -37,13 +37,14 @@ struct MenuGpuContext {
             const auto device=state.gdpa(state.device,name);return device?device:state.gipa(state.instance,name);
         },this)){loaded=nullptr;throw std::runtime_error("menu Vulkan functions unavailable");}
     }
-    bool ready(){
-        if(uncertain||broken||slots.empty())return false;
+    ModMenuGpuReadiness ready(){
+        if(uncertain||broken||slots.empty())return ModMenuGpuReadiness::Failed;
         const auto& slot=slots[(rendered+1)%slots.size()];
-        if(!slot.submitted)return true;
-        const auto result=fn<PFN_vkGetFenceStatus>("vkGetFenceStatus")(device,slot.fence);if(result==VK_SUCCESS)return true;
-        if(result!=VK_NOT_READY)uncertain=true;
-        return false;
+        if(!slot.submitted)return ModMenuGpuReadiness::Ready;
+        const auto result=fn<PFN_vkGetFenceStatus>("vkGetFenceStatus")(device,slot.fence);
+        if(result==VK_SUCCESS)return ModMenuGpuReadiness::Ready;
+        if(result==VK_NOT_READY)return ModMenuGpuReadiness::Busy;
+        uncertain=true;return ModMenuGpuReadiness::Failed;
     }
     bool finish()noexcept {
         for(const auto& slot:slots)if(slot.submitted){const auto result=fn<PFN_vkWaitForFences>("vkWaitForFences")(device,1,&slot.fence,VK_TRUE,UINT64_MAX);
@@ -105,14 +106,16 @@ ModMenuGpu::~ModMenuGpu(){
     if(impl->uncertain||!impl->presentation_safe||!impl->finish()){impl.release();return;}
     impl->cleanup();
 }
-bool ModMenuGpu::available()noexcept {try{std::lock_guard<std::mutex> guard(gui_mutex);return impl&&impl->ready();}catch(...){return false;}}
+ModMenuGpuReadiness ModMenuGpu::readiness()noexcept {try{std::lock_guard<std::mutex> guard(gui_mutex);return impl?impl->ready():ModMenuGpuReadiness::Failed;}catch(...){return ModMenuGpuReadiness::Failed;}}
 VkSemaphore ModMenuGpu::completion(std::uint32_t image)const noexcept{return impl&&image<impl->images.size()?impl->images[image].completion:VK_NULL_HANDLE;}
 void ModMenuGpu::presentation_complete()noexcept {if(impl)impl->presentation_safe=true;}
 ModMenuGpuResult ModMenuGpu::draw(std::uint32_t image,std::uint32_t waits,const VkSemaphore* semaphores,ModSettings& settings,const ModMenuStatus& status,bool& expanded,bool& close,const ModInputFrame& input,ModMenuPlacement* placement)noexcept {
     ModMenuGpuResult result;
     try{
         std::lock_guard<std::mutex> guard(gui_mutex);auto& state=*impl;
-        if(image>=state.images.size()||waits>64||(waits&&!semaphores)||!state.ready()){result.result=VK_NOT_READY;return result;}
+        if(image>=state.images.size()||waits>64||(waits&&!semaphores)){result.result=VK_ERROR_INITIALIZATION_FAILED;return result;}
+        const auto readiness=state.ready();
+        if(readiness!=ModMenuGpuReadiness::Ready){result.result=readiness==ModMenuGpuReadiness::Busy?VK_NOT_READY:VK_ERROR_UNKNOWN;return result;}
         state.select();auto& io=ImGui::GetIO();io.DisplaySize={state.extent.width/state.dpi,state.extent.height/state.dpi};io.DisplayFramebufferScale={state.dpi,state.dpi};io.DeltaTime=1.f/60;
         auto& menu_placement=placement?*placement:state.placement;
         feed_mod_menu_input(input.input,input.x/state.dpi,input.y/state.dpi,menu_placement,state.dpi);ImGui_ImplVulkan_NewFrame();ImGui::NewFrame();

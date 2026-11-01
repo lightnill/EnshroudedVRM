@@ -12,6 +12,7 @@
 #include "native_owner_process.hpp"
 #include "native_tool_slots.hpp"
 #include "native_instance_qualifiers.hpp"
+#include "native_pose_owner.hpp"
 #include "native_transparency_trace.hpp"
 #include "native_material_plan.hpp"
 #include "native_skinning_gpu.hpp"
@@ -138,6 +139,11 @@ struct Bundle {
     // Aliases immutable admitted hint storage; no second guard-vector copy.
     // This is comparison provenance only, never submission authority.
     std::shared_ptr<const NativeOwnerCandidate> prepared_owner_hint;
+    struct OwnerRefreshTrace {
+        bool attempted=false,verified=false,observation_retained=false;
+        double capture_ms=0,verify_ms=0,total_ms=0;
+        std::uint64_t pose_age_start=0,pose_age_end=0;
+    } owner_refresh;
     std::vector<std::array<std::uint32_t,4>> qualified_parts;
     NativeBufferBinding publication_source;
     std::vector<std::shared_ptr<const NativeClipPipeline>> clip_leases;
@@ -182,19 +188,7 @@ struct Recording {
 };
 bool same_binding(const NativeBufferBinding& a,const NativeBufferBinding& b){return a&&b&&a.info.buffer==b.info.buffer&&a.generation==b.generation&&a.info.offset==b.info.offset&&a.info.range==b.info.range;}
 bool same_owner_selection(const NativeOwnerCandidate& a,const NativeOwnerCandidate& b) {
-    if(a.image.base!=b.image.base||a.image.size!=b.image.size||a.image.timestamp!=b.image.timestamp||a.image.sha256!=b.image.sha256)return false;
-    if(std::tie(a.root,a.client,a.controller,a.main,a.execution,a.registry,a.entity_manager,
-        a.entity,a.entity_layout,a.entity_storage,a.equipment,a.entity_id,a.entity_generation,a.entity_slot,a.entity_row,
-        a.input_registration,a.equipment_registration,a.render_scene,a.model_manager,a.writer,a.resource_object,
-        a.native_buffer,a.native_buffer_bytes,a.instance_capacity,a.instance_extra)!=
-       std::tie(b.root,b.client,b.controller,b.main,b.execution,b.registry,b.entity_manager,
-        b.entity,b.entity_layout,b.entity_storage,b.equipment,b.entity_id,b.entity_generation,b.entity_slot,b.entity_row,
-        b.input_registration,b.equipment_registration,b.render_scene,b.model_manager,b.writer,b.resource_object,
-        b.native_buffer,b.native_buffer_bytes,b.instance_capacity,b.instance_extra))return false;
-    if(a.models.size()!=b.models.size())return false;
-    for(std::size_t i=0;i<a.models.size();++i){const auto& x=a.models[i];const auto& y=b.models[i];
-        if(std::tie(x.equipment_slot,x.handle,x.index,x.generation,x.record)!=std::tie(y.equipment_slot,y.handle,y.index,y.generation,y.record))return false;}
-    return true;
+    return same_native_owner_selection(a,b);
 }
 bool same_geometry_layout(const NativeAvatarPose& a,const NativeAvatarPose& b) {
     if(a.vertices.size()!=b.vertices.size()||a.indices!=b.indices||a.draws.size()!=b.draws.size())return false;
@@ -250,9 +244,11 @@ struct NativeBackend::Impl {
     // Copied values for private, permit-zero preparation only. Every accepted
     // submission still revalidates the complete retained guard set. Atomic
     // shared ownership also permits clearing after an exception unlocks mutex.
-    struct OwnerPreparationHint {NativeOwnerCandidate candidate;NativeBufferBinding source;};
-    std::shared_ptr<const OwnerPreparationHint> owner_preparation_hint;
-    void discard_owner_hint()noexcept {std::atomic_store(&owner_preparation_hint,std::shared_ptr<const OwnerPreparationHint>{});}
+    using OwnerPreparationHint=NativePoseOwner;
+    NativePoseOwnerState pose_owner_state;
+    unsigned owner_mapping_notices=0;
+    std::array<std::uint64_t,8> owner_mapping_keys{};
+    void discard_owner_hint()noexcept {pose_owner_state.revoke_preparation();}
     using HistoryKey=std::tuple<std::uint64_t,std::uint32_t,std::uint32_t>;
     using HistoryBank=std::map<HistoryKey,std::shared_ptr<SubmittedHistory>>;
     std::shared_ptr<const HistoryBank> submitted_histories;
@@ -292,7 +288,7 @@ struct NativeBackend::Impl {
                 return other.info.buffer==failed.info.buffer||(other&&metadata.live(other)&&
                     memory.disjoint(failed.info.buffer,0,failed.size,other.info.buffer,0,other.size));
             };
-            const auto hint=std::atomic_load(&owner_preparation_hint);
+            const auto hint=pose_owner_state.preparation_hint();
             if(hint&&!independent(hint->source)){revoke_preparation();return;}
             const auto previous=std::atomic_load(&submitted_histories);
             if(previous)for(const auto& entry:*previous)if(!entry.second||!independent(entry.second->instances)){revoke_preparation();return;}
@@ -309,15 +305,41 @@ struct NativeBackend::Impl {
             hint.source.size==source.size&&hint.source.usage==source.usage&&metadata.live(hint.source)&&
             memory.valid(hint.source.info.buffer,0,hint.source.size);
     }
+    void log_owner_mapping(const Bundle& bundle)noexcept {
+        // Diagnostic correlation after successful native submission only. This
+        // key never grants ownership or delays a current pose-age decision.
+        if(!bundle.menu_preview&&owner_mapping_notices<owner_mapping_keys.size()){
+            const auto epoch=bundle.pose?bundle.pose->source_buffer_epoch:0;
+            std::uint64_t key=14695981039346656037ull;
+            const auto add=[&](std::uint64_t value){key=(key^value)*1099511628211ull;};
+            add(bundle.cpu_owner.entity_id);add(bundle.cpu_owner.entity_generation);
+            add(reinterpret_cast<std::uintptr_t>(bundle.instances.info.buffer));add(epoch);
+            for(const auto& model:bundle.cpu_owner.models){add(model.equipment_slot);add(model.index);add(model.generation);}
+            if(std::find(owner_mapping_keys.begin(),owner_mapping_keys.begin()+owner_mapping_notices,key)==owner_mapping_keys.begin()+owner_mapping_notices){
+                owner_mapping_keys[owner_mapping_notices++]=key;
+                log_event_lazy([&]{
+                    std::string line="native-replacement.local-owner sample="+std::to_string(owner_mapping_notices)+
+                        " phase=cpu-admitted-submit"+
+                        " entity="+std::to_string(bundle.cpu_owner.entity_id)+" generation="+std::to_string(bundle.cpu_owner.entity_generation)+
+                        " source="+std::to_string(reinterpret_cast<std::uintptr_t>(bundle.instances.info.buffer))+
+                        " epoch="+std::to_string(epoch)+" id-kind=instance-slot model-count="+std::to_string(bundle.cpu_owner.models.size())+" models=[";
+                    for(std::size_t i=0;i<std::min<std::size_t>(bundle.cpu_owner.models.size(),24);++i){const auto& model=bundle.cpu_owner.models[i];
+                        line+=(i?";":"")+std::to_string(model.equipment_slot)+":"+std::to_string(model.index)+":"+std::to_string(model.generation);}
+                    return line+"]";
+                });
+            }
+        }
+    }
     void retain_owner_hint(const Bundle& bundle)noexcept {
         if(bundle.menu_preview){if(bundle.menu_owner.kind==NativeMenuOwnerKind::frontend)discard_owner_hint();return;}
         try{
-            const auto existing=std::atomic_load(&owner_preparation_hint);
+            const auto existing=pose_owner_state.preparation_hint();
             if(existing&&hint_source_current(*existing,bundle.instances))return;
             auto hint=std::make_shared<OwnerPreparationHint>();
             hint->candidate=bundle.cpu_owner;hint->source=metadata.buffer(bundle.instances.info.buffer);
-            if(!hint_source_current(*hint,bundle.instances)){discard_owner_hint();return;}
-            std::atomic_store(&owner_preparation_hint,std::shared_ptr<const OwnerPreparationHint>(std::move(hint)));
+            hint->source_epoch=bundle.pose?bundle.pose->source_buffer_epoch:0;
+            if(!native_pose_owner_valid(*hint)||!hint_source_current(*hint,bundle.instances)){discard_owner_hint();return;}
+            pose_owner_state.retain_preparation(std::move(hint));
         }catch(...){discard_owner_hint();} // Optional acceleration cannot veto admission.
     }
 #ifdef EVRM_NATIVE_BACKEND_TESTING
@@ -499,7 +521,7 @@ struct NativeBackend::Impl {
 #endif
         return owner_process&&owner_process->supported();
     }
-    mutable std::array<double,2> owner_timing_ms{};
+    mutable std::array<double,2> owner_timing_ms{},owner_timing_max_ms{};
     mutable std::array<double,5> resource_timing_ms{};
     mutable std::array<unsigned,5> resource_timing_count{};
     void resource_timing(unsigned index,std::chrono::steady_clock::time_point started)const noexcept {
@@ -512,10 +534,11 @@ struct NativeBackend::Impl {
     }
     mutable std::array<unsigned,2> owner_timing_count{};
     void owner_timing(unsigned index,std::chrono::steady_clock::time_point started)const noexcept {
-        owner_timing_ms[index]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+        const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+        owner_timing_ms[index]+=elapsed;owner_timing_max_ms[index]=std::max(owner_timing_max_ms[index],elapsed);
         if(++owner_timing_count[index]%300==0){
-            try{log_event(std::string("native-replacement.owner-timing-ms operation=")+(index?"revalidate":"prepare")+" average="+std::to_string(owner_timing_ms[index]/300));}catch(...){}
-            owner_timing_ms[index]=0;
+            try{log_event(std::string("native-replacement.owner-timing-ms operation=")+(index?"revalidate":"prepare")+" average="+std::to_string(owner_timing_ms[index]/300)+" maximum="+std::to_string(owner_timing_max_ms[index]));}catch(...){}
+            owner_timing_ms[index]=0;owner_timing_max_ms[index]=0;
         }
     }
     bool capture_owner(NativeOwnerCandidate& candidate,std::string& reason,NativeOwnerObservationStats* stats,std::uint64_t milliseconds=40)const noexcept {
@@ -525,12 +548,24 @@ struct NativeBackend::Impl {
         NativeOwnerLimits limits;limits.max_milliseconds=milliseconds;
         return owner_process&&owner_process->capture(candidate,reason,limits,stats);
     }
+    std::shared_ptr<const NativePoseOwner> sample_pose_owner(std::uint64_t epoch,std::string& reason,NativeOwnerObservationStats* stats=nullptr){
+        if(stats)*stats={};
+        if(!replacement||!replacement_enabled||disabled||context.uncertain||!epoch||metadata.buffer_epoch()!=epoch||!owner_supported())return {};
+        auto selection=pose_owner_state.sample(epoch,GetTickCount64(),
+            [&](NativeOwnerCandidate& owner){return capture_owner(owner,reason,stats);},
+            [&](VkBuffer buffer){return metadata.buffer(buffer);},
+            [&](const NativeBufferBinding& source){return same_native_pose_allocation(source,metadata.buffer(source.info.buffer))&&
+                metadata.live(source)&&memory.valid(source.info.buffer,0,source.size);});
+        if(metadata.buffer_epoch()!=epoch)return {};
+        if(selection)reason.clear();else if(reason.empty())reason="local pose ownership pending";
+        return selection;
+    }
     bool prepare_owner(NativeOwnerCandidate& candidate,std::shared_ptr<const NativeOwnerCandidate>& admitted_hint,const NativeBufferBinding& source,std::string& reason,NativeOwnerObservationStats* stats=nullptr) {
         const auto started=std::chrono::steady_clock::now();
         struct Timing {Impl& impl;std::chrono::steady_clock::time_point started;~Timing(){impl.owner_timing(0,started);}} timing{*this,started};
         if(stats)*stats={};
         admitted_hint.reset();
-        const auto hint=std::atomic_load(&owner_preparation_hint);
+        const auto hint=pose_owner_state.preparation_hint();
         if(hint&&hint_source_current(*hint,source)){
             candidate=hint->candidate;admitted_hint=std::shared_ptr<const NativeOwnerCandidate>(hint,&hint->candidate);reason.clear();return true;
         }
@@ -540,7 +575,11 @@ struct NativeBackend::Impl {
             candidate=hint->candidate;reason.clear();return true;
         }
         discard_owner_hint();
-        return capture_owner(candidate,reason,stats);
+        const auto proposal=sample_pose_owner(metadata.buffer_epoch(),reason,stats);
+        if(!proposal){candidate={};return false;}
+        candidate=proposal->candidate;
+        if(hint_source_current(*proposal,source))admitted_hint=std::shared_ptr<const NativeOwnerCandidate>(proposal,&proposal->candidate);
+        return true;
     }
     bool revalidate_owner(NativeOwnerCandidate& candidate,std::string& reason,NativeOwnerObservationStats* stats=nullptr,std::uint64_t milliseconds=40)const noexcept {
         if(stats)*stats={};
@@ -567,24 +606,49 @@ struct NativeBackend::Impl {
         return owner_process&&owner_process->revalidate_menu(candidate,reason,budget);
     }
     std::uint64_t census_refreshes=0;
-    bool refresh_census_owner(Bundle& bundle,std::uint64_t started,std::string& reason,NativeOwnerObservationStats& stats) {
+    bool refresh_census_owner(Bundle& bundle,std::uint64_t started,std::string& reason,NativeOwnerObservationStats& stats,bool& observation_refreshed) {
+        observation_refreshed=false;bundle.owner_refresh={};
         if(!bundle.prepared_owner_hint||stats.phase!=NativeOwnerObservationPhase::submission_verify||
             stats.failure_location!=NativeOwnerFailureLocation::compare||stats.guard_capture_phase!=NativeOwnerObservationPhase::census)return false;
+        const auto precise_started=std::chrono::steady_clock::now();
+        auto& trace=bundle.owner_refresh;trace.attempted=true;
+        const auto pose_age=[&](){const auto now=GetTickCount64();return now>=bundle.pose->published_milliseconds?now-bundle.pose->published_milliseconds:UINT64_MAX;};
+        trace.pose_age_start=pose_age();
+        struct Timing {
+            Bundle::OwnerRefreshTrace& trace;std::chrono::steady_clock::time_point started;decltype(pose_age)& age;
+            ~Timing(){trace.total_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();trace.pose_age_end=age();}
+        } timing{trace,precise_started,pose_age};
         const auto previous=bundle.prepared_owner_hint;
         revoke_preparation();
         const auto remaining=[&]()->std::uint64_t{const auto now=GetTickCount64();return now>=started&&now-started<40?40-(now-started):0;};
         auto budget=remaining();if(!budget){reason="owner census refresh deadline exceeded";return false;}
         NativeOwnerCandidate fresh;NativeOwnerObservationStats fresh_stats;
-        if(!capture_owner(fresh,reason,&fresh_stats,budget)){stats=fresh_stats;return false;}
+        const auto capture_started=std::chrono::steady_clock::now();
+        const bool captured=capture_owner(fresh,reason,&fresh_stats,budget);
+        trace.capture_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-capture_started).count();
+        if(!captured){stats=fresh_stats;return false;}
         if(!same_owner_selection(*previous,fresh)){reason="owner census refresh changed prepared selection";return false;}
         budget=remaining();if(!budget){reason="owner census refresh deadline exceeded";return false;}
-        if(!revalidate_owner(fresh,reason,&fresh_stats,budget)){stats=fresh_stats;return false;}
+        const auto verify_started=std::chrono::steady_clock::now();
+        const bool verified=revalidate_owner(fresh,reason,&fresh_stats,budget);
+        trace.verify_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-verify_started).count();
+        if(!verified){stats=fresh_stats;return false;}
         if(!remaining()){reason="owner census refresh deadline exceeded";return false;}
+        trace.verified=true;
+        // A valid ownership observation survives a render-only decline. Bind it
+        // to the original physical allocation, never a reused VkBuffer handle.
+        const auto epoch=metadata.buffer_epoch();const auto source=metadata.buffer(bundle.instances.info.buffer);
+        if(!epoch||!same_native_pose_allocation(bundle.instances,source)||!metadata.live(source)||
+            !memory.valid(source.info.buffer,0,source.size)||metadata.buffer_epoch()!=epoch){reason="owner census refresh instance allocation changed";return false;}
+        observation_refreshed=pose_owner_state.remember_observation(fresh,source,epoch,GetTickCount64());
+        trace.observation_retained=observation_refreshed;
         // Capturing cannot renew source lifetimes, a prepared mask/qualifier,
         // or the immutable pose's original 250ms lifetime.
-        if(!sources_current(bundle.sources)||!source_current(bundle.gbuf_camera)||!source_current(bundle.owner)||
-            !latest||latest->asset!=bundle.pose->asset||GetTickCount64()<bundle.pose->published_milliseconds||
-            GetTickCount64()-bundle.pose->published_milliseconds>250){reason="owner census refresh source or pose expired";return false;}
+        if(!sources_current(bundle.sources)||!source_current(bundle.gbuf_camera)||!source_current(bundle.owner)){
+            reason="owner census refresh render source changed";return false;}
+        const auto current=publication_for(bundle.instances.info.buffer);
+        if(!current||current->asset!=bundle.pose->asset||epoch!=bundle.pose->source_buffer_epoch){reason="owner census refresh source publication changed";return false;}
+        if(pose_age()>250){reason="owner census refresh pose expired";return false;}
         if(bundle.material_plan.mixed&&(!mixed_current(bundle)||!bundle.oit_window.complete())){reason="owner census refresh mixed source changed";return false;}
         for(const auto& source:bundle.excluded_transforms)if(!metadata.live(source)||
             !memory.disjoint(bundle.instances.info.buffer,0,bundle.instances.size,source.info.buffer,source.info.offset,source.info.range)){
@@ -893,10 +957,13 @@ struct NativeBackend::Impl {
             const bool owner_captured=prepare_owner(bundle->cpu_owner,bundle->prepared_owner_hint,bundle->instances,reason,&owner_stats);
             bool selected=false;
             if(owner_captured){
-                selected=make_native_body_mask(bundle->cpu_owner,latest->parts,bundle->instances,bundle->body_mask,reason)&&
+                const bool pose_owner_matches=!latest->pose_owner||native_pose_owner_matches_candidate(*latest->pose_owner,
+                    bundle->cpu_owner,bundle->instances,metadata.buffer_epoch());
+                if(!pose_owner_matches)reason="local pose owner identity changed";
+                selected=pose_owner_matches&&make_native_body_mask(bundle->cpu_owner,latest->parts,bundle->instances,bundle->body_mask,reason)&&
                     select_native_owner_qualifiers(bundle->cpu_owner,latest->parts,latest->instance_qualifiers,bundle->qualified_parts,reason);
             }
-            if(!selected){
+            if(!selected&&!latest->pose_owner){
                 std::string menu_reason;
                 if(capture_menu_owner(bundle->menu_owner,menu_reason)){
                     bundle->menu_preview=true;
@@ -1149,10 +1216,21 @@ struct NativeBackend::Impl {
             auto& reason=decision_reason;
             NativeOwnerObservationStats owner_stats;bool owner_failed=false;
             if(ready){
+                bool observation_refreshed=false;
                 if(b.menu_preview){ready=revalidate_menu_owner(b.menu_owner,reason);}
                 else{const auto owner_started=GetTickCount64();ready=revalidate_owner(b.cpu_owner,reason,&owner_stats);
-                    if(!ready)ready=refresh_census_owner(b,owner_started,reason,owner_stats);}
+                    if(!ready)ready=refresh_census_owner(b,owner_started,reason,owner_stats,observation_refreshed);}
                 owner_failed=!ready;
+                if(owner_failed){
+                    if(observation_refreshed)pose_owner_state.revoke_preparation();
+                    else pose_owner_state.invalidate_observation(GetTickCount64());
+                }
+                decision.check(ready,Gate::OwnerFreshness);
+            }
+            if(ready&&b.pose->pose_owner){
+                ready=!b.menu_preview&&native_pose_owner_matches_candidate(*b.pose->pose_owner,b.cpu_owner,b.instances,metadata.buffer_epoch());
+                if(!ready)reason="local pose owner identity changed";
+                if(!ready)pose_owner_state.invalidate_observation(GetTickCount64());
                 decision.check(ready,Gate::OwnerFreshness);
             }
             if(ready){NativeBodyMask current;
@@ -1199,6 +1277,10 @@ struct NativeBackend::Impl {
             "/"+std::to_string(b.visibility_draws)+" gbuffer="+std::to_string(b.gbuffer_passes)+"/"+std::to_string(b.gbuffer_draws)+
             " ownership="+std::to_string(recording.affected_pass&&recording.ownership_window==b.pose->serial)+
             " owner-detail="+(decision_reason.empty()?std::string("none"):decision_reason)+
+            " refresh-attempted="+std::to_string(b.owner_refresh.attempted)+" refresh-verified="+std::to_string(b.owner_refresh.verified)+
+            " refresh-observation="+std::to_string(b.owner_refresh.observation_retained)+" refresh-ms="+
+                std::to_string(b.owner_refresh.total_ms)+","+std::to_string(b.owner_refresh.capture_ms)+","+std::to_string(b.owner_refresh.verify_ms)+
+            " refresh-pose-age="+std::to_string(b.owner_refresh.pose_age_start)+","+std::to_string(b.owner_refresh.pose_age_end)+
             " failed-checks="+fallback_gate_names(diagnostic_event.reason_mask)+fallback_event_summary(diagnostic_event);});
         try {
             if(ready){++permits;if(permits==1||permits%300==0)log_event(std::string(replacement?"native-replacement.cpu-permit count=":"native-additive.cpu-permit count=")+std::to_string(permits)+" pose-serial="+std::to_string(b.pose->serial)+" pose-age-ms="+std::to_string(GetTickCount64()-b.pose->published_milliseconds)+(b.data.history[0]?" history=requested original-body=":" history=invalid original-body=")+(replacement?"shared-gpu-clip":"retained"));last_reason.clear();}
@@ -1434,6 +1516,11 @@ bool NativeBackend::mouth_gpu_unavailable()const noexcept {
         return impl->assets&&impl->assets->avatar()&&impl->assets->avatar()->mouth&&impl->assets->skin()&&!impl->assets->skin()->mouth_available();
     }catch(...){return true;}
 }
+std::shared_ptr<const NativePoseOwner> NativeBackend::pose_owner(std::uint64_t epoch)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->mutex);
+        std::string reason;return impl->sample_pose_owner(epoch,reason);
+    }catch(...){return {};}
+}
 #ifdef EVRM_NATIVE_BACKEND_TESTING
 void NativeBackend::test_owner(std::shared_ptr<const NativeBackendTestOwner> source)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->discard_owner_hint();impl->test_owner_source=std::move(source);}catch(...){} }
 #endif
@@ -1494,7 +1581,7 @@ void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const 
                 if(!current||current!=view||view->source_buffer_epoch!=impl->latest->source_buffer_epoch||view->source_instance_offset||
                     !child||view->source_instance_range!=child.size){impl->latest.reset();impl->view_publications.reset();impl->revoke_preparation();return;}
             }
-            const auto hint=std::atomic_load(&impl->owner_preparation_hint);
+            const auto hint=impl->pose_owner_state.preparation_hint();
             if(hint&&(!native_publication_view(impl->view_publications,hint->candidate.native_buffer)||
                 !impl->hint_source_current(*hint,hint->source)))impl->revoke_preparation();
             impl->latest_source=source;
@@ -1515,7 +1602,7 @@ void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const 
         try{if(impl->wants_notice("publication-ready"))impl->notice("publication-ready parts="+std::to_string(impl->latest->parts.size())+" vertices="+std::to_string(impl->latest->geometry?impl->latest->geometry->vertices.size():0),"publication-ready");}catch(...){}
         if(impl->assets->avatar()!=impl->latest->asset){impl->revoke_preparation();impl->report("model has not completed its activation transaction");return;}
         if(impl->replacement&&impl->owner_process){const auto started=std::chrono::steady_clock::now();
-            const auto hint=std::atomic_load(&impl->owner_preparation_hint);
+            const auto hint=impl->pose_owner_state.preparation_hint();
             const auto world=hint?native_publication_view(impl->view_publications,hint->candidate.native_buffer):impl->latest;
             if(world){const auto source=impl->metadata.buffer(reinterpret_cast<VkBuffer>(static_cast<std::uintptr_t>(world->source_instances)));
                 impl->tool_slots.advance(*impl->owner_process,world,source.generation);}
@@ -1671,7 +1758,9 @@ void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uin
         if(!r.bundle || !capture_owner)return;
         const auto bound=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);if(!bound.valid||bound.pipeline.kind!=NativePipelineKind::lighting)return;
         const auto owner=impl->metadata.buffer_binding(bound,2,24);if(r.bundle->owner&&!same_binding(r.bundle->owner,owner))r.bundle->invalid=true;else r.bundle->owner=owner;
-    }catch(...){scope_unsupported(command);}
+    }catch(const std::exception& error){scope_unsupported(command,"native compute observation failed");
+        try{std::lock_guard<std::mutex> lock(impl->mutex);impl->notice("native compute observation failed: "+std::string(error.what()),"native-compute-exception");}catch(...){}
+    }catch(...){scope_unsupported(command,"native compute observation failed");}
 }
 void NativeBackend::barriers(VkCommandBuffer command,VkPipelineStageFlags source,VkPipelineStageFlags destination,VkDependencyFlags flags,
     std::uint32_t memory_count,const VkMemoryBarrier* memory,std::uint32_t buffer_count,const VkBufferMemoryBarrier* buffers,std::uint32_t image_count,const VkImageMemoryBarrier* images)noexcept {
@@ -1780,9 +1869,12 @@ void NativeBackend::submission_result(VkQueue queue,VkResult result)noexcept {
             auto& view=views[Impl::history_key(b.instances.info.buffer,b.first_pass.extent)];
             ++view.observed;b.awaiting_submit_result=false;
             if(result!=VK_SUCCESS){b.failed_submit=b.invalid=true;failed=true;}
-            else if(b.data.permit[0]&&b.emission&&impl->publication_for(b.instances.info.buffer)&&impl->publication_for(b.instances.info.buffer)->serial==b.pose->serial){
-                ++view.candidates;view.emission=b.emission;view.emission->owner=std::move(b.cpu_owner);
-                view.emission->menu_preview=b.menu_preview;view.emission->menu_owner=std::move(b.menu_owner);
+            else{
+                if(b.data.permit[0])impl->log_owner_mapping(b);
+                if(b.data.permit[0]&&b.emission&&impl->publication_for(b.instances.info.buffer)&&impl->publication_for(b.instances.info.buffer)->serial==b.pose->serial){
+                    ++view.candidates;view.emission=b.emission;view.emission->owner=std::move(b.cpu_owner);
+                    view.emission->menu_preview=b.menu_preview;view.emission->menu_owner=std::move(b.menu_owner);
+                }
             }
         }}});
         for(auto& pair:views){auto& view=pair.second;

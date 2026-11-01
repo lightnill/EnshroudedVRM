@@ -1,4 +1,4 @@
-The 0.3.0 preview contains native DLLs, including an unsigned project
+The 0.3.1 preview contains native DLLs, including an unsigned project
 bootstrap named vulkan-1.dll. Its version metadata identifies EnshroudedVRM and
 lightnill. It forwards Vulkan graphics API entry points to the actual system library;
 it is not a redistributed Microsoft DLL. The bootstrap is built with Microsoft
@@ -24,3 +24,11 @@ Source/test audio, private avatars and developer test executables are excluded.
 The single creator-authorized vroid-sample.vrm is included unchanged, explicitly
 hash/size-pinned during packaging and covered by the exact runtime manifest.
 Third-party terms are listed in THIRD_PARTY_NOTICES.md and notices/.
+
+0.3.1 retains the original startup DLL and rebuilds only the avatar runtime.
+Local fallback/CPU profiling logs contain bounded runtime diagnostic metadata;
+they are not sent to a service automatically. Sparse CPU samples and overlapping
+scopes are not GPU timings or proof of a performance improvement. Release scan
+results are published separately for the exact DLLs and player ZIP. A missing,
+pending or unsupported scan is not a clean result, and zero detections alone
+does not establish safety. Any reported detection stops this release workflow.

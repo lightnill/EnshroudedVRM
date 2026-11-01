@@ -445,7 +445,7 @@ GpuSnapshot GpuProbe::Impl::decode_plan(const CapturePlan& plan,const void* data
                 snapshot.buffers[read.target.role] = {read.target.binding, std::vector<std::uint8_t>(first, first + read.size)};
             }
         {std::lock_guard<std::mutex> lock(mutex);
-            for(const auto& version:descriptor_leases){const auto set=sets.find(version.first);if(set==sets.end()||set->second.version!=version.second)throw std::runtime_error("Descriptor contents changed during pose readback");}
+            if(!asynchronous)for(const auto& version:descriptor_leases){const auto set=sets.find(version.first);if(set==sets.end()||set->second.version!=version.second)throw std::runtime_error("Descriptor contents changed during pose readback");}
             bool anchor_valid=true;for(const auto& anchor:anchor_leases)if(!anchor_live(anchor)){anchor_valid=false;break;}
             if(!anchor_valid){snapshot.buffers.erase("player_anchor");snapshot.player_anchor_dispatches.clear();}
         }

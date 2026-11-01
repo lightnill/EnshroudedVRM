@@ -15,10 +15,10 @@
         const auto image_format=reinterpret_cast<PFN_vkGetPhysicalDeviceImageFormatProperties>(get_instance(instance,"vkGetPhysicalDeviceImageFormatProperties"));
         if(!format||!image_format)throw std::runtime_error("Mixed native format queries unavailable");
         snapshot_caps.limits=limits;snapshot_caps.memory=context.memory;
-        const std::array<VkFormat,4> formats={VK_FORMAT_E5B9G9R9_UFLOAT_PACK32,VK_FORMAT_R16_UNORM,VK_FORMAT_R32G32B32A32_SFLOAT,VK_FORMAT_R32_SFLOAT};
-        for(unsigned i=0;i<4;++i){VkFormatProperties facts{};format(physical,formats[i],&facts);snapshot_caps.formats[i]=facts.optimalTilingFeatures;}
+        const std::array<VkFormat,5> formats={VK_FORMAT_R32_UINT,VK_FORMAT_R16_UNORM,VK_FORMAT_R32_UINT,VK_FORMAT_R32_SFLOAT,VK_FORMAT_E5B9G9R9_UFLOAT_PACK32};
+        for(unsigned i=0;i<formats.size();++i){VkFormatProperties facts{};format(physical,formats[i],&facts);snapshot_caps.formats[i]=facts.optimalTilingFeatures;}
         for(unsigned i=0;i<2;++i)checked(image_format(physical,formats[i+2],VK_IMAGE_TYPE_3D,VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT,0,&snapshot_caps.outputs[i]),"Mixed output format query");
+            VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT,i?0:VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,&snapshot_caps.outputs[i]),"Mixed output format query");
         std::ifstream input(shader_directory/"native_volume_snapshot.comp.spv",std::ios::binary|std::ios::ate);
         if(!input)throw std::runtime_error("Missing native volume snapshot shader");
         const auto bytes=input.tellg();if(bytes<20||bytes>1024*1024||bytes%4)throw std::runtime_error("Native volume snapshot shader size");
@@ -115,7 +115,9 @@
         if(x!=(extent.width+3)/4||y!=(extent.height+3)/4||z!=(extent.depth+3)/4){decline("dispatch-coverage");return;}
         // Constructor validates formats, equal extents, capability/size budgets
         // and allocates every private resource before any private command.
+        b.snapshot_decline="snapshot-construction";
         auto snapshot=std::make_unique<NativeVolumeSnapshot>(context.device,context.get,sources,snapshot_caps,snapshot_words.data(),snapshot_words.size());
+        b.snapshot_decline="none";
         b.volume_bound=bound;b.volume_restore=restore;b.volume_snapshot=std::move(snapshot);
         if(!volume_metadata_current(b)){decline("retained-metadata");return;}
         // Retain before recording; a failed recording cannot destroy resources

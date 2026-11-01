@@ -43,6 +43,8 @@ class StandalonePackageTests(unittest.TestCase):
                    'acceptedShaderModules':{name:sha(self.base_payload['Runtime/shaders/'+name]) for name in self.module.SHADER_NAMES},
                    'sourceInputs':[{'path':'src/runtime_bridge.cpp','sha256':'a'*64}], 'automaticBufferExports':False,'bundledAvatars':0,
                    'validation':{'antivirus':'old scan must not be inherited'}}
+        if hasattr(self.module,'OWNED_SHADER_SHA256'):
+            patch.dict(self.module.OWNED_SHADER_SHA256,{name:self.info['acceptedShaderModules'][name] for name in self.module.OWNED_SHADER_SHA256}).start()
         self.base_payload['BUILD-INFO.json']=encoded(self.info)
         self.write_base()
         for name in self.module.required_source_inputs(self.info):
@@ -121,15 +123,38 @@ class StandalonePackageTests(unittest.TestCase):
         with self.assertRaises(OSError):self.build()
         self.assertFalse(self.output.exists())
 
-    def test_public_030_preview_metadata_is_explicit(self):
-        self.build(version='0.3.0',publication_status='preview')
+    def test_public_031_preview_metadata_is_explicit(self):
+        self.build(version='0.3.1',publication_status='preview')
         with zipfile.ZipFile(self.output) as archive:
             for name in ['EnshroudedVRM/BUILD-INFO.json','EnshroudedVRM/release-manifest.json']:
                 metadata=json.loads(archive.read(name))
-                self.assertEqual(metadata['version'],'0.3.0')
+                self.assertEqual(metadata['version'],'0.3.1')
                 self.assertEqual(metadata['publication_status'],'preview')
-            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.0')
+            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.1')
             self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['bootstrapMetadataVersion'],'0.2.0-standalone-dev')
+
+    def test_pose_and_timing_headers_are_required_inputs(self):
+        names=self.module.required_source_inputs(self.info)
+        self.assertIn('src/native_pose_owner.hpp',names)
+        self.assertIn('src/runtime_hook_timing.hpp',names)
+
+    def test_exact_owned_fog_shader_can_replace_the_legacy_pin(self):
+        name='native_volume_snapshot.comp.spv'
+        new=struct.pack('<IIIII',0x07230203,0x10000,7,2,0)
+        if hasattr(self.module,'OWNED_SHADER_SHA256'):
+            patch.dict(self.module.OWNED_SHADER_SHA256,{name:sha(new)}).start()
+        manifest=json.loads(self.shader_manifest.read_bytes())
+        for entry in manifest['modules']:
+            if entry['name']==name:entry['sha256']=sha(new)
+        self.shader_manifest.write_bytes(encoded(manifest));(self.shaders/name).write_bytes(new)
+        self.build()
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertEqual(archive.read('EnshroudedVRM/Runtime/shaders/'+name),new)
+        self.output.unlink()
+        for entry in manifest['modules']:
+            if entry['name']==name:entry['sha256']=self.info['acceptedShaderModules'][name]
+        self.shader_manifest.write_bytes(encoded(manifest));(self.shaders/name).write_bytes(self.base_payload['Runtime/shaders/'+name])
+        with self.assertRaises(ValueError):self.build()
 
     def test_unknown_publication_status_is_declined(self):
         with self.assertRaises(ValueError):self.build(publication_status='unreviewed-publication')

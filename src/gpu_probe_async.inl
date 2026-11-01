@@ -171,6 +171,19 @@ VkResult GpuProbe::submit_async(VkQueue queue,uint32_t count,const VkSubmitInfo*
         // Ready slots belong to the consumer until it decodes them. A full
         // ring skips sampling and keeps the native submit moving.
         if(selected.empty()){const auto forwarded=next(queue,count,submits,fence);if(planned&&forwarded==VK_SUCCESS)impl->async_frame=true;return forwarded;}
+        // Inline plans may have been recorded well before this submission.
+        // Validate their descriptor and source leases at the copy boundary,
+        // before the application can begin using the recorded commands.
+        {std::lock_guard<std::mutex> lock(impl->mutex);
+            const auto live=[&](const auto& self,const CapturePlan& plan)->bool {
+                for(const auto& version:plan.descriptor_leases){const auto set=impl->sets.find(version.first);if(set==impl->sets.end()||set->second.version!=version.second)return false;}
+                for(const auto& generation:plan.generations){const auto buffer=impl->buffers.find(generation.first);const auto memory=plan.memories.find(generation.first);
+                    if(buffer==impl->buffers.end()||memory==plan.memories.end()||buffer->second.generation!=generation.second||buffer->second.memory!=memory->second)return false;}
+                for(const auto& view:plan.additional)if(!self(self,view))return false;
+                return true;
+            };
+            for(auto* slot:selected)slot->publishable=live(live,slot->plan);
+        }
         called=true;result=next(queue,count,batches.data(),fence);
         if(result!=VK_SUCCESS){std::vector<Impl::AsyncSlot*> recorded;
             for(auto* slot:selected)if(slot->recorded)recorded.push_back(slot);else slot->plan={};

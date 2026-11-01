@@ -17,6 +17,7 @@
 #include "mod_settings_service.hpp"
 #include "mod_overlay.hpp"
 #include "queue_dispatch.hpp"
+#include "runtime_hook_timing.hpp"
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 
@@ -61,6 +62,7 @@ struct DeviceState {
     PFN_vkQueuePresentKHR present{};
     std::shared_ptr<InstanceState> parent;
     std::atomic<uint64_t> frame_count{0};
+    evrm::RuntimeHookTiming hook_timing;
     std::shared_ptr<evrm::GpuProbe> probe;
     std::shared_ptr<evrm::GraphicsState> graphics;
     std::shared_ptr<evrm::AvatarRenderer> avatar;
@@ -72,7 +74,7 @@ struct DeviceState {
     std::atomic<uint64_t> deferred_releases{0};
     std::atomic<uint32_t> native_layout_notices{0},native_pipeline_layout_notices{0};
     std::mutex present_timing_mutex;
-    double driver_present_ms=0;
+    double driver_present_ms=0,driver_present_max_ms=0;
     unsigned driver_present_samples=0;
     std::mutex trace_pool_mutex;
     std::unordered_map<VkCommandPool, uint32_t> trace_pools;
@@ -93,9 +95,14 @@ template<class Handle> std::shared_ptr<InstanceState> instance_state(Handle hand
     return found == instances.end() ? nullptr : found->second;
 }
 template<class Handle> std::shared_ptr<DeviceState> device_state(Handle handle) {
-    std::lock_guard<std::mutex> guard(state_mutex);
-    const auto found = devices.find(dispatch_key(handle));
-    return found == devices.end() ? nullptr : found->second;
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::StateLookup);
+    std::shared_ptr<DeviceState> result;
+    {
+        std::lock_guard<std::mutex> guard(state_mutex);
+        const auto found=devices.find(dispatch_key(handle));
+        if(found!=devices.end())result=found->second;
+    }
+    timing.attach(result?&result->hook_timing:nullptr);timing.finish();return result;
 }
 template<class Chain> Chain* find_link(const void* next, VkStructureType type) {
     auto current = static_cast<const VkBaseInStructure*>(next);
@@ -112,10 +119,12 @@ template<class Function> PFN_vkVoidFunction as_proc(Function function) {
     return reinterpret_cast<PFN_vkVoidFunction>(function);
 }
 template<class Function> Function device_proc(const std::shared_ptr<DeviceState>& state, const char* name) {
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::ProcLookup,state?&state->hook_timing:nullptr);
     return state ? reinterpret_cast<Function>(state->get_proc(state->handle, name)) : nullptr;
 }
 template<class Function> void observe(const std::shared_ptr<DeviceState>& state, Function function) noexcept {
     if (!state || !state->probe) return;
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::Probe,&state->hook_timing);
     try { function(*state->probe); }
     catch (...) { evrm::log_event("probe.observation.failed"); }
 }
@@ -132,18 +141,25 @@ PFN_vkSetDeviceLoaderData device_loader_callback(const void* next) {
 }
 template<class Function> void observe_graphics(const std::shared_ptr<DeviceState>& state, Function function) noexcept {
     if (!state || !state->graphics) return;
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::Graphics,&state->hook_timing);
     try { function(*state->graphics); }
     catch (...) { evrm::log_event("graphics.observation.failed"); }
 }
 template<class Function> void observe_trace(const std::shared_ptr<DeviceState>& state, Function function) noexcept {
     if (!state || !state->trace) return;
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::Trace,&state->hook_timing);
     try { function(*state->trace); }
     catch (...) { evrm::log_event("command-trace.observation.failed"); }
 }
 template<class Function> void observe_native(const std::shared_ptr<DeviceState>& state, Function function) noexcept {
     if (!state || !state->native) return;
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::NativeState,&state->hook_timing);
     try { function(state->native->state()); }
     catch (...) { evrm::log_event("native-additive.observation.failed"); }
+}
+template<class Function> decltype(auto) timed_native(const std::shared_ptr<DeviceState>& state,
+    evrm::RuntimeHookKind kind,Function function) {
+    evrm::RuntimeHookSample timing(kind,&state->hook_timing);return function(*state->native);
 }
 // This proof moves only independent binding commands before the single exact
 // native BeginRendering. It inserts no private work and suppresses no draws.
@@ -151,6 +167,7 @@ void native_before_command(const std::shared_ptr<DeviceState>& state, VkCommandB
                            evrm::DeferredRenderingCommand kind = evrm::DeferredRenderingCommand::other,
                            bool taint = false,const char* trigger=nullptr) noexcept {
     if (!state) return;
+    evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::BeforeCommand,&state->hook_timing);
     if (taint && state->native) state->native->scope_unsupported(command);
     if (!state->deferred) return;
     const auto released = state->deferred->before(command, kind, taint);
@@ -173,7 +190,8 @@ void native_before_forwarded_command(const std::shared_ptr<DeviceState>& state, 
     if(state&&state->native&&name&&std::strncmp(name,"vkCmdDraw",9)==0)state->native->uncovered_draw(command,name);
 }
 void native_after_forwarded_command(const std::shared_ptr<DeviceState>& state,VkCommandBuffer command,const char* name) noexcept {
-    if(state&&state->native&&name&&std::strncmp(name,"vkCmdDraw",9)==0)state->native->after_native_draw(command);
+    if(state&&state->native&&name&&std::strncmp(name,"vkCmdDraw",9)==0)
+        timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.after_native_draw(command);});
 }
 void native_begin_rendering(const std::shared_ptr<DeviceState>& state, VkCommandBuffer command,
                             const VkRenderingInfo* info, PFN_vkCmdBeginRendering exact_next) noexcept {
@@ -453,8 +471,10 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationC
 }
 
 EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* info) {
+    const auto cpu_started=std::chrono::steady_clock::now();
     const auto state = device_state(queue);
     if (!state || !state->present) return VK_ERROR_INITIALIZATION_FAILED;
+    evrm::RuntimeHookSample present_cpu(evrm::RuntimeHookKind::PresentCpu,&state->hook_timing,cpu_started);
     evrm::service_voice_inputs();
     evrm::QueueDispatch queue_guard([&]{return queue_mutex(state,queue);},[&]{return state->overlay?presentation_family(state,queue):UINT32_MAX;});
     const auto frame = state->frame_count.fetch_add(1) + 1;
@@ -478,8 +498,13 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
         }
     }
     const auto native_buffer_epoch=state->native?state->native->state().buffer_epoch():0;
+    // Backend ownership is sampled before taking the renderer resource mutex;
+    // model activation acquires those locks in the opposite call direction.
+    const auto pose_owner=!retry&&replacement_enabled&&info&&info->swapchainCount==1&&state->native&&state->avatar&&
+        state->avatar->enabled()&&state->probe&&state->graphics?
+        state->native->pose_owner(native_buffer_epoch):nullptr;
     if (!retry && replacement_enabled && info && state->avatar && state->probe && state->graphics)
-        native_pose_complete=state->avatar->before_present(queue, *info, *state->probe, *state->graphics, consumed,native_buffer_epoch);
+        native_pose_complete=state->avatar->before_present(queue, *info, *state->probe, *state->graphics, consumed,native_buffer_epoch,pose_owner);
     if(!retry&&avatar_candidate&&avatar_service&&state->native&&state->avatar){
         struct Activation {evrm::NativeBackend* backend;evrm::AvatarRenderer* renderer;const evrm::AvatarCandidate* candidate=nullptr;};
         Activation activation{state->native.get(),state->avatar.get()};
@@ -522,21 +547,36 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
     }
     observe(state, [&](evrm::GpuProbe& probe) { probe.finish_frame(); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.finish_frame(frame); });
+    present_cpu.finish();
     const auto present_started=std::chrono::steady_clock::now();
     const auto result=menu.stop==VK_SUCCESS?state->present(queue,presenting):menu.stop;
+    const auto present_elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-present_started).count();
+    evrm::RuntimeHookSample post_present(evrm::RuntimeHookKind::PostPresent,&state->hook_timing);
     if(info&&state->overlay&&menu.stop==VK_SUCCESS)state->overlay->presented(menu,result);
     evrm::poll_voice_inputs(GetTickCount64());
     try{if(state->native){
-        double average=-1;
+        double average=-1,maximum=0;
         {std::lock_guard<std::mutex> timing_guard(state->present_timing_mutex);
-            state->driver_present_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-present_started).count();
-            if(++state->driver_present_samples==300){average=state->driver_present_ms/300;state->driver_present_ms=0;state->driver_present_samples=0;}
+            state->driver_present_ms+=present_elapsed;state->driver_present_max_ms=std::max(state->driver_present_max_ms,present_elapsed);
+            if(++state->driver_present_samples==300){average=state->driver_present_ms/300;maximum=state->driver_present_max_ms;
+                state->driver_present_ms=0;state->driver_present_max_ms=0;state->driver_present_samples=0;}
         }
-        if(average>=0)evrm::log_event("native-replacement.driver-present-ms average="+std::to_string(average));
+        if(average>=0)evrm::log_event("native-replacement.driver-present-ms average="+std::to_string(average)+" maximum="+std::to_string(maximum));
+    }
+    if(frame%300==0){
+        const auto rows=state->hook_timing.take();
+        std::string message="native-hook-timing unit=us scopes=inclusive hot-period=256 sampling=rotating-block replacement="+std::to_string(replacement_enabled);
+        for(unsigned n=0;n<evrm::runtime_hook_count;++n){const auto kind=static_cast<evrm::RuntimeHookKind>(n);const auto& row=rows[n];
+            message+=" "+std::string(evrm::runtime_hook_name(kind))+"={samples:"+std::to_string(row.samples)+
+                ",period:"+std::to_string(evrm::runtime_hook_period(kind))+",mean:"+std::to_string(row.samples?double(row.total_ns)/row.samples/1000:0)+
+                ",max:"+std::to_string(double(row.max_ns)/1000)+"}";
+        }
+        evrm::log_event(message);
     }
     if (frame == 1 || frame % 600 == 0)
         evrm::log_event("frame.presented count=" + std::to_string(frame) + " result=" + std::to_string(result));
     }catch(...){} // Diagnostics cannot alter the completed driver Present result.
+    post_present.finish();
     return result;
 }
 

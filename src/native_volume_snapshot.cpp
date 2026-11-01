@@ -7,15 +7,17 @@ bool power_two(VkDeviceSize n){return n&&!(n&(n-1));}
 bool pure(VkMemoryPropertyFlags f){return (f&VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)&&!(f&(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_PROTECTED_BIT|VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT));}
 void validate(const std::array<NativeVolumeSnapshotSource,2>& s,const NativeVolumeSnapshotCapabilities& c){
     const auto e=s[0].extent;const std::uint64_t voxels=std::uint64_t(e.width)*e.height*e.depth;
-    require(e.width&&e.height&&e.depth&&e.width<=256&&e.height<=256&&e.depth<=128&&voxels<=NativeVolumeSnapshot::voxel_limit,"Snapshot extent/budget");
+    require(e.width&&e.height&&e.depth&&e.width<=1024&&e.height<=1024&&e.depth<=128&&voxels<=NativeVolumeSnapshot::voxel_limit,"Snapshot extent/budget");
     require(s[0].image&&s[1].image&&s[0].image!=s[1].image&&s[0].generation&&s[1].generation,"Snapshot image identity");
     for(const auto& a:s)require(a.type==VK_IMAGE_TYPE_3D&&a.extent.width==e.width&&a.extent.height==e.height&&a.extent.depth==e.depth&&a.samples==VK_SAMPLE_COUNT_1_BIT&&a.mip_levels==1&&a.array_layers==1&&a.usage==(VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT),"Snapshot source shape");
     require(s[0].format==VK_FORMAT_R32_UINT&&s[0].flags==VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT&&s[0].format_count==2,"Snapshot mutable R32 source");
     require((s[0].formats[0]==VK_FORMAT_R32_UINT&&s[0].formats[1]==VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)||(s[0].formats[1]==VK_FORMAT_R32_UINT&&s[0].formats[0]==VK_FORMAT_E5B9G9R9_UFLOAT_PACK32),"Snapshot allowed packed view");
     require(s[1].format==VK_FORMAT_R16_UNORM&&!s[1].flags&&!s[1].format_count,"Snapshot visibility source");
     require((c.formats[0]&VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)&&(c.formats[1]&VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT),"Snapshot source sampling unsupported");
-    constexpr auto output=VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT|VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT|VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
-    for(unsigned i=0;i<2;++i){const auto& p=c.outputs[i];require((c.formats[i+2]&output)==output&&p.maxExtent.width>=e.width&&p.maxExtent.height>=e.height&&p.maxExtent.depth>=e.depth&&p.maxMipLevels&&p.maxArrayLayers&&(p.sampleCounts&VK_SAMPLE_COUNT_1_BIT)&&p.maxResourceSize>=voxels*(i?4:16),"Snapshot output format/size unsupported");}
+    constexpr VkFormatFeatureFlags output=VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT|VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+    for(unsigned i=0;i<2;++i){const auto required=output|(i?VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT:0);const auto& p=c.outputs[i];require((c.formats[i+2]&required)==required&&p.maxExtent.width>=e.width&&p.maxExtent.height>=e.height&&p.maxExtent.depth>=e.depth&&p.maxMipLevels&&p.maxArrayLayers&&(p.sampleCounts&VK_SAMPLE_COUNT_1_BIT)&&p.maxResourceSize>=voxels*4,"Snapshot output format/size unsupported");}
+    constexpr VkFormatFeatureFlags sampled=VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT|VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    require((c.formats[4]&sampled)==sampled,"Snapshot packed sampled format unsupported");
     const auto& l=c.limits;require(l.maxImageDimension3D>=e.width&&l.maxImageDimension3D>=e.height&&l.maxImageDimension3D>=e.depth&&l.maxBoundDescriptorSets&&l.maxPerStageDescriptorSampledImages>=2&&l.maxDescriptorSetSampledImages>=2&&l.maxPerStageDescriptorStorageImages>=2&&l.maxDescriptorSetStorageImages>=2&&l.maxPerStageResources>=4&&l.maxComputeWorkGroupInvocations>=64,"Snapshot device limits");
     const std::array<std::uint32_t,3> dimensions{e.width,e.height,e.depth};for(unsigned i=0;i<3;++i)require(l.maxComputeWorkGroupSize[i]>=4&&l.maxComputeWorkGroupCount[i]>=(dimensions[i]+3)/4,"Snapshot compute limits");
     require(c.memory.memoryTypeCount&&c.memory.memoryTypeCount<=VK_MAX_MEMORY_TYPES&&c.memory.memoryHeapCount&&c.memory.memoryHeapCount<=VK_MAX_MEMORY_HEAPS,"Snapshot memory metadata");bool found=false;
@@ -34,7 +36,7 @@ struct NativeVolumeSnapshot::Impl {
 #define DECLARE(n) PFN_##n n{};
     SNAPSHOT_FUNCTIONS(DECLARE)
 #undef DECLARE
-    std::array<VkImageView,2> source_views{},views{};std::array<VkImage,2> images{};std::array<VkDeviceMemory,2> memory{};
+    std::array<VkImageView,2> source_views{},views{};VkImageView radiance_view{};std::array<VkImage,2> images{};std::array<VkDeviceMemory,2> memory{};
     VkDescriptorSetLayout dsl{};VkPipelineLayout layout{};VkShaderModule shader{};VkPipeline pipeline{};VkDescriptorPool pool{};VkDescriptorSet set{};
     ~Impl(){if(uncertain)return;
         if(pool)vkDestroyDescriptorPool(device,pool,nullptr);
@@ -42,6 +44,7 @@ struct NativeVolumeSnapshot::Impl {
         if(shader)vkDestroyShaderModule(device,shader,nullptr);
         if(layout)vkDestroyPipelineLayout(device,layout,nullptr);
         if(dsl)vkDestroyDescriptorSetLayout(device,dsl,nullptr);
+        if(radiance_view)vkDestroyImageView(device,radiance_view,nullptr);
         for(unsigned i=0;i<2;++i){if(source_views[i])vkDestroyImageView(device,source_views[i],nullptr);if(views[i])vkDestroyImageView(device,views[i],nullptr);if(images[i])vkDestroyImage(device,images[i],nullptr);if(memory[i])vkFreeMemory(device,memory[i],nullptr);}
     }
 };
@@ -52,13 +55,18 @@ NativeVolumeSnapshot::NativeVolumeSnapshot(VkDevice device,PFN_vkGetDeviceProcAd
     SNAPSHOT_FUNCTIONS(LOAD)
 #undef LOAD
     for(unsigned i=0;i<2;++i){VkImageViewUsageCreateInfo use{};use.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;use.usage=VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageViewCreateInfo v{};v.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;v.pNext=&use;v.image=sources[i].image;v.viewType=VK_IMAGE_VIEW_TYPE_3D;v.format=i?VK_FORMAT_R16_UNORM:VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;v.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};checked(p.vkCreateImageView(device,&v,nullptr,&p.source_views[i]),"Snapshot sampled source view");}
+        VkImageViewCreateInfo v{};v.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;v.pNext=&use;v.image=sources[i].image;v.viewType=VK_IMAGE_VIEW_TYPE_3D;v.format=i?VK_FORMAT_R16_UNORM:VK_FORMAT_R32_UINT;v.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};checked(p.vkCreateImageView(device,&v,nullptr,&p.source_views[i]),"Snapshot sampled source view");}
     VkDeviceSize allocated=0;
-    for(unsigned i=0;i<2;++i){VkImageCreateInfo image{};image.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;image.imageType=VK_IMAGE_TYPE_3D;image.format=i?VK_FORMAT_R32_SFLOAT:VK_FORMAT_R32G32B32A32_SFLOAT;image.extent=p.extent;image.mipLevels=image.arrayLayers=1;image.samples=VK_SAMPLE_COUNT_1_BIT;image.tiling=VK_IMAGE_TILING_OPTIMAL;image.usage=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT;checked(p.vkCreateImage(device,&image,nullptr,&p.images[i]),"Snapshot owned image");
+    for(unsigned i=0;i<2;++i){
+        const std::array<VkFormat,2> formats={VK_FORMAT_R32_UINT,VK_FORMAT_E5B9G9R9_UFLOAT_PACK32};
+        VkImageFormatListCreateInfo list{};list.sType=VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;list.viewFormatCount=formats.size();list.pViewFormats=formats.data();
+        VkImageCreateInfo image{};image.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;image.pNext=i?nullptr:&list;image.flags=i?0:VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;image.imageType=VK_IMAGE_TYPE_3D;image.format=i?VK_FORMAT_R32_SFLOAT:VK_FORMAT_R32_UINT;image.extent=p.extent;image.mipLevels=image.arrayLayers=1;image.samples=VK_SAMPLE_COUNT_1_BIT;image.tiling=VK_IMAGE_TILING_OPTIMAL;image.usage=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT;checked(p.vkCreateImage(device,&image,nullptr,&p.images[i]),"Snapshot owned image");
         VkMemoryRequirements r{};p.vkGetImageMemoryRequirements(device,p.images[i],&r);require(r.size&&r.size<=memory_byte_limit-allocated&&power_two(r.alignment)&&r.alignment<=memory_byte_limit,"Snapshot allocation budget/requirements");allocated+=r.size;
         unsigned type=VK_MAX_MEMORY_TYPES;for(unsigned n=0;n<caps.memory.memoryTypeCount;++n){const auto& t=caps.memory.memoryTypes[n];if((r.memoryTypeBits&(1u<<n))&&pure(t.propertyFlags)&&t.heapIndex<caps.memory.memoryHeapCount&&caps.memory.memoryHeaps[t.heapIndex].size>=r.size){type=n;break;}}
         require(type<VK_MAX_MEMORY_TYPES,"Snapshot owned memory type");VkMemoryAllocateInfo a{};a.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;a.allocationSize=r.size;a.memoryTypeIndex=type;checked(p.vkAllocateMemory(device,&a,nullptr,&p.memory[i]),"Snapshot owned allocation");checked(p.vkBindImageMemory(device,p.images[i],p.memory[i],0),"Snapshot owned binding");
-        VkImageViewCreateInfo v{};v.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;v.image=p.images[i];v.viewType=VK_IMAGE_VIEW_TYPE_3D;v.format=image.format;v.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};checked(p.vkCreateImageView(device,&v,nullptr,&p.views[i]),"Snapshot owned output view");}
+        VkImageViewCreateInfo v{};v.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;v.image=p.images[i];v.viewType=VK_IMAGE_VIEW_TYPE_3D;v.format=image.format;v.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};checked(p.vkCreateImageView(device,&v,nullptr,&p.views[i]),"Snapshot owned output view");
+        if(!i){VkImageViewUsageCreateInfo use{};use.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;use.usage=VK_IMAGE_USAGE_SAMPLED_BIT;v.pNext=&use;v.format=VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;checked(p.vkCreateImageView(device,&v,nullptr,&p.radiance_view),"Snapshot packed sampled output view");}
+    }
     const std::array<VkDescriptorSetLayoutBinding,4> bindings={{{0,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{1,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{2,VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{3,VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}}};
     VkDescriptorSetLayoutCreateInfo dsl{};dsl.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;dsl.bindingCount=4;dsl.pBindings=bindings.data();checked(p.vkCreateDescriptorSetLayout(device,&dsl,nullptr,&p.dsl),"Snapshot private DSL");
     VkPipelineLayoutCreateInfo layout{};layout.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout.setLayoutCount=1;layout.pSetLayouts=&p.dsl;checked(p.vkCreatePipelineLayout(device,&layout,nullptr,&p.layout),"Snapshot private layout");
@@ -89,7 +97,7 @@ bool NativeVolumeSnapshot::record(VkCommandBuffer command,VkPipeline original,Vk
 }
 std::array<VkDescriptorImageInfo,2> NativeVolumeSnapshot::outputs()const noexcept{
     if(!impl)return {};
-    return {{{nullptr,impl->views[0],VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},{nullptr,impl->views[1],VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}}};
+    return {{{nullptr,impl->radiance_view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},{nullptr,impl->views[1],VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}}};
 }
 void NativeVolumeSnapshot::quarantine()noexcept{if(impl)impl->uncertain=true;}
 #undef SNAPSHOT_FUNCTIONS

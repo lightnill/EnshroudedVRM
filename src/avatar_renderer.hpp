@@ -9,6 +9,7 @@
 namespace evrm {
 class GpuProbe;
 class GraphicsState;
+struct NativePoseOwner;
 class AvatarRenderer {
 public:
     AvatarRenderer(VkInstance, VkPhysicalDevice, VkDevice,
@@ -24,7 +25,8 @@ public:
     // If the original presentation semaphores have been consumed by our GPU
     // submission, the caller must present with zero waits, including on failure.
     bool before_present(VkQueue, const VkPresentInfoKHR&, GpuProbe&, GraphicsState&,
-                        bool& consumed_waits,uint64_t source_buffer_epoch=0) noexcept;
+                        bool& consumed_waits,uint64_t source_buffer_epoch=0,
+                        std::shared_ptr<const NativePoseOwner> pose_owner={}) noexcept;
     // Called after metadata retirement and before native resource destruction.
     // Waits for this renderer's synchronous use and releases dependent views.
     void native_image_destroyed(VkImage) noexcept;

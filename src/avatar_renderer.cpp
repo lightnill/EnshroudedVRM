@@ -8,6 +8,7 @@
 #include "spring_bones.hpp"
 #include "spring_frame.hpp"
 #include "native_instance_qualifiers.hpp"
+#include "native_pose_owner.hpp"
 #include "native_tool_slots.hpp"
 #include "voice_inputs.hpp"
 #include "mouth_publication.hpp"
@@ -174,6 +175,8 @@ struct AvatarCpuModel {
     unsigned spring_samples=0,spring_steps=0,spring_resets=0;
     const char* spring_error=nullptr;
     bool native_replacement=false,gpu_skinning=true;
+    unsigned pose_ambiguity_diagnostics=0;
+    std::array<std::uint64_t,8> pose_ambiguity_keys{};
     std::shared_ptr<const vrm::Avatar> native_asset;
     std::shared_ptr<const NativeSkinAsset> native_skin_asset;
     AvatarCpuModel(std::shared_ptr<const PreparedAvatar> value,bool replacement,bool gpu):
@@ -244,10 +247,32 @@ struct AvatarCpuModel {
     }
     std::shared_ptr<NativeAvatarPublication> build_native_view(const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation,
         EnshroudedBridge& bridge,const MouthSnapshot& current_mouth,float mouth_strength,float debug_offset,
-        std::array<double,5>& timings,PlayerTrace* trace=nullptr,bool* source_valid=nullptr) {
+        std::array<double,5>& timings,PlayerTrace* trace=nullptr,bool* source_valid=nullptr,
+        const std::shared_ptr<const NativePoseOwner>& pose_owner={}) {
         if(source_valid)*source_valid=false;
         const auto started=std::chrono::steady_clock::now();
-        const auto frame=bridge.read_player_frame(snapshot);if(!frame)throw std::runtime_error(frame.error);
+        const auto instances_source=snapshot.buffers.find("instances");
+        const auto selection=pose_owner&&instances_source!=snapshot.buffers.end()&&
+            instances_source->second.binding.buffer==pose_owner->source.info.buffer?pose_owner:nullptr;
+        const auto frame=bridge.read_player_frame(snapshot,selection.get());if(!frame){
+            if(trace&&pose_ambiguity_diagnostics<8&&!frame.diagnostic.empty()){
+                // Diagnostic-only deduplication: repeated loading rejects must
+                // not consume all eight samples before gameplay begins.
+                std::uint64_t key=14695981039346656037ull;
+                const auto add_text=[&](const std::string& value){for(unsigned char c:value)key=(key^c)*1099511628211ull;key=(key^255u)*1099511628211ull;};
+                add_text(frame.error);add_text(frame.diagnostic);key=(key^snapshot.source_epoch)*1099511628211ull;
+                const auto end=pose_ambiguity_keys.begin()+pose_ambiguity_diagnostics;
+                if(std::find(pose_ambiguity_keys.begin(),end,key)==end){
+                    pose_ambiguity_keys[pose_ambiguity_diagnostics++]=key;
+                    log_event_lazy([&]{return "avatar.pose-ambiguity sample="+std::to_string(pose_ambiguity_diagnostics)+
+                        " presentation="+std::to_string(presentation)+" sequence="+std::to_string(snapshot.sequence)+
+                        " epoch="+std::to_string(snapshot.source_epoch)+" captured-ms="+std::to_string(snapshot.captured_milliseconds)+
+                        " source="+std::to_string(reinterpret_cast<std::uintptr_t>(snapshot.buffers.at("instances").binding.buffer))+
+                        " reason="+frame.error+" detail={"+frame.diagnostic+"}";});
+                }
+            }
+            throw std::runtime_error(frame.error);
+        }
         const auto identified=std::chrono::steady_clock::now();
         vrm::RetargetOptions options;options.align_rest_directions=true;
         if(avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
@@ -259,7 +284,7 @@ struct AvatarCpuModel {
         auto pose=retarget_pose(frame.source_pose,options,reinterpret_cast<std::uintptr_t>(source));if(!pose)throw std::runtime_error("Retarget: "+pose.error);
         apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height,reinterpret_cast<std::uintptr_t>(source));
         const auto posed=std::chrono::steady_clock::now();
-        auto publication=std::make_shared<NativeAvatarPublication>();publication->asset=native_asset;
+        auto publication=std::make_shared<NativeAvatarPublication>();publication->asset=native_asset;publication->pose_owner=selection;
         if(const auto menu=avatar_runtime_snapshot();menu&&menu->fingerprint==prepared->fingerprint)publication->appearance=menu->appearance;
         publication->serial=serial;publication->presentation_serial=presentation;publication->published_milliseconds=snapshot.captured_milliseconds;
         publication->source_buffer_epoch=snapshot.source_epoch;
@@ -683,7 +708,7 @@ bool AvatarRenderer::commit_candidate(const AvatarCandidate& candidate,std::uint
         impl->staged.reset();impl->staged_gpu_ready=false;impl->active=true;return true;
     }catch(...){return false;}
 }
-bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& present,GpuProbe& probe,GraphicsState& graphics,bool& consumed,uint64_t source_buffer_epoch) noexcept {
+bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& present,GpuProbe& probe,GraphicsState& graphics,bool& consumed,uint64_t source_buffer_epoch,std::shared_ptr<const NativePoseOwner> pose_owner) noexcept {
     consumed=false;if(!enabled()||present.swapchainCount!=1)return false;
     try {
         std::lock_guard<std::mutex> resources(impl->resource_mutex);
@@ -794,13 +819,13 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
                     if(view.source_epoch!=source_buffer_epoch)throw std::runtime_error("Native view source epoch changed");
                     outcome.phase="view-pose";
                     if(impl->model){auto publication=impl->model->build_native_view(view,++impl->frame_count,capture_sequence,
-                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace);
+                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace,nullptr,pose_owner);
                         if(!root)root=std::move(publication);else root->additional_views.push_back(std::move(publication));}
                 }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what());impl->report("View pose: "+std::string(error.what()));}
                 if(impl->staged_gpu_ready&&impl->staged_model&&view.source_epoch==source_buffer_epoch){
                     try{const auto source=native_view_instance_source(view);(void)source;
                         auto candidate=impl->staged_model->build_native_view(view,++impl->frame_count,capture_sequence,
-                            *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&candidate_source_valid);
+                            *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&candidate_source_valid,pose_owner);
                         if(!staged_root)staged_root=std::move(candidate);else staged_root->additional_views.push_back(std::move(candidate));
                     }catch(const std::exception& error){if(candidate_source_valid)impl->staged_failure=std::string("Model cannot use the current game pose: ")+error.what();}
                 }

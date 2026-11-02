@@ -1,7 +1,9 @@
-EnshroudedVRM 0.3.2 preview â€” coverage and limits
+EnshroudedVRM0.3.3 targets Steam build26320373; previous0.3.2 targets26082781.
+
+EnshroudedVRM 0.3.3 preview â€” coverage and limits
 
 Desktop evidence covers Windows 10 build 19045 x64, Windows in C:\Windows,
-Vulkan loader 1.4.350.0 and Steam build 26082781/resource 1273043. Startup,
+Vulkan loader 1.4.350.0 and Steam build 26320373. Startup,
 F8, model loading and original-character persistence have manual evidence.
 The higher-fog compatibility correction was manually checked. Owner-recovery,
 menu/readback lifetime and profiling paths have CPU regression coverage.
@@ -10,7 +12,7 @@ Windows 11, other loaders/Windows-directory layouts and combined loaders remain
 unverified. Check the exact-hash release evidence; do not infer extra coverage.
 
 FOG, OWNERSHIP AND PERFORMANCE
-0.3.2 replaces the old fog snapshot extent restriction with a packed snapshot
+0.3.3 replaces the old fog snapshot extent restriction with a packed snapshot
 and checked actual allocation requirements, keeping the 64 MiB budget. A driver
 format/allocation limit can still decline replacement. Do not remove the budget.
 World ownership uses the explicit local-player selector and validated entity.
@@ -68,3 +70,10 @@ Screenshots are off per report; preview and explicit inclusion are required.
 An included game image can show visible names/chat. Review before sharing.
 The text-only path has desktop manual evidence. Optional screenshot capture,
 map-coordinate interpretation and different hardware need broader manual tests.
+
+NEW GAME PATCH COVERAGE
+Desktop startup/F8, world avatar/equipment, correct inventory/survivor previews,
+title/character reload and both voice sources passed user checks. Fresh Ultra-fog
+hotspot, persistence, optional screenshot and laptop checks are not claimed.
+Exported reports omit voice history; source selection is the capture-time setting.
+The full local log can show earlier source switches, but may contain private data.

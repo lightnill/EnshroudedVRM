@@ -19,6 +19,8 @@ from package_script_release import SHADER_NAMES as BASE_SHADER_NAMES, SCRIPT_NAM
 from package_script_release import VOICE_RUNTIME_INPUTS, MOUTH_RUNTIME_INPUTS, MENU_RUNTIME_INPUTS
 
 ACCEPTED_BASE_SHA256='6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26'
+SUPPORTED_GAME_SHA256='0403981fd2e8ad18bd8c5698dff03c8d505b5a46677832c496db9c645513f2a6'
+SUPPLEMENTAL_DOCUMENTS={'LEIA-ME-PT-BR.txt':'portable/standalone_docs/LEIA-ME-PT-BR.txt'}
 OWNED_SHADER_SHA256={'native_volume_snapshot.comp.spv':'31305bfdccb504f29b719e08d06aa4557c2402bbd5da3b63b9da36bfaf938fd5'}
 SHADER_NAMES=BASE_SHADER_NAMES+('debug_report_capture.comp.spv',)
 _ROOT=Path(__file__).resolve().parents[1]
@@ -142,7 +144,7 @@ def required_source_inputs(base_info):
     for item in entries:
         if not isinstance(item,dict) or not safe_name(item.get('path')) or not digest(item.get('sha256')):raise ValueError('base source input invalid')
         names.append(item['path'])
-    result=set(names)|set(VOICE_RUNTIME_INPUTS)|set(MOUTH_RUNTIME_INPUTS)|set(MENU_RUNTIME_INPUTS)|set(STANDALONE_INPUTS)|set(LOCAL_MEMBERS.values())|set(DEBUG_REPORT_INPUTS)|set(RELEASE_032_INPUTS)
+    result=set(names)|set(VOICE_RUNTIME_INPUTS)|set(MOUTH_RUNTIME_INPUTS)|set(MENU_RUNTIME_INPUTS)|set(STANDALONE_INPUTS)|set(LOCAL_MEMBERS.values())|set(DEBUG_REPORT_INPUTS)|set(RELEASE_032_INPUTS)|set(SUPPLEMENTAL_DOCUMENTS.values())
     if any(not safe_name(name) or name.lower().endswith(('.wav','.vrm','.glb','.exe')) or '/State/' in name for name in result):raise ValueError('unsafe source pin')
     return tuple(sorted(result))
 
@@ -203,8 +205,24 @@ def build_release(base_package,base_sha256,source_root,output,runtime_dll,runtim
     payload={'EnshroudedVRM/'+name:value for name,value in base.items() if name not in SCRIPT_NAMES}
     payload['vulkan-1.dll']=bootstrap;payload['EnshroudedVRM/Runtime/enshrouded_vrm_runtime.dll']=runtime
     payload[SAMPLE_MEMBER]=sample
+    # Only update supported-image metadata. Preserve all captured rig/catalog data
+    # and the identity of the game from which that data was originally captured.
+    for kind,capture,schema in (('profile','rig_capture_game','enshrouded-native-rig-profile-v1'),('catalog','catalog_capture_game','enshrouded-player-catalog-v2')):
+        member='EnshroudedVRM/Compatibility/'+kind+'.json'
+        value=unique_json(payload[member],kind+' compatibility metadata')
+        if value.get('schema')!=schema or not isinstance(value.get('game'),dict) or value['game'].get('executable_sha256')!=original['game_sha256'] or capture in value:
+            raise ValueError('base compatibility provenance differs from the accepted image')
+        value[capture]=value.pop('game')
+        value['game']={'executable_sha256':SUPPORTED_GAME_SHA256}
+        if kind=='profile':value['game'].update(steam_app_id=1203620,steam_build_id='26320373')
+        payload[member]=encoded(value)
     for member,source in LOCAL_MEMBERS.items():payload[member]=sources[source]
     for name,value in shaders.items():payload['EnshroudedVRM/Runtime/shaders/'+name]=value
+    documents={name:sources[source] for name,source in SUPPLEMENTAL_DOCUMENTS.items()}
+    for value in documents.values():
+        if not 0<len(value)<=64*1024:raise ValueError('supplemental document size')
+        try:value.decode('utf-8')
+        except UnicodeError as error:raise ValueError('supplemental document encoding') from error
     info={'schema':'enshrouded-vrm-standalone-build-v1','version':version,'publication_status':publication_status,
           'author':'lightnill','originalCodeLicense':'MIT','basePackageSha256':base_sha256,'runtimeSha256':runtime_sha256,'bootstrapSha256':bootstrap_sha256,
           'acceptedShaderModules':{name:sha(value) for name,value in sorted(shaders.items())},'voiceSdkSha256':VOICE_SDK_SHA256,
@@ -213,12 +231,17 @@ def build_release(base_package,base_sha256,source_root,output,runtime_dll,runtim
           'startup':'normal Steam launch; standalone game-local bootstrap; F8 settings',
           'targetPlatform':'Windows x64; exact host/loader coverage is recorded separately for each candidate',
           'verificationStatus':'Not established by packaging; use separate evidence bound to these exact native/archive hashes',
-          'nativeMetadataVersion':'0.3.2','bootstrapMetadataVersion':'0.2.0-standalone-dev'}
+          'nativeMetadataVersion':'0.3.3','bootstrapMetadataVersion':'0.2.0-standalone-dev',
+          'supportedGame':{'steamAppId':1203620,'steamBuildId':'26320373','executableSha256':SUPPORTED_GAME_SHA256},
+          'supplementalDocuments':{name:sha(value) for name,value in documents.items()}}
     payload['EnshroudedVRM/BUILD-INFO.json']=encoded(info)
     if set(payload)!=set(TARGET_MEMBERS):raise ValueError('standalone member contract mismatch')
-    manifest={'schema':'enshrouded-vrm-standalone-v1','version':version,'publication_status':publication_status,'game_sha256':original['game_sha256'],
+    manifest={'schema':'enshrouded-vrm-standalone-v1','version':version,'publication_status':publication_status,'game_sha256':SUPPORTED_GAME_SHA256,
               'files':[{'path':name,'sha256':sha(value)} for name,value in sorted(payload.items())]}
     payload['EnshroudedVRM/release-manifest.json']=encoded(manifest)
+    # Optional text guidance is outside the unchanged native member contract.
+    # BUILD-INFO and the release checksum evidence record its exact hash.
+    payload.update(documents)
     output.parent.mkdir(parents=True,exist_ok=True)
     temporary=None
     try:

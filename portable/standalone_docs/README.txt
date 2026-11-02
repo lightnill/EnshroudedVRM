@@ -1,10 +1,13 @@
-EnshroudedVRM 0.3.2 â€” standalone preview
+EnshroudedVRM0.3.3: Steam build26320373 only. For Portuguese installation help,
+read LEIA-ME-PT-BR.txt in the ZIP root (or README.pt-BR.md on GitHub).
 
-The release and avatar runtime are version 0.3.2. The bootstrap keeps its independent
+EnshroudedVRM 0.3.3 â€” standalone preview
+
+The release and avatar runtime are version 0.3.3. The bootstrap keeps its independent
 0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
 records the runtime and bootstrap versions separately.
 
-0.3.2 adds explicit local-player ownership, correct inventory/survivor previews,
+0.3.3 updates game compatibility and retains explicit local-player ownership, correct inventory/survivor previews,
 ownership/driver-lookup optimizations and private one-click F8 debug reports.
 Launch through Steam and configure in F8. See KNOWN-ISSUES.txt for coverage.
 

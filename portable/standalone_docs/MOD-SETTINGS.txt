@@ -32,4 +32,4 @@ Review the ZIP before sharing it yourself. Cancel abandons the unfinished report
 
 World replacement follows the selected local player. Inventory previews need
 their exact local request/task/captured pose; survivors remain native. No
-multiplayer assignments or persistent player identifiers are added in 0.3.2.
+multiplayer assignments or persistent player identifiers are added in 0.3.3.

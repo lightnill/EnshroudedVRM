@@ -40,9 +40,9 @@ int main(int argc,char** argv){
         std::puts("PASS observer admission returned without altering the process");return 0;
     }
     IMAGE_NT_HEADERS64 disk{};disk.Signature=IMAGE_NT_SIGNATURE;
-    disk.FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;disk.FileHeader.TimeDateStamp=1792507660;
+    disk.FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;disk.FileHeader.TimeDateStamp=1793351710;
     disk.OptionalHeader.Magic=IMAGE_NT_OPTIONAL_HDR64_MAGIC;disk.OptionalHeader.ImageBase=0x140000000ull;
-    disk.OptionalHeader.SizeOfImage=44163072;
+    disk.OptionalHeader.SizeOfImage=44302336;
     constexpr std::uintptr_t actual_base=0x7ff6a0000000ull;
     auto loaded=disk;
     if(!evrm::detail::voice_pe_headers_match(disk,loaded,actual_base))return fail("preferred header base declined");

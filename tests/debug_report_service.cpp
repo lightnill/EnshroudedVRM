@@ -19,8 +19,8 @@ template<class T>bool sourced_pixels(T& service,std::uint64_t job,std::shared_pt
 std::size_t count(const std::filesystem::path& directory){std::size_t result=0;if(std::filesystem::exists(directory))for(const auto& entry:std::filesystem::directory_iterator(directory))result+=entry.is_regular_file();return result;}
 int main(int argc,char** argv){try{
     need(argc==2,"fixture folder required");const auto folder=std::filesystem::path(argv[1]);std::uint64_t now=10000;unsigned opened=0;
-    auto& trace=evrm::native_preview_trace_history();trace.configure(0x140000000ULL,44163072,0xc0ffee,0x12345678);
-    evrm::NativePreviewTraceSample trace_sample;trace_sample.path_mask=1;trace_sample.stack_depth=16;trace_sample.game_depth=1;trace_sample.groups[0]=27395;
+    auto& trace=evrm::native_preview_trace_history();trace.configure(0x140000000ULL,44302336,0xc0ffee,0x12345678);
+    evrm::NativePreviewTraceSample trace_sample;trace_sample.path_mask=1;trace_sample.stack_depth=16;trace_sample.game_depth=1;trace_sample.groups[0]=27453;
     need(trace.record(trace.ticket(0xc0ffee,evrm::NativePreviewTraceStage::Bindings,now),trace_sample),"report ancestry fixture did not record");
     auto& handoff=evrm::native_preview_handoff_history();const auto handoff_source=handoff.configure(1,2,3,0xc0ffee);
     handoff.request(handoff_source,1,true,now);handoff.enqueue(123,handoff.render(handoff_source,true,true,now),now);

@@ -205,7 +205,7 @@ Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,
     const auto& input=selected("keen::ecs::ClientPlayerInput");const auto& equipment=selected("keen::ecs::RenderEquipment");need(input.size==1536&&equipment.size==788,"selected registration size mismatch");c.input_registration=input.index;c.equipment_registration=equipment.index;
     U capacity=m.scalar(c.entity_manager+e::entityManagerCount);need(capacity&&capacity<=e::maximumEntities&&!(capacity&(capacity-1)),"invalid entity table capacity");U table=m.scalar(c.entity_manager+e::entityManagerTable),occupancy=m.scalar(c.entity_manager+e::entityManagerOccupancy),keys=m.scalar(c.entity_manager+e::entityManagerKeys);
     need(range(table,mul(capacity,8))&&range(keys,mul(capacity,4))&&range(occupancy,((capacity+63)/64)*8),"invalid entity map ranges");
-    // The original local-player predicate3b4fe0 compares the entity ID with
+    // The original local-player predicate3bb660 compares the entity ID with
     // LocalPlayerData+4. The service and original bindings are in the verified
     // prefix; this mutable selector belongs to every fresh capture/submission.
     need(range(c.local_player_data,8),"local player service unavailable");c.entity_id=m.scalar<std::uint32_t>(add(c.local_player_data,4));need(c.entity_id,"local player selector absent");
@@ -247,9 +247,9 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate){
     const char* ui_services[]={"BasicPlayerInfos","CharacterPresetRegistry","LocalPlayerData","g38_items::ItemRegistry","G38UiPlayData"};
     struct System {U descriptor,function;const char* name;const char* const* names;unsigned reads,writes,ordinal,owner;};
     const System contracts[]={
-        {0x1ddde80,0x383030,"render_equipment_models_ag2",equipment_services,5,1,5,0},
-        {0x1ddd790,0x382ac0,"local_player_hide",hide_services,2,0,1,1},
-        {0x1ddd9e0,0x382c20,"local_player_ui_render_setup",ui_services,4,1,2,1}};
+        {0x1dff7a0,0x3891e0,"render_equipment_models_ag2",equipment_services,5,1,5,0},
+        {0x1dff0b0,0x388c20,"local_player_hide",hide_services,2,0,1,1},
+        {0x1dff300,0x388d80,"local_player_ui_render_setup",ui_services,4,1,2,1}};
     for(const auto& contract:contracts){const U descriptor=add(image.image.base,contract.descriptor),function=add(image.image.base,contract.function);
         need(image.inside(descriptor,0xC0)&&image.code(function),"system metadata/function outside pinned image");const auto desc=m.span(descriptor,0xC0);
         need(image.text(get<U>(desc,0),get<U>(desc,8),128,true)==contract.name&&get<U>(desc,16)==function,"original system full name/function mismatch");
@@ -261,7 +261,7 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate){
     for(unsigned i=0;i<3;++i){const auto& contract=contracts[i];const U row=system_rows[i];need(row,"original owner system missing");need(m.scalar(add(row,0x28))==add(image.image.base,contract.function),"system function mismatch");
         need(m.scalar<std::uint8_t>(add(row,s::systemNormalCountOffset))==contract.reads+contract.writes&&m.scalar<std::uint8_t>(add(row,s::systemAlternateCountOffset))==contract.reads+contract.writes,"system service counts mismatch");
         for(U bindings:{s::systemNormalBindingsOffset,s::systemAlternateBindingsOffset})need(m.scalar(add(row,bindings+contract.ordinal*8))==resolved[contract.owner],"original owner service binding mismatch");}
-    constexpr std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};const U predicate_address=add(image.image.base,0x3b4fe0);need(image.code(predicate_address),"local predicate outside code");
+    constexpr std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};const U predicate_address=add(image.image.base,0x3bb660);need(image.code(predicate_address),"local predicate outside code");
     const auto code=m.span(predicate_address,sizeof predicate);need(std::memcmp(code.data(),predicate,sizeof predicate)==0,"original local predicate mismatch");
     candidate.render_scene=resolved[0];candidate.local_player_data=resolved[1];
 }
@@ -276,8 +276,8 @@ void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& h
     // Current wrapper is exactly 12 bytes: pointer owner + low-flag-free index.
     auto wrapper=m.span(add(c.writer,8),12);U owner=get<U>(wrapper,0);auto index=get<std::uint32_t>(wrapper,8);need(index<=65535&&range(owner,0x290),"current writer resource wrapper invalid");
     U table=m.scalar(add(owner,0x268)),count=m.scalar(add(owner,0x270)),dims=m.scalar(add(owner,0x280)),dimension_count=m.scalar(add(owner,0x288));need(count&&count<=65535&&dimension_count==count&&index<count&&range(table,count*8)&&range(dims,count*16),"resource table dimensions/bounds mismatch");
-    U device=m.scalar(add(owner,8));need(range(device,0x280),"resource GPU device invalid");U interface=m.scalar(add(device,0x278));need(range(interface,8),"GPU backend interface invalid");U vtable=m.scalar(interface);need(image.inside(add(image.image.base,0x1DA69E0),0x68)&&vtable==add(image.image.base,0x1DA69E0),"GPU backend vtable mismatch");
-    U thunk=m.scalar(add(vtable,0x60));need(thunk==add(image.image.base,0xFBA100)&&image.code(thunk),"GPU buffer constructor thunk mismatch");c.resource_object=m.scalar(add(table,U(index)*8));auto dimension=m.span(add(dims,U(index)*16),16),prefix=m.span(c.resource_object,32);U size=get<U>(prefix,8),buffer=get<U>(prefix,24);auto usage=get<std::uint32_t>(prefix,16);
+    U device=m.scalar(add(owner,8));need(range(device,0x280),"resource GPU device invalid");U interface=m.scalar(add(device,0x278));need(range(interface,8),"GPU backend interface invalid");U vtable=m.scalar(interface);need(image.inside(add(image.image.base,0x1dc7cf0),0x68)&&vtable==add(image.image.base,0x1dc7cf0),"GPU backend vtable mismatch");
+    U thunk=m.scalar(add(vtable,0x60));need(thunk==add(image.image.base,0xfd30d0)&&image.code(thunk),"GPU buffer constructor thunk mismatch");c.resource_object=m.scalar(add(table,U(index)*8));auto dimension=m.span(add(dims,U(index)*16),16),prefix=m.span(c.resource_object,32);U size=get<U>(prefix,8),buffer=get<U>(prefix,24);auto usage=get<std::uint32_t>(prefix,16);
     need(get<std::uint32_t>(prefix,0)==0x50001,"native buffer object tag mismatch");need(size==total&&size==get<U>(dimension,0)&&usage==0x13&&usage==get<std::uint32_t>(dimension,8),"native buffer size/usage mismatch");need(buffer,"native buffer is zero");c.native_buffer=buffer;c.native_buffer_bytes=size;
 }
 void models_and_buffer(Reader& m,Image& image,const Bytes& equipment,NativeOwnerCandidate& c){
@@ -323,17 +323,17 @@ bool capture_native_character_preview_owner(const NativeOwnerMemory& memory,cons
         allocation.root=c.root;allocation.client=c.client;allocation.controller=c.controller;
         allocation.main=m.scalar(c.controller+o::controllerMainOwnerOffset);
         need(range(allocation.main,0x466b08),"preview has no current local world");
-        // Exact-image player Character callbacks856ba0/856e00/8578a0 use this
+        // Exact-image player Character callbacks use this Main-owned
         // renderer. It owns its own manager, not the gameplay RenderEquipment.
         c.renderer=m.scalar(allocation.main+0x466b00);
         allocation.render_scene=m.scalar(add(c.renderer,0x20));
-        // f1b50 receives RenderScene and forwards through its +0x98 manager.
+        // The original scene accessor forwards through its +0x98 manager.
         allocation.model_manager=m.scalar(add(allocation.render_scene,0x98));
         const U body=m.scalar(add(c.renderer,0x58)),count=m.scalar(add(c.renderer,0x60)),capacity=m.scalar(add(c.renderer,0x68));
         need(count<=capacity&&capacity&&capacity<=64&&range(body,mul(capacity,4)),"preview body allocation invalid");
         std::vector<std::uint32_t> handles;handles.reserve(112);
         if(count){const auto values=m.span(body,count*4);for(U i=0;i<count;++i)handles.push_back(get<std::uint32_t>(values,i*4));}
-        //23e250 creates the body vector;23fee0 owns two model handles in each
+        //The original Character owns the body vector and two model handles in each
         // of24 equipment slots. Guard consumed handles only, never pose bytes.
         for(unsigned i=0;i<24;++i)for(U offset:{U(0x10c),U(0x120)})
             handles.push_back(m.scalar<std::uint32_t>(add(c.renderer,offset+U(i)*0x28)));

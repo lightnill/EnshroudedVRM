@@ -78,11 +78,11 @@ int main(){try{
     handoff.configure(1,2,3,30,77);
     check(while_report_paused(handoff,[&]{retired=handoff.retire_owner(88);retained=handoff.active();}),"unrelated backend retirement");
     check(!retired&&retained,"unrelated backend was revoked");
-    trace.configure(0x140000000ULL,44163072,30,99);
-    check(while_report_paused(trace,[&]{trace.configure(0x140000000ULL,44163072,31,100);revoked=!trace.matches(30);}),"ancestry source publication");
+    trace.configure(0x140000000ULL,44302336,30,99);
+    check(while_report_paused(trace,[&]{trace.configure(0x140000000ULL,44302336,31,100);revoked=!trace.matches(30);}),"ancestry source publication");
     check(revoked,"contended ancestry source retained old filter");
     for(bool pause_handoff:{false,true}){
-        handoff.configure(1,2,3,30,77);trace.configure(0x140000000ULL,44163072,30,99);forwarded=metadata_retired=0;
+        handoff.configure(1,2,3,30,77);trace.configure(0x140000000ULL,44302336,30,99);forwarded=metadata_retired=0;
         const auto destroy=[] {vkDestroyBuffer(reinterpret_cast<VkDevice>(1),reinterpret_cast<VkBuffer>(30),nullptr);};
         const bool prompt=pause_handoff?while_report_paused(handoff,destroy):while_report_paused(trace,destroy);
         check(prompt,pause_handoff?"actual destruction forwarding behind handoff report":"actual destruction forwarding behind ancestry report");

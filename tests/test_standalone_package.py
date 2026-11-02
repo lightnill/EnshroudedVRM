@@ -37,6 +37,8 @@ class StandalonePackageTests(unittest.TestCase):
         self.base_payload={name.removeprefix('EnshroudedVRM/'):('accepted '+name).encode() for name in self.module.BASE_TARGET_MEMBERS if name!='vulkan-1.dll'}
         self.base_payload['Runtime/enshrouded_vrm_runtime.dll']=pe('old runtime')
         self.base_payload['Runtime/OVRLipSync.dll']=self.sdk
+        self.base_payload['Compatibility/profile.json']=encoded({'schema':'enshrouded-native-rig-profile-v1','game':{'executable_sha256':'d'*64},'hierarchy_guid':'owned-rig','joint_count':2,'source_rest_global':[[1,0,0,0]],'semantic_to_joint':{'hips':0}})
+        self.base_payload['Compatibility/catalog.json']=encoded({'schema':'enshrouded-player-catalog-v2','game':{'executable_sha256':'d'*64},'hierarchy_guid':'owned-rig','joint_count':2,'descriptor_signatures':[{'owned':'palette'}]})
         for name in self.module.BASE_SHADER_NAMES:self.base_payload['Runtime/shaders/'+name]=struct.pack('<IIIII',0x07230203,0x10000,0,1,0)
         for name in self.module.SCRIPT_NAMES:self.base_payload[name]=b'retired player script'
         self.info={'version':'0.2.0','runtimeSha256':sha(self.base_payload['Runtime/enshrouded_vrm_runtime.dll']),
@@ -51,6 +53,8 @@ class StandalonePackageTests(unittest.TestCase):
         for name,relative in self.module.LOCAL_MEMBERS.items():
             path=self.source/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(('new standalone '+name).encode())
         (self.source/'portable/standalone_layer.json').write_bytes((ROOT/'portable/standalone_layer.json').read_bytes())
+        document=self.source/'portable/standalone_docs/LEIA-ME-PT-BR.txt'
+        document.parent.mkdir(parents=True,exist_ok=True);document.write_text('Guia de instalação em português: Steam e F8.\n',encoding='utf-8')
         self.runtime=self.folder/'runtime.dll';self.runtime.write_bytes(pe('owned new runtime'))
         self.bootstrap=self.folder/'vulkan-1.dll';self.bootstrap.write_bytes(pe('EnshroudedVRM standalone bootstrap'))
         self.shaders=self.folder/'shaders';self.shaders.mkdir()
@@ -89,17 +93,47 @@ class StandalonePackageTests(unittest.TestCase):
         self.build();other=self.folder/'other.zip';self.build(output=other)
         self.assertEqual(self.output.read_bytes(),other.read_bytes())
         with zipfile.ZipFile(self.output) as archive:
-            names=set(archive.namelist());self.assertEqual(names,set(self.module.TARGET_MEMBERS)|{'EnshroudedVRM/release-manifest.json'})
-            self.assertEqual({name.split('/')[0] for name in names},{'vulkan-1.dll','EnshroudedVRM'})
+            names=set(archive.namelist());self.assertEqual(names,set(self.module.TARGET_MEMBERS)|{'EnshroudedVRM/release-manifest.json','LEIA-ME-PT-BR.txt'})
+            self.assertEqual({name.split('/')[0] for name in names},{'vulkan-1.dll','EnshroudedVRM','LEIA-ME-PT-BR.txt'})
             self.assertNotIn('powrprof.dll', names)
             self.assertEqual({name for name in names if name.lower().endswith('.vrm')},{'EnshroudedVRM/Avatars/vroid-sample.vrm'})
             self.assertFalse(any(name.lower().endswith(('.cmd','.bat','.ps1','.psm1','.exe','.wav')) or '/State/' in name for name in names))
             manifest=json.loads(archive.read('EnshroudedVRM/release-manifest.json'))
             self.assertEqual(manifest['schema'],'enshrouded-vrm-standalone-v1');self.assertEqual(manifest['publication_status'],'private-development')
-            self.assertEqual({x['path']:x['sha256'] for x in manifest['files']},{name:sha(archive.read(name)) for name in names if not name.endswith('release-manifest.json')})
+            self.assertEqual({x['path']:x['sha256'] for x in manifest['files']},{name:sha(archive.read(name)) for name in self.module.TARGET_MEMBERS})
             info=json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))
             self.assertEqual(info['basePackageSha256'],self.base_hash);self.assertNotIn('validation',info)
             self.assertEqual(info['bootstrapSha256'],sha(self.bootstrap.read_bytes()));self.assertTrue(info['sourceInputs'])
+
+    def test_new_game_hash_is_consistent_and_capture_data_preserved(self):
+        self.build()
+        with zipfile.ZipFile(self.output) as archive:
+            manifest=json.loads(archive.read('EnshroudedVRM/release-manifest.json'))
+            expected='0403981fd2e8ad18bd8c5698dff03c8d505b5a46677832c496db9c645513f2a6'
+            self.assertEqual(manifest['game_sha256'],expected)
+            for kind,capture in [('profile','rig_capture_game'),('catalog','catalog_capture_game')]:
+                before=json.loads(self.base_payload['Compatibility/'+kind+'.json'])
+                after=json.loads(archive.read('EnshroudedVRM/Compatibility/'+kind+'.json'))
+                self.assertEqual(after.pop(capture),before.pop('game'))
+                self.assertEqual(after.pop('game')['executable_sha256'],expected)
+                self.assertEqual(after,before)
+
+    def test_portuguese_guide_is_bundled_and_hash_attributed(self):
+        self.build()
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertIn('LEIA-ME-PT-BR.txt',archive.namelist())
+            content=archive.read('LEIA-ME-PT-BR.txt')
+            self.assertEqual(content,(self.source/'portable/standalone_docs/LEIA-ME-PT-BR.txt').read_bytes())
+            self.assertIn('português',content.decode('utf-8'))
+            info=json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))
+            self.assertEqual(info['supplementalDocuments'],{'LEIA-ME-PT-BR.txt':sha(content)})
+
+    def test_mixed_base_compatibility_metadata_is_declined(self):
+        catalog=json.loads(self.base_payload['Compatibility/catalog.json'])
+        catalog['game']['executable_sha256']='e'*64
+        self.base_payload['Compatibility/catalog.json']=encoded(catalog);self.write_base()
+        with self.assertRaises(ValueError):self.build()
+        self.assertFalse(self.output.exists())
 
     def test_wrong_baseline_and_input_hashes_declined(self):
         for change in [{'base_sha256':'0'*64},{'runtime_sha256':'0'*64},{'bootstrap_sha256':'0'*64}]:
@@ -129,7 +163,7 @@ class StandalonePackageTests(unittest.TestCase):
                 metadata=json.loads(archive.read(name))
                 self.assertEqual(metadata['version'],'0.3.0')
                 self.assertEqual(metadata['publication_status'],'preview')
-            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.2')
+            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.3')
             self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['bootstrapMetadataVersion'],'0.2.0-standalone-dev')
 
     def test_unknown_publication_status_is_declined(self):

@@ -19,8 +19,8 @@ class NativePreviewHandoffCalls {
     static U add(U pointer,U offset)noexcept{return pointer<0x800000000000ULL&&offset<0x800000000000ULL-pointer?pointer+offset:0;}
     unsigned origin(U caller)const noexcept {
         if(caller<base_)return 0;
-        switch(caller-base_){case 0xb9eaf5:return 1;case 0xbe1f83:return 2;case 0xbfe9b1:return 3;
-            case 0xc37998:return 4;case 0xc5b539:return 5;case 0xc5e365:return 6;default:return 0;}
+        switch(caller-base_){case 0xbadb95:return 1;case 0xbf150f:return 2;case 0xc0e001:return 3;
+            case 0xc47438:return 4;case 0xc6cda9:return 5;case 0xc70e65:return 6;default:return 0;}
     }
     struct Scope {
         NativePreviewHandoffLabel& slot;NativePreviewHandoffLabel previous;
@@ -42,7 +42,7 @@ public:
         if(!source.epoch&&history_.active())history_.unavailable(source);
         const bool app_read=source.epoch&&scalar(add(app,0xd0),ui);
         const bool ours=app_read&&ui==add(source.client,0x730);
-        const auto slot=add(ui,0x33cd8);
+        const auto slot=add(ui,0x33cf8);
         const bool valid=ours&&scalar(add(slot,0x8d0),before)&&before<=1;
         if((source.epoch&&!app_read)||(ours&&(!valid||!before)))history_.unavailable(source);
         original(app,payload,color); // Exactly once, including unreadable diagnostics.
@@ -52,10 +52,10 @@ public:
         history_.request(source,origin(caller),!before&&after==1,tick);
     }
     template<class F>void render(F&& original,U renderer,U view,U frame,U target,U payload,U caller,U tick){
-        const auto source=history_.source();const bool supported=source.epoch&&renderer==source.renderer&&caller>=base_&&caller-base_==0x857d19;
+        const auto source=history_.source();const bool supported=source.epoch&&renderer==source.renderer&&caller>=base_&&caller-base_==0x861d49;
         bool copied=false;
         if(supported){std::array<unsigned char,0x8d4> expected{},packet{};
-            copied=bytes(add(source.client,0x34408),expected.data(),expected.size())&&bytes(payload,packet.data(),packet.size())&&
+            copied=bytes(add(source.client,0x34428),expected.data(),expected.size())&&bytes(payload,packet.data(),packet.size())&&
                 expected[0x8d0]==1&&packet[0x8d0]==1&&expected==packet;}
         const auto label=history_.render(source,supported,copied,tick);
         Scope scope(thread_.rendering,label);original(renderer,view,frame,target,payload);

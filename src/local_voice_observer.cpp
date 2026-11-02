@@ -16,7 +16,7 @@
 
 namespace evrm {
 namespace {
-constexpr std::uint32_t encoder_rva=0x70fe90,call_rva=0xaa1bfc;
+constexpr std::uint32_t encoder_rva=0x719720,call_rva=0xaaeb7c;
 struct Handle {
     HANDLE value=INVALID_HANDLE_VALUE;
     ~Handle(){if(value!=INVALID_HANDLE_VALUE)CloseHandle(value);}

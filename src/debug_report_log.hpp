@@ -53,7 +53,7 @@ inline std::string debug_report_safe_event(std::string_view source)noexcept {
         // exception table. They are not addresses or player identifiers.
         if(name=="preview-ownership.sample"){
             constexpr std::string_view keys[]={"stage","path-mask","stack-depth","game-depth","group-0","group-1","group-2","group-3","group-4","group-5","elapsed-us","age-ms"};
-            constexpr std::uint32_t maxima[]={3,15,64,6,72746,72746,72746,72746,72746,72746,1000000,120000};
+            constexpr std::uint32_t maxima[]={3,15,64,6,72886,72886,72886,72886,72886,72886,1000000,120000};
             std::string output(name);bool stage=false,path=false;
             for(std::size_t i=0;i<std::size(keys);++i){const auto token=report_log_detail::field(source,keys[i]);if(token.empty())continue;
                 std::uint32_t value=0;const auto parsed=std::from_chars(token.data(),token.data()+token.size(),value);

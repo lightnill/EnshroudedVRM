@@ -1,3 +1,15 @@
+# EnshroudedVRM 0.3.3 — game build 26320373 compatibility
+
+- Update the exact supported game identity, reflected component table, ownership/service layouts, preview calls, equipment publication and Game voice locations for Steam build26320373.
+- Preserve explicit local-player selection and per-request/captured-pose inventory ownership. Survivor previews stay native; existing lifetime and work/pose-age checks remain.
+- Keep the previously accepted bootstrap, shaders, sample avatar, settings format and feature behavior. Runtime file version becomes0.3.3.
+- Add README.pt-BR.md and a bundled LEIA-ME-PT-BR.txt with step-by-step installation, folder layout, F8/model/voice setup and troubleshooting.
+- Keep0.3.2 available for the previous Steam build26082781 (resource1273043); do not mix packages across game patches.
+
+The selected implementation passed desktop startup/F8, world/equipment, inventory-survivor-inventory, title/character reload and both voice-source checks. CPU/static checks and exact release scan coverage are recorded separately. Wider Ultra-fog scene coverage, persistence on this patch, optional report screenshots and laptop testing remain coverage gaps; no general FPS guarantee is made. The report still records capture-time settings without voice-history events.
+
+---
+
 # EnshroudedVRM 0.3.2 — local ownership, correct previews and debug reports
 
 - Resolve world ownership through the game's explicit local-player selector and direct entity lookup.

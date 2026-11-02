@@ -1,9 +1,14 @@
 // Complete synthetic layout in owned CPU memory; no game, module or GPU use.
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include "../src/native_owner.hpp"
 #include "../src/native_owner_profile.hpp"
+#include "game_26320373_fixture.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -42,7 +47,7 @@ struct Memory:evrm::NativeOwnerMemory{
 };
 struct Fixture{
     static constexpr U capacity=8192,population=6500,registrations=600;
-    Bytes image=Bytes(p::image_size),client=Bytes(218000),controller=Bytes(448),main=Bytes(480),execution=Bytes(15000000),
+    Bytes image=Bytes(game_26320373_fixture::image_size),client=Bytes(218000),controller=Bytes(448),main=Bytes(480),execution=Bytes(15000000),
         rows=Bytes(registrations*256),sizes=Bytes(registrations*2),types=Bytes(registrations*8),callbacks=Bytes(registrations*40),
         table=Bytes(capacity*8),keys=Bytes(capacity*4),occupancy=Bytes(capacity/8),entities=Bytes(population*64),
         ordinary=Bytes(5500),player=Bytes(5500),storage=Bytes(1600),services=Bytes(464),service_bits=Bytes(8),service_keys=Bytes(8),service_values=Bytes(4),local_player=Bytes(8),
@@ -55,19 +60,20 @@ struct Fixture{
         memory.owned={&image,&client,&controller,&main,&execution,&rows,&sizes,&types,&callbacks,&table,&keys,&occupancy,&entities,
             &ordinary,&player,&storage,&services,&service_bits,&service_keys,&service_values,&local_player,&scene,&manager,&records,&generations,&writer,
             &resource_owner,&device,&interface,&resource_table,&dimensions,&resource};
-        identity.base=address(image);identity.size=p::image_size;identity.timestamp=p::image_timestamp;
-        std::copy(std::begin(p::image_sha256),std::end(p::image_sha256),identity.sha256.begin());memory.dos=identity.base;
+        namespace game=game_26320373_fixture;
+        identity.base=address(image);identity.size=game::image_size;identity.timestamp=game::image_timestamp;
+        identity.sha256=game::image_sha256;memory.dos=identity.base;
         image[0]='M';image[1]='Z';put<std::uint32_t>(image,0x3c,128);put<std::uint32_t>(image,128,0x4550);
         put<std::uint16_t>(image,132,0x8664);put<std::uint16_t>(image,134,1);put(image,136,identity.timestamp);put<std::uint16_t>(image,148,64);
         put<std::uint16_t>(image,152,0x20b);put<std::uint32_t>(image,208,std::uint32_t(identity.size));
         put<std::uint32_t>(image,224,std::uint32_t(identity.size));put<std::uint32_t>(image,228,0);put<std::uint32_t>(image,252,0x20000000);
-        put(image,p::ownerLayout::rootObjectRva,identity.base+p::ownerLayout::rootVtableRva);
-        put(image,p::ownerLayout::rootObjectRva+p::ownerLayout::clientPointerOffset,address(client));
-        put(client,0,identity.base+p::ownerLayout::clientVtableRva);put(client,p::ownerLayout::controllerPointerOffset,address(controller));
-        put(controller,0,identity.base+p::ownerLayout::controllerVtableRva);put(controller,40,address(client));put(controller,440,address(main));put(main,464,address(execution));
-        registry=address(execution)+2344;entity_manager=address(execution)+p::ecsReadLayout::executionEntityManagerOffset;
-        put(execution,p::ecsReadLayout::executionEntityManagerOffset,registry);
-        const auto em=p::ecsReadLayout::executionEntityManagerOffset;
+        put(image,game::root,identity.base+game::root_vtable);
+        put(image,game::root+600,address(client));
+        put(client,0,identity.base+game::client_vtable);put(client,game::controller_offset,address(controller));
+        put(controller,0,identity.base+game::controller_vtable);put(controller,40,address(client));put(controller,440,address(main));put(main,464,address(execution));
+        registry=address(execution)+2344;entity_manager=address(execution)+game::entity_manager_offset;
+        put(execution,game::entity_manager_offset,registry);
+        const auto em=game::entity_manager_offset;
         put(execution,em+p::ecsReadLayout::entityManagerCount,capacity);put(execution,em+p::ecsReadLayout::entityManagerTable,address(table));
         put(execution,em+p::ecsReadLayout::entityManagerKeys,address(keys));put(execution,em+p::ecsReadLayout::entityManagerOccupancy,address(occupancy));
         std::vector<const p::ReflectedType*> selected;
@@ -96,6 +102,9 @@ struct Fixture{
         }
         while((occupancy[unused_slot/8]>>(unused_slot%8))&1)++unused_slot;
         using namespace p::serviceLayout;
+        constexpr U systemCountOffset=game::system_count,systemsOffset=game::systems,systemStride=game::system_stride;
+        constexpr U systemNormalCountOffset=game::normal_count,systemAlternateCountOffset=game::alternate_count;
+        constexpr U systemNormalBindingsOffset=game::normal_bindings,systemAlternateBindingsOffset=game::alternate_bindings;
         reg(recordsPointerOffset,address(services));reg(recordCountOffset,U(2));reg(mapBitsOffset,address(service_bits));reg(mapCapacityOffset,U(2));
         reg(mapKeysOffset,address(service_keys));reg(mapValuesOffset,address(service_values));reg(mapCountOffset,std::uint32_t(2));
         const char* service_rows[]={"RenderScene","LocalPlayerData"};const U service_pointers[]={address(scene),address(local_player)};
@@ -103,15 +112,15 @@ struct Fixture{
             service_bits[slot/8]|=std::uint8_t(1u<<(slot%8));put(service_keys,slot*4,hash(service_rows[i]));put<std::uint16_t>(service_values,slot*2,std::uint16_t(i));
             const U at=i*232;put(services,at,text(service_rows[i]));put<U>(services,at+8,std::strlen(service_rows[i]));put(services,at+160,hash(service_rows[i]));put(services,at+168,service_pointers[i]);put(services,at+176,service_pointers[i]);}
         put<std::uint32_t>(local_player,4,1);
-        const U descriptor=identity.base+0x1ddde80,function=identity.base+0x383030;
-        put(image,0x1ddde80,text("render_equipment_models_ag2"));put<U>(image,0x1ddde88,std::strlen("render_equipment_models_ag2"));put(image,0x1ddde90,function);
+        const U descriptor=identity.base+game::equipment_descriptor,function=identity.base+game::equipment_function;
+        put(image,game::equipment_descriptor,text("render_equipment_models_ag2"));put<U>(image,game::equipment_descriptor+8,std::strlen("render_equipment_models_ag2"));put(image,game::equipment_descriptor+16,function);
         const char* service_names[]={"BasicPlayerInfos","CharacterPresetRegistry","ColorGradientRegistry","MaterialFeedbackRegistry","g38_items::ItemRegistry","RenderScene"};
         for(unsigned i=0;i<6;++i){put(image,0x180000+i*16,text(service_names[i]));put<U>(image,0x180008+i*16,std::strlen(service_names[i]));}
-        put(image,0x1ddde80+0x98,identity.base+0x180000);put<U>(image,0x1ddde80+0xa0,5);put(image,0x1ddde80+0xb0,identity.base+0x180050);put<U>(image,0x1ddde80+0xb8,1);
+        put(image,game::equipment_descriptor+0x98,identity.base+0x180000);put<U>(image,game::equipment_descriptor+0xa0,5);put(image,game::equipment_descriptor+0xb0,identity.base+0x180050);put<U>(image,game::equipment_descriptor+0xb8,1);
         reg(systemCountOffset,std::uint16_t(3));reg(systemsOffset,descriptor);reg(systemsOffset+0x28,function);
         reg(systemsOffset+systemNormalCountOffset,std::uint8_t(6));reg(systemsOffset+systemAlternateCountOffset,std::uint8_t(6));
         reg(systemsOffset+systemNormalBindingsOffset+40,address(scene));reg(systemsOffset+systemAlternateBindingsOffset+40,address(scene));
-        const char* local_names[]={"local_player_hide","local_player_ui_render_setup"};const U local_descriptors[]={0x1ddd790,0x1ddd9e0},local_functions[]={0x382ac0,0x382c20};
+        const char* local_names[]={"local_player_hide","local_player_ui_render_setup"};const U local_descriptors[]={game::hide_descriptor,game::ui_descriptor},local_functions[]={game::hide_function,game::ui_function};
         const char* hide_services[]={"LocalPlayerCamera","LocalPlayerData"};const char* ui_services[]={"BasicPlayerInfos","CharacterPresetRegistry","LocalPlayerData","g38_items::ItemRegistry","G38UiPlayData"};
         for(unsigned j=0;j<2;++j){const U desc=local_descriptors[j],fn=identity.base+local_functions[j],views=0x181000+j*0x100,system=systemsOffset+(j+1)*systemStride;const unsigned n=j?5:2;
             put(image,desc,text(local_names[j]));put<U>(image,desc+8,std::strlen(local_names[j]));put(image,desc+16,fn);
@@ -119,11 +128,11 @@ struct Fixture{
             put(image,desc+0x98,identity.base+views);put<U>(image,desc+0xa0,j?4:2);if(j){put(image,desc+0xb0,identity.base+views+64);put<U>(image,desc+0xb8,1);}
             reg(system,identity.base+desc);reg(system+0x28,fn);reg(system+systemNormalCountOffset,std::uint8_t(n));reg(system+systemAlternateCountOffset,std::uint8_t(n));
             for(U binding:{systemNormalBindingsOffset,systemAlternateBindingsOffset})reg(system+binding+(j?2:1)*8,address(local_player));}
-        const std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};std::copy(std::begin(predicate),std::end(predicate),image.begin()+0x3b4fe0);
+        const std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};std::copy(std::begin(predicate),std::end(predicate),image.begin()+game::predicate);
         put(scene,0x98,address(manager));put(manager,0x1b0,address(records));put<U>(manager,0x1b8,records.size());put(manager,0x1c8,address(generations));put<U>(manager,0x1d0,64);put<std::uint32_t>(manager,0x48,64);put(manager,0x948,address(writer));generations[7]=1;
         put(writer,8,address(resource_owner));put<std::uint32_t>(writer,16,0);put<std::uint32_t>(writer,0x48,64*128);put<std::uint32_t>(writer,0xc0,64);
         put(resource_owner,8,address(device));put(resource_owner,0x268,address(resource_table));put<U>(resource_owner,0x270,1);put(resource_owner,0x280,address(dimensions));put<U>(resource_owner,0x288,1);
-        put(device,0x278,address(interface));put(interface,0,identity.base+0x1da69e0);put(image,0x1da69e0+0x60,identity.base+0xfba100);
+        put(device,0x278,address(interface));put(interface,0,identity.base+game::gpu_vtable);put(image,game::gpu_vtable+0x60,identity.base+game::buffer_constructor);
         put(resource_table,0,address(resource));put<U>(dimensions,0,64*128);put<std::uint32_t>(dimensions,8,0x13);
         put<std::uint32_t>(resource,0,0x50001);put<U>(resource,8,64*128);put<std::uint32_t>(resource,16,0x13);put<U>(resource,24,0x12340000);
     }

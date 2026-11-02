@@ -1,0 +1,117 @@
+{
+  "version": "0.3.3",
+  "recordedAtUtc": "2026-11-02T20:07:32.002221+00:00",
+  "maliciousOrSuspiciousDetections": 0,
+  "bitdefender": [
+    {
+      "kind": "runtime",
+      "sha256": "0d26802890e541fed604da94200959469979ef96bb407d2757065f416ad2e9d6",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "bootstrap",
+      "sha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "voice-sdk",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "members",
+      "sha256": null,
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "archive",
+      "sha256": "804e17df29c516ca74b049c15465b98e0117b8e37b301a67eb3f672f27d71f3d",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    }
+  ],
+  "virusTotal": [
+    {
+      "kind": "runtime",
+      "sha256": "0d26802890e541fed604da94200959469979ef96bb407d2757065f416ad2e9d6",
+      "analysisDate": "2026-11-02T20:06:19Z",
+      "retrievedAt": "2026-11-02T20:07:57.737952+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/0d26802890e541fed604da94200959469979ef96bb407d2757065f416ad2e9d6",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 71,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 0,
+        "type-unsupported": 4
+      },
+      "newFileSubmission": true
+    },
+    {
+      "kind": "archive",
+      "sha256": "804e17df29c516ca74b049c15465b98e0117b8e37b301a67eb3f672f27d71f3d",
+      "analysisDate": "2026-11-02T20:04:51Z",
+      "retrievedAt": "2026-11-02T20:07:56.354920+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/804e17df29c516ca74b049c15465b98e0117b8e37b301a67eb3f672f27d71f3d",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 65,
+        "harmless": 0,
+        "timeout": 2,
+        "confirmed-timeout": 0,
+        "failure": 1,
+        "type-unsupported": 7
+      },
+      "newFileSubmission": true
+    },
+    {
+      "kind": "bootstrap",
+      "sha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "analysisDate": "2026-11-01T00:13:47Z",
+      "retrievedAt": "2026-11-02T19:47:09.708180+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 71,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 0,
+        "type-unsupported": 4
+      },
+      "newFileSubmission": false
+    },
+    {
+      "kind": "voice-sdk",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "analysisDate": "2026-09-07T19:12:50Z",
+      "retrievedAt": "2026-11-02T19:47:08.037963+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 70,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 1,
+        "type-unsupported": 4
+      },
+      "newFileSubmission": false
+    }
+  ],
+  "coverage": "VirusTotal warns that this multi-file archive exceeds its full-content inspection limit. The three DLLs have separate exact-hash reports. Unchanged bootstrap/SDK reports retain their original analysis dates; lookup time is not scan time. Engine failures, timeouts and unsupported types are coverage gaps. Bitdefender separately scanned all44 extracted members and the exact ZIP. Zero detections do not guarantee safety."
+}

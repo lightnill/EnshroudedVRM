@@ -18,13 +18,13 @@
     }
   ],
   "multiplayer": "Local avatar only; synchronization is not implemented",
-  "version": "0.3.2",
-  "releaseTag": "v0.3.2",
-  "packageName": "EnshroudedVRM-0.3.2.zip",
-  "packageSha256": "0587b67d2ae08394431b1cc1f734c47ae5a1e7d9a68354bf045a451e40ed15e1",
-  "runtimeSha256": "2af384d602a6db17608071d94b89e691c34c4b2257c102ec73adbda253369fea",
+  "version": "0.3.3",
+  "releaseTag": "v0.3.3",
+  "packageName": "EnshroudedVRM-0.3.3.zip",
+  "packageSha256": "804e17df29c516ca74b049c15465b98e0117b8e37b301a67eb3f672f27d71f3d",
+  "runtimeSha256": "0d26802890e541fed604da94200959469979ef96bb407d2757065f416ad2e9d6",
   "bootstrapSha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
-  "runtimeVersion": "0.3.2",
+  "runtimeVersion": "0.3.3",
   "bootstrapVersion": "0.2.0-standalone-dev",
   "sourceInputs": [
     {
@@ -69,11 +69,11 @@
     },
     {
       "path": "portable/package_standalone_release.py",
-      "sha256": "730b5864cfa0edeef36e7bc397fd33b6cefac7b04fe6c119641e3333da830f00"
+      "sha256": "b8164c147a5a79a987491d950d76d5998045d9673346821c34fb8c9277ddb8c7"
     },
     {
       "path": "portable/runtime.rc",
-      "sha256": "10536b987088ac1917c06eb8a6230d42aa5bb30c4c9c9a5ab0883228c6e3958a"
+      "sha256": "19ce72b340b891e4fbcd9ff385ea83256abe9481a07664afde20055915126c83"
     },
     {
       "path": "portable/standalone_docs/Avatars-README.txt",
@@ -81,23 +81,27 @@
     },
     {
       "path": "portable/standalone_docs/KNOWN-ISSUES.txt",
-      "sha256": "49509e8abe11f32c926f461f5ee27dbdc22b5c49d33ee0b1ceaf8f6bfdcbae22"
+      "sha256": "6df0ed38585a459cf85933fba9438466cbecb3de808f6cd30c577b50c6d8f7f4"
+    },
+    {
+      "path": "portable/standalone_docs/LEIA-ME-PT-BR.txt",
+      "sha256": "32647567d2ffe2633362ad80bbcde56eb79b892592ecbd610a622580921ac35f"
     },
     {
       "path": "portable/standalone_docs/MOD-SETTINGS.txt",
-      "sha256": "bc539db60368ac931ef5d463c97fdffb0c0e85f7031c2d3a9790505b3e6423c1"
+      "sha256": "4a8aca196925cf01a25d8e2b1db3c538d823eeca9331f86652fa5ac20eaa098a"
     },
     {
       "path": "portable/standalone_docs/README.txt",
-      "sha256": "ee86dacf9992938ec39ba82885dce65aef3efcb4d6279d6aeeb97b25aa0533ca"
+      "sha256": "62c2e6c05d4550f2630ab758a7aaddd088e6d5e4160f5840812e3eaebfe6200e"
     },
     {
       "path": "portable/standalone_docs/RELEASE-NOTES.md",
-      "sha256": "f359481d0bf26c8587683f5082d9d2aef7c15cec061d02093f43e0ce72e67c87"
+      "sha256": "3df0966cef31202a8b2896fa7e0d0c54b99053edf217822aba06e4bb3ed6144c"
     },
     {
       "path": "portable/standalone_docs/SECURITY.md",
-      "sha256": "56adea22384cc903a0970117ea42fa4cb8fd27944550f8d195a632fab973308a"
+      "sha256": "3842e16d67f31a015697a138bfbf7548ed23a480d09363e5daa49ad4acf8ca20"
     },
     {
       "path": "portable/standalone_docs/THIRD_PARTY_NOTICES.md",
@@ -249,7 +253,7 @@
     },
     {
       "path": "src/debug_report_log.hpp",
-      "sha256": "292683b3f59b61ed27964ef87e97d32bbad60a61d938a4d83a8aa9273ed403a5"
+      "sha256": "bfe3f120731cb30ee67f1b58c841cb88cd03e638a0e7d7c2f2ff7a349d6a21eb"
     },
     {
       "path": "src/debug_report_policy.cpp",
@@ -385,7 +389,7 @@
     },
     {
       "path": "src/local_voice_observation.cpp",
-      "sha256": "758ee5c72f835089f39a4a8751cf6e9ead374001cef017937aea61a7f14bc126"
+      "sha256": "b9155adb22fe58d5b411152a9a43fa79adb2da7ce598bf129efc80bc6cac2f38"
     },
     {
       "path": "src/local_voice_observation.hpp",
@@ -393,7 +397,7 @@
     },
     {
       "path": "src/local_voice_observer.cpp",
-      "sha256": "423c7e26bed93b6284839ec970012d640346a032914fbbe31141b1224c17dd86"
+      "sha256": "d06398c670c51b2409a310a31e87f1a5402aac8bb728874fb19afb4687138c75"
     },
     {
       "path": "src/local_voice_observer.hpp",
@@ -433,7 +437,7 @@
     },
     {
       "path": "src/mod_input_win32.cpp",
-      "sha256": "282a97c3ea3df8e8a023512f00804c1aaed0b77ae9f26253ecf7019274b96c45"
+      "sha256": "edec8f28abeb9b6992550ef94f31076312315ff6467a2734cb2eb29e7d121cd4"
     },
     {
       "path": "src/mod_input_win32.hpp",
@@ -645,7 +649,7 @@
     },
     {
       "path": "src/native_owner.cpp",
-      "sha256": "efd7ea05eb92371b4b132743183bd01093edcaf3c3744e4bca1bae69eade1d08"
+      "sha256": "1b600ff31731b7f9552bac7e0d6b8875242f0a3ccec999251d66e8c5399640d6"
     },
     {
       "path": "src/native_owner.hpp",
@@ -653,7 +657,7 @@
     },
     {
       "path": "src/native_owner_process.cpp",
-      "sha256": "25fa90eb56daeac90841d8fb8969d9fc8b1471d2b9c16778ac1f3cf52f719517"
+      "sha256": "2cd7caf724712842a0c83e863ce0d1686620c4d4dc5bb3926d0ff084d2bfa9cd"
     },
     {
       "path": "src/native_owner_process.hpp",
@@ -661,7 +665,7 @@
     },
     {
       "path": "src/native_owner_profile.hpp",
-      "sha256": "5562e209f358bf1c5ca978aa4777af797c6ef04d92d742815b23745d0f771819"
+      "sha256": "035344aaf2f9b74b1ccdc9ddfd5ab7d2193bb1303ac3bf599982c945e860055e"
     },
     {
       "path": "src/native_pose_owner.hpp",
@@ -673,7 +677,7 @@
     },
     {
       "path": "src/native_preview_handoff.cpp",
-      "sha256": "0f25a4004930a8ca1f4311e5193ea88230e700da0f004b41685f7329f722a2ae"
+      "sha256": "74a040884bbd32cd345653636489e73e65b2cf3320dad7cb9ef20a163b66afd3"
     },
     {
       "path": "src/native_preview_handoff.hpp",
@@ -681,7 +685,7 @@
     },
     {
       "path": "src/native_preview_handoff_calls.hpp",
-      "sha256": "e7c03bbcb6a9708e10526ee73bea59f9af657ed02fb4781e4ca7034a0b26c5d6"
+      "sha256": "8d1c06375fb4c5b56902f7d1d5a2ed0b6606b8b96bc8950f4221f1d776821502"
     },
     {
       "path": "src/native_preview_subject.hpp",
@@ -689,11 +693,11 @@
     },
     {
       "path": "src/native_preview_subject_calls.hpp",
-      "sha256": "721ed073b85cf72f78568cf443349eed8e302f20e5409c5328412c958ba7664a"
+      "sha256": "39a8f2f694b9a4b43d6c0997b662479ca6937d56f5d9ad4ae6f1d7961783edf6"
     },
     {
       "path": "src/native_preview_trace.hpp",
-      "sha256": "efbadcf221f2143c359a74c5393e17ea850b79ad5fbc5ac38368e046b375880e"
+      "sha256": "150483be1b5605fe510fe6e1e7067873c06f6600bc185ea393d360e461edf3f0"
     },
     {
       "path": "src/native_publication.hpp",
@@ -757,7 +761,7 @@
     },
     {
       "path": "src/native_tool_slot_target.cpp",
-      "sha256": "3b0212d4ea394da9765755205abe9dc45c19088b4a285e773aae2c4b15c198ba"
+      "sha256": "f20c7899ffe43675df25d7073d4a08131a34d36c62edc75ea3b6d37e4f2084a9"
     },
     {
       "path": "src/native_tool_slots.cpp",
@@ -1172,24 +1176,24 @@
     "native_skinning.finalize.spv": "e8675edd8de96e5ae7a0594ae2bed29aa6650f5cce932bf5edfb7f9d6c7082fd",
     "native_volume_snapshot.comp.spv": "31305bfdccb504f29b719e08d06aa4557c2402bbd5da3b63b9da36bfaf938fd5"
   },
-  "publishedBaselineTag": "v0.3.1",
+  "publishedBaselineTag": "v0.3.2",
   "startup": "Normal Steam launch with game-local Vulkan bootstrap; all avatar/voice/material configuration in F8",
   "nativeBuild": {
-    "runtime": "Rebuilt GCC Windows x64 runtime; only .rsrc changes from manually accepted local preview-ownership build.",
-    "bootstrap": "Retained unchanged tested Microsoft-built binary; independent file version 0.2.0-standalone-dev",
+    "runtime": "GCC Windows x64 rebuild of the user-tested game26320373 implementation; only .rsrc version information changes.",
+    "bootstrap": "Retained unchanged Microsoft-built bootstrap; independent file version0.2.0-standalone-dev",
     "nativeDllsReusedUnchanged": false
   },
   "validation": {
-    "selectedCpuSuiteMethodsPassed": 87,
-    "finalPackagingMethodsPassed": 15,
-    "uniqueSelectedMethodsPassed": 88,
+    "cpuMethodsPassed": 101,
     "skipped": 0,
-    "sourceVerificationScope": "87 CPU/source/import/package methods passed. A later packaging-only fog-pin correction added one regression and reran the complete 15-method package module; 88 distinct methods across both runs. Compiled runtime source is unchanged; static PE comparison found only .rsrc changed from the manually accepted build. No new candidate DLL/game/GPU execution.",
-    "packageMembers": 43,
+    "packageConstructorCasesPassed": 3,
+    "packageMembers": 44,
     "manifestEntries": 42,
+    "supplementalDocuments": 1,
     "deterministicArchive": true,
-    "manualValidation": "Selected local build passed user-run inventory/survivor/inventory, held equipment and title/character reload checks. New text-only report path has desktop manual evidence. Exact versioned release needs wider cross-machine, optional screenshot and map-interpretation tests.",
-    "scanRecords": "validation/0.3.2/SCAN-RESULTS-0.3.2.json"
+    "manualValidation": "User confirmed normal Steam startup/F8, world avatar and equipment, inventory/survivor/inventory, title/character reload and both Game voice/Local microphone lip sync. Same-session Game voice counters confirm speech analysis. This is desktop evidence for the selected implementation, not an all-hardware guarantee.",
+    "remainingCoverage": "Fresh Ultra-fog hotspots, model/material restart persistence, optional report screenshots and laptop testing on this game patch are not claimed. Multiplayer synchronization is not implemented. CPU timings are not displayed FPS.",
+    "scanRecords": "validation/0.3.3/SCAN-RESULTS-0.3.3.json"
   },
   "sourceHashNormalization": "Exact bytes; no text normalization. No source/test audio or SDK DLL is included in Git history.",
   "publicBinarySourceAssets": [
@@ -1222,8 +1226,8 @@
     },
     {
       "path": "BUILDING.md",
-      "sha256": "fbb2c65f795aacf71367649266ea7ec8f9381eaf6cff5910677d09a646974388",
-      "bytes": 10027
+      "sha256": "5e242c5c742888ef1b2b8c6a0517bd857899b56f564f594fc1b46934f10942a6",
+      "bytes": 10576
     },
     {
       "path": "docs/compatibility/hands-free-lantern.md",
@@ -1247,8 +1251,8 @@
     },
     {
       "path": "KNOWN-ISSUES.txt",
-      "sha256": "49509e8abe11f32c926f461f5ee27dbdc22b5c49d33ee0b1ceaf8f6bfdcbae22",
-      "bytes": 4739
+      "sha256": "6df0ed38585a459cf85933fba9438466cbecb3de808f6cd30c577b50c6d8f7f4",
+      "bytes": 5242
     },
     {
       "path": "LICENSE",
@@ -1362,8 +1366,8 @@
     },
     {
       "path": "portable/docs/NEXUS-DESCRIPTION.txt",
-      "sha256": "6f433f723d8637fafce0b42a7637fad08fd2c14c0a91fafef3881dc9aa78ba9b",
-      "bytes": 4641
+      "sha256": "4522dcd4089028625c2c3306a3f663a280b20294ad948c0457abcb5a0b9c6303",
+      "bytes": 3910
     },
     {
       "path": "portable/docs/README.txt",
@@ -1467,12 +1471,12 @@
     },
     {
       "path": "portable/package_standalone_release.py",
-      "sha256": "730b5864cfa0edeef36e7bc397fd33b6cefac7b04fe6c119641e3333da830f00",
-      "bytes": 24320
+      "sha256": "b8164c147a5a79a987491d950d76d5998045d9673346821c34fb8c9277ddb8c7",
+      "bytes": 26254
     },
     {
       "path": "portable/runtime.rc",
-      "sha256": "10536b987088ac1917c06eb8a6230d42aa5bb30c4c9c9a5ab0883228c6e3958a",
+      "sha256": "19ce72b340b891e4fbcd9ff385ea83256abe9481a07664afde20055915126c83",
       "bytes": 791
     },
     {
@@ -1507,28 +1511,33 @@
     },
     {
       "path": "portable/standalone_docs/KNOWN-ISSUES.txt",
-      "sha256": "49509e8abe11f32c926f461f5ee27dbdc22b5c49d33ee0b1ceaf8f6bfdcbae22",
-      "bytes": 4739
+      "sha256": "6df0ed38585a459cf85933fba9438466cbecb3de808f6cd30c577b50c6d8f7f4",
+      "bytes": 5242
+    },
+    {
+      "path": "portable/standalone_docs/LEIA-ME-PT-BR.txt",
+      "sha256": "32647567d2ffe2633362ad80bbcde56eb79b892592ecbd610a622580921ac35f",
+      "bytes": 8079
     },
     {
       "path": "portable/standalone_docs/MOD-SETTINGS.txt",
-      "sha256": "bc539db60368ac931ef5d463c97fdffb0c0e85f7031c2d3a9790505b3e6423c1",
+      "sha256": "4a8aca196925cf01a25d8e2b1db3c538d823eeca9331f86652fa5ac20eaa098a",
       "bytes": 2328
     },
     {
       "path": "portable/standalone_docs/README.txt",
-      "sha256": "ee86dacf9992938ec39ba82885dce65aef3efcb4d6279d6aeeb97b25aa0533ca",
-      "bytes": 4799
+      "sha256": "62c2e6c05d4550f2630ab758a7aaddd088e6d5e4160f5840812e3eaebfe6200e",
+      "bytes": 4988
     },
     {
       "path": "portable/standalone_docs/RELEASE-NOTES.md",
-      "sha256": "f359481d0bf26c8587683f5082d9d2aef7c15cec061d02093f43e0ce72e67c87",
-      "bytes": 5380
+      "sha256": "3df0966cef31202a8b2896fa7e0d0c54b99053edf217822aba06e4bb3ed6144c",
+      "bytes": 6691
     },
     {
       "path": "portable/standalone_docs/SECURITY.md",
-      "sha256": "56adea22384cc903a0970117ea42fa4cb8fd27944550f8d195a632fab973308a",
-      "bytes": 2986
+      "sha256": "3842e16d67f31a015697a138bfbf7548ed23a480d09363e5daa49ad4acf8ca20",
+      "bytes": 3171
     },
     {
       "path": "portable/standalone_docs/THIRD_PARTY_NOTICES.md",
@@ -1542,18 +1551,23 @@
     },
     {
       "path": "README.md",
-      "sha256": "7435cc0d5401d22c1ccbed882f14629a71220b8e4032b661a210b5f2e2e92313",
-      "bytes": 8131
+      "sha256": "cad4f38c1a1ba85467a2c221078707b52452984c2dc972591a38fad1d2134f7a",
+      "bytes": 9103
+    },
+    {
+      "path": "README.pt-BR.md",
+      "sha256": "32647567d2ffe2633362ad80bbcde56eb79b892592ecbd610a622580921ac35f",
+      "bytes": 8079
     },
     {
       "path": "RELEASE-NOTES.md",
-      "sha256": "f359481d0bf26c8587683f5082d9d2aef7c15cec061d02093f43e0ce72e67c87",
-      "bytes": 5380
+      "sha256": "3df0966cef31202a8b2896fa7e0d0c54b99053edf217822aba06e4bb3ed6144c",
+      "bytes": 6691
     },
     {
       "path": "SECURITY.md",
-      "sha256": "56adea22384cc903a0970117ea42fa4cb8fd27944550f8d195a632fab973308a",
-      "bytes": 2986
+      "sha256": "3842e16d67f31a015697a138bfbf7548ed23a480d09363e5daa49ad4acf8ca20",
+      "bytes": 3171
     },
     {
       "path": "shaders/avatar.hlsl",
@@ -1732,7 +1746,7 @@
     },
     {
       "path": "src/debug_report_log.hpp",
-      "sha256": "292683b3f59b61ed27964ef87e97d32bbad60a61d938a4d83a8aa9273ed403a5",
+      "sha256": "bfe3f120731cb30ee67f1b58c841cb88cd03e638a0e7d7c2f2ff7a349d6a21eb",
       "bytes": 8805
     },
     {
@@ -1902,8 +1916,8 @@
     },
     {
       "path": "src/local_voice_observation.cpp",
-      "sha256": "758ee5c72f835089f39a4a8751cf6e9ead374001cef017937aea61a7f14bc126",
-      "bytes": 6908
+      "sha256": "b9155adb22fe58d5b411152a9a43fa79adb2da7ce598bf129efc80bc6cac2f38",
+      "bytes": 6899
     },
     {
       "path": "src/local_voice_observation.hpp",
@@ -1912,7 +1926,7 @@
     },
     {
       "path": "src/local_voice_observer.cpp",
-      "sha256": "423c7e26bed93b6284839ec970012d640346a032914fbbe31141b1224c17dd86",
+      "sha256": "d06398c670c51b2409a310a31e87f1a5402aac8bb728874fb19afb4687138c75",
       "bytes": 19239
     },
     {
@@ -1962,8 +1976,8 @@
     },
     {
       "path": "src/mod_input_win32.cpp",
-      "sha256": "282a97c3ea3df8e8a023512f00804c1aaed0b77ae9f26253ecf7019274b96c45",
-      "bytes": 28428
+      "sha256": "edec8f28abeb9b6992550ef94f31076312315ff6467a2734cb2eb29e7d121cd4",
+      "bytes": 28515
     },
     {
       "path": "src/mod_input_win32.hpp",
@@ -2227,8 +2241,8 @@
     },
     {
       "path": "src/native_owner.cpp",
-      "sha256": "efd7ea05eb92371b4b132743183bd01093edcaf3c3744e4bca1bae69eade1d08",
-      "bytes": 47509
+      "sha256": "1b600ff31731b7f9552bac7e0d6b8875242f0a3ccec999251d66e8c5399640d6",
+      "bytes": 47017
     },
     {
       "path": "src/native_owner.hpp",
@@ -2237,8 +2251,8 @@
     },
     {
       "path": "src/native_owner_process.cpp",
-      "sha256": "25fa90eb56daeac90841d8fb8969d9fc8b1471d2b9c16778ac1f3cf52f719517",
-      "bytes": 11525
+      "sha256": "2cd7caf724712842a0c83e863ce0d1686620c4d4dc5bb3926d0ff084d2bfa9cd",
+      "bytes": 11401
     },
     {
       "path": "src/native_owner_process.hpp",
@@ -2247,8 +2261,8 @@
     },
     {
       "path": "src/native_owner_profile.hpp",
-      "sha256": "5562e209f358bf1c5ca978aa4777af797c6ef04d92d742815b23745d0f771819",
-      "bytes": 101707
+      "sha256": "035344aaf2f9b74b1ccdc9ddfd5ab7d2193bb1303ac3bf599982c945e860055e",
+      "bytes": 100192
     },
     {
       "path": "src/native_pose_owner.hpp",
@@ -2262,8 +2276,8 @@
     },
     {
       "path": "src/native_preview_handoff.cpp",
-      "sha256": "0f25a4004930a8ca1f4311e5193ea88230e700da0f004b41685f7329f722a2ae",
-      "bytes": 10828
+      "sha256": "74a040884bbd32cd345653636489e73e65b2cf3320dad7cb9ef20a163b66afd3",
+      "bytes": 10829
     },
     {
       "path": "src/native_preview_handoff.hpp",
@@ -2272,7 +2286,7 @@
     },
     {
       "path": "src/native_preview_handoff_calls.hpp",
-      "sha256": "e7c03bbcb6a9708e10526ee73bea59f9af657ed02fb4781e4ca7034a0b26c5d6",
+      "sha256": "8d1c06375fb4c5b56902f7d1d5a2ed0b6606b8b96bc8950f4221f1d776821502",
       "bytes": 4311
     },
     {
@@ -2282,13 +2296,13 @@
     },
     {
       "path": "src/native_preview_subject_calls.hpp",
-      "sha256": "721ed073b85cf72f78568cf443349eed8e302f20e5409c5328412c958ba7664a",
+      "sha256": "39a8f2f694b9a4b43d6c0997b662479ca6937d56f5d9ad4ae6f1d7961783edf6",
       "bytes": 6316
     },
     {
       "path": "src/native_preview_trace.hpp",
-      "sha256": "efbadcf221f2143c359a74c5393e17ea850b79ad5fbc5ac38368e046b375880e",
-      "bytes": 9331
+      "sha256": "150483be1b5605fe510fe6e1e7067873c06f6600bc185ea393d360e461edf3f0",
+      "bytes": 9247
     },
     {
       "path": "src/native_publication.hpp",
@@ -2367,8 +2381,8 @@
     },
     {
       "path": "src/native_tool_slot_target.cpp",
-      "sha256": "3b0212d4ea394da9765755205abe9dc45c19088b4a285e773aae2c4b15c198ba",
-      "bytes": 6986
+      "sha256": "f20c7899ffe43675df25d7073d4a08131a34d36c62edc75ea3b6d37e4f2084a9",
+      "bytes": 6920
     },
     {
       "path": "src/native_tool_slots.cpp",
@@ -2832,8 +2846,8 @@
     },
     {
       "path": "tests/debug_report_service.cpp",
-      "sha256": "51dcf4f60df8a6666943600b2f829a12e7643e0533abb3974da8600e3d4e15a8",
-      "bytes": 11395
+      "sha256": "9fad95ee494812ded483bc98bee694bc90223dad42bb2ee9ec21bc6f542e65c6",
+      "bytes": 11486
     },
     {
       "path": "tests/debug_report_sources.cpp",
@@ -2864,6 +2878,11 @@
       "path": "tests/fixtures/voice-public-speech-PROVENANCE.json",
       "sha256": "5ccaed3bc1c1ffeed78c5b860a0db6237f5c51759f80d13af7c16b2a5af86428",
       "bytes": 1092
+    },
+    {
+      "path": "tests/game_26320373_fixture.hpp",
+      "sha256": "22fd766b5378bf4be2c486963a2de6d234b4e02bd42be7c3399ce18824e011ac",
+      "bytes": 1509
     },
     {
       "path": "tests/gpu_probe_capture_frames.cpp",
@@ -2897,12 +2916,12 @@
     },
     {
       "path": "tests/local_voice_observation.cpp",
-      "sha256": "bb1106eb3646342a01144f51f9d38a635aca1410a53488f52b6d3dc8dac5ce51",
-      "bytes": 14282
+      "sha256": "d4e01ef522b802e2bcb4ee4b13c5c2d520545a49a0954008a79e9401658468c2",
+      "bytes": 14273
     },
     {
       "path": "tests/local_voice_observer.cpp",
-      "sha256": "40f2bd677893ca7b63d61d92591dc27ed5e18834ed99f7fce0d093ba93a067bc",
+      "sha256": "40a04b04b562767f7bf82123289e50d3249bf24b701de1eccd72aeef84e8f034",
       "bytes": 5283
     },
     {
@@ -3011,14 +3030,19 @@
       "bytes": 10077
     },
     {
+      "path": "tests/native_game_update.cpp",
+      "sha256": "665958c02189242c2f647bd601b23226d7d65df5cc09598d3a60c8e726fac922",
+      "bytes": 6936
+    },
+    {
       "path": "tests/native_local_selector.cpp",
-      "sha256": "f4446f83124bb8897a021ce4ef7f4728a7b469571bfc40089502b5bf80691832",
+      "sha256": "cf8d545116d15f37affb019265ae256068dabab78bd2ff66d414f2fdaa95c101",
       "bytes": 3611
     },
     {
       "path": "tests/native_owner_census.cpp",
-      "sha256": "57ae04019c6a2a1d559441a9adca3d7f1585ed3335561779b29d23bb711fe24e",
-      "bytes": 20206
+      "sha256": "ec4c73f23214c928943c0b5f02e4ea91e343e67d628d81dac3430db1d7a3f556",
+      "bytes": 20734
     },
     {
       "path": "tests/native_owner_census_storage.cpp",
@@ -3057,7 +3081,7 @@
     },
     {
       "path": "tests/native_preview_handoff_calls.cpp",
-      "sha256": "601bc1d2e2a6b032baa7e198542921d3d9088bbc98a5926f0b4615ddf88cc828",
+      "sha256": "bc86d6cc11bfa8e4849414cc71ff3d7d0104d2601ebbe5c33a17efa60d5b1563",
       "bytes": 4085
     },
     {
@@ -3067,12 +3091,12 @@
     },
     {
       "path": "tests/native_preview_report_contention.cpp",
-      "sha256": "88aab9e5275f3f3d95aea052a362d45540c53ee0c33bcf9ee5bb35864fcf47a7",
+      "sha256": "42b069af1ebb9be99e39a4e0bc1813de2a664b89c94010873629feb5afb91b2a",
       "bytes": 6761
     },
     {
       "path": "tests/native_preview_retirement.cpp",
-      "sha256": "5ed4d7b637a4bc45443e475de6a433c1e94e8a24b31795e667b8035f359873ca",
+      "sha256": "a569938dc3b7aa56e27bf114efef0cbfcdcb2a75d3932d0e1eb968592c433fb7",
       "bytes": 3146
     },
     {
@@ -3082,18 +3106,18 @@
     },
     {
       "path": "tests/native_preview_subject_calls.cpp",
-      "sha256": "39ff38ef6816a308b4ef2a45e014e37108e9759d5c8a2ce82bdd5380d9681f32",
+      "sha256": "7e4d019b2a8a6706fa30c9ccd8687936b11cd1d72c7f36b615289609d0fc2297",
       "bytes": 10464
     },
     {
       "path": "tests/native_preview_trace.cpp",
-      "sha256": "a4bea1207b2302b4f656ef77103e8762fc49422d36b80f315322182daf0f21e4",
-      "bytes": 3009
+      "sha256": "147115c26f1162ebe5383407b5c487f412cfbc27ca21f4e5118b1d36a0f7764c",
+      "bytes": 3035
     },
     {
       "path": "tests/native_preview_trace_export.cpp",
-      "sha256": "99500820f83a5794e9b26e144701293a246d40d0035ecbe15a88f9838cb9c1fe",
-      "bytes": 1455
+      "sha256": "7100114fbcb5be5e00be6edf4c60b26dc66a775ad644def4883f52aa4e67ac2e",
+      "bytes": 1467
     },
     {
       "path": "tests/native_preview_trace_wiring.cpp",
@@ -3302,13 +3326,18 @@
     },
     {
       "path": "tests/test_debug_report.py",
-      "sha256": "eaee630f373f916972eaaf3e2a5e2704df81951812b305b7bfd5b6498bf92d57",
-      "bytes": 9770
+      "sha256": "f553d21f1a5e71e8b7e075c3672c62d1983af015d856c1357459cfccd3c4c5bf",
+      "bytes": 9888
     },
     {
       "path": "tests/test_fallback_diagnostics.py",
       "sha256": "c57596efacd403d2b1dcb858fa79de19f87db468b0ad323140a001193e8d0a54",
       "bytes": 1058
+    },
+    {
+      "path": "tests/test_game_update.py",
+      "sha256": "f61f6e4bddbd706a5362239a4c27b39e1efe7d881c9b245165afb90826b74363",
+      "bytes": 1938
     },
     {
       "path": "tests/test_graphics_lifecycle.py",
@@ -3432,8 +3461,8 @@
     },
     {
       "path": "tests/test_standalone_package.py",
-      "sha256": "95fabea9397864e70c58a6c67de482783290296a17f88ad3d4885335ed341f92",
-      "bytes": 14638
+      "sha256": "980e3b4f66875f21aa2268d1bda6d408a748a2aa719f36c0024ce2d3523af302",
+      "bytes": 17261
     },
     {
       "path": "tests/test_standalone_runtime_dll.py",
@@ -3634,6 +3663,21 @@
       "path": "validation/0.3.2/SCAN-RESULTS-0.3.2.json",
       "sha256": "a4bc11bef9e983f995f3e2144fab59c5ae72a28a8edf3a1b07d0023175943181",
       "bytes": 4010
+    },
+    {
+      "path": "validation/0.3.3/package-verification.json",
+      "sha256": "295199697c60314a00b55c83da26ca9c7b8e03ab021ad507503a430c8680ad25",
+      "bytes": 38451
+    },
+    {
+      "path": "validation/0.3.3/README.md",
+      "sha256": "c88ca8d5c8d2338a5af1bd002388d10325122f2438c234cf12dcf4197f3ea0f6",
+      "bytes": 2139
+    },
+    {
+      "path": "validation/0.3.3/SCAN-RESULTS-0.3.3.json",
+      "sha256": "eca0caa2cd87011780032bef97440f79183d958e37ff2ca9db6862e99d07977d",
+      "bytes": 4097
     },
     {
       "path": "validation/hands-free-lantern-20261027/results.json",
@@ -3885,5 +3929,14 @@
       "sha256": "b061bd4672c939fbbfbcd8a923385f51276e4fea1c44b0b7035768378160b336",
       "bytes": 289320
     }
-  ]
+  ],
+  "supportedGame": {
+    "steamBuildId": "26320373",
+    "executableSha256": "0403981fd2e8ad18bd8c5698dff03c8d505b5a46677832c496db9c645513f2a6"
+  },
+  "previousGameVersion": {
+    "release": "0.3.2",
+    "steamBuildId": "26082781",
+    "resourceVersion": "1273043"
+  }
 }

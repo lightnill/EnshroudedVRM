@@ -53,11 +53,11 @@ bool resolve_native_tool_slot_target(const NativeOwnerMemory&memory,const Native
    else if(equipment)target.equipment_animation_sets=address;else target.client_ranged_weapon=address;
   }need(found==2&&target.client_slots&&target.render_transform,"unique client hand slot/transform storage unavailable");
   const auto systems=m.get<std::uint16_t>(o.registry+s::systemCountOffset,true);need(systems&&systems<=s::maximumSystems,"visual system count invalid");unsigned matches=0;
-  for(U i=0;i<systems;++i){const auto row=o.registry+s::systemsOffset+i*s::systemStride;if(m.get(row+40)!=o.image.base+0x316ea0)continue;
+  for(U i=0;i<systems;++i){const auto row=o.registry+s::systemsOffset+i*s::systemStride;if(m.get(row+40)!=o.image.base+0x31c2d0)continue;
    const auto descriptor=m.get(row);need(m.inside(descriptor,192),"visual system descriptor outside image");
-   need(m.text(m.get(descriptor),m.get(descriptor+8))=="update_animation_graph_slots_2"&&m.get(descriptor+16)==o.image.base+0x316ea0,"visual publisher full identity mismatch");
+   need(m.text(m.get(descriptor),m.get(descriptor+8))=="update_animation_graph_slots_2"&&m.get(descriptor+16)==o.image.base+0x31c2d0,"visual publisher full identity mismatch");
    ++matches;m.get(row,true);m.read(descriptor,192,true);m.text(m.get(descriptor),m.get(descriptor+8),true);
-   target.system_function_slot=row+40;target.original_function=o.image.base+0x31b670;target.publish_call_site=o.image.base+0x31b84b;target.entity_id=o.entity_id;
+   target.system_function_slot=row+40;target.original_function=o.image.base+0x320b20;target.publish_call_site=o.image.base+0x320cfb;target.entity_id=o.entity_id;
   }need(matches==1,"client visual publisher absent or ambiguous");
   m.verify();out=std::move(target);return true;
  }catch(const std::exception&ex){try{why=ex.what();}catch(...){}}catch(...){try{why="tool target internal failure";}catch(...){}}

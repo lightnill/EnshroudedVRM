@@ -41,3 +41,5 @@ Screenshots start disabled for every report and need exact-image preview and
 explicit approval. Included visible names/chat are not automatically redacted.
 No automatic report upload or telemetry is added. Private preview-subject tags
 are transient in-memory validation state and are not exported as identities.
+
+0.3.3 retains the prior security/privacy behavior and bootstrap bytes while updating the exact supported game profile. Optional Portuguese documentation adds no executable behavior.

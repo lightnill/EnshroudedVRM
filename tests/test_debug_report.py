@@ -49,7 +49,7 @@ class DebugReportTests(unittest.TestCase):
                     trace=archive.read('diagnostics.log').decode('utf-8')
                     self.assertIn('preview-ownership.sample stage=1 path-mask=1',trace)
                     self.assertIn('preview-handoff.sample stage=5 origin=1',trace)
-                    self.assertIn('group-0=27395',trace)
+                    self.assertIn('group-0=27453',trace)
                     self.assertNotIn('12648430',trace);self.assertNotIn('305419896',trace)
                     self.assertEqual(report['screenshot_included'],'screenshot.png' in archive.namelist())
                     images+=report['screenshot_included']

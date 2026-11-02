@@ -1,5 +1,6 @@
 #include "mod_input_win32.hpp"
 #include "mod_settings_service.hpp"
+#include "native_owner_profile.hpp"
 #include "runtime_log.hpp"
 #include <atomic>
 #include <array>
@@ -189,7 +190,7 @@ bool initialize_imports(){
        nt.FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64||nt.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||
        nt.OptionalHeader.SizeOfImage<4096||nt.OptionalHeader.SizeOfImage>128*1024*1024)return false;
 #ifndef EVRM_MOD_INPUT_TESTING
-    if(nt.FileHeader.TimeDateStamp!=1792507660||nt.OptionalHeader.SizeOfImage!=44163072)return false;
+    if(nt.FileHeader.TimeDateStamp!=native_owner_profile::image_timestamp||nt.OptionalHeader.SizeOfImage!=native_owner_profile::image_size)return false;
 #endif
     const auto limit=nt.OptionalHeader.SizeOfImage;const auto directory=nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
     if(!directory.VirtualAddress||directory.Size<sizeof(IMAGE_IMPORT_DESCRIPTOR)||directory.Size>128*1024||

@@ -22,8 +22,8 @@ class NativePreviewSubjectCalls {
     }
     NativePreviewSubject subject(U caller)const noexcept {
         if(caller<base_)return NativePreviewSubject::unresolved;
-        switch(caller-base_){case 0xb9eaf5:return NativePreviewSubject::local;
-            case 0xbe1f83:case 0xbfe9b1:case 0xc37998:case 0xc5b539:case 0xc5e365:return NativePreviewSubject::other;
+        switch(caller-base_){case 0xbadb95:return NativePreviewSubject::local;
+            case 0xbf150f:case 0xc0e001:case 0xc47438:case 0xc6cda9:case 0xc70e65:return NativePreviewSubject::other;
             default:return NativePreviewSubject::unresolved;}
     }
     struct Scope {
@@ -44,7 +44,7 @@ public:
     }
     template<class F>U copy(F&& original,U destination,U source,U count){
         thread_.packet=0;thread_.copied={};const auto context=subjects_.source();unsigned char before=0;
-        const bool ours=context.epoch&&source==add(context.actor.client,0x34408)&&count==0x8d4&&scalar(add(source,0x8d0),before)&&before==1;
+        const bool ours=context.epoch&&source==add(context.actor.client,0x34428)&&count==0x8d4&&scalar(add(source,0x8d0),before)&&before==1;
         auto proposal=ours?subjects_.copy_proposal(context.epoch):NativePreviewStamp{};
         if(proposal.local()&&!fresh(context.actor))proposal={};
         const auto result=original(destination,source,count);
@@ -57,7 +57,7 @@ public:
     }
     template<class F>U accepted_copy(F&& original,U destination,U source,U count){
         const auto context=subjects_.source();
-        if(!context.epoch||destination!=add(context.actor.client,0x34408))return original(destination,source,count);
+        if(!context.epoch||destination!=add(context.actor.client,0x34428))return original(destination,source,count);
         const auto ticket=subjects_.begin_request(context.epoch);
         const auto proposal=thread_.proposed;
         auto kind=NativePreviewSubject::unresolved;
@@ -73,7 +73,7 @@ public:
     template<class F>U main_destroy(F&& original,U main,U flags){LifetimeScope scope(subjects_);return original(main,flags);}
     template<class F>void render(F&& original,U renderer,U view,U frame,U target,U payload,U caller){
         const auto copied=thread_.copied;const auto packet=thread_.packet;thread_.copied={};thread_.packet=0;
-        const bool ours=packet&&packet==payload&&renderer==copied.source.renderer&&caller>=base_&&caller-base_==0x857d19&&subjects_.current(copied);
+        const bool ours=packet&&packet==payload&&renderer==copied.source.renderer&&caller>=base_&&caller-base_==0x861d49&&subjects_.current(copied);
         Scope scope(thread_.rendering,ours?copied:NativePreviewStamp{});original(renderer,view,frame,target,payload);
     }
     template<class F>U allocate(F&& original,U context,U flags,U label){

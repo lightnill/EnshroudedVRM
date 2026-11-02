@@ -12,7 +12,7 @@
 
 namespace evrm { namespace {
 using U=std::uint64_t;
-constexpr U file_bytes=35338312;
+constexpr U file_bytes=35480136;
 constexpr std::size_t header_window=65536;
 struct Declined {const char* reason;};
 void need(bool ok,const char* reason){if(!ok)throw Declined{reason};}

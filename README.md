@@ -1,16 +1,18 @@
-# EnshroudedVRM 0.3.2
+# EnshroudedVRM 0.3.3
 
 Play Enshrouded as your VRM avatar. By **lightnill**.
 
-0.3.2 fixes local-player ownership and inventory/survivor previews, reduces ownership lookup work and adds private one-click debug reports. Launch normally through Steam and configure everything in **F8**. Audio lip sync, offline microphones, model switching, saved shader/material presets, the optional sample and **No model replacement** remain available. Multiplayer avatar synchronization is future work.
+[Português (Brasil): instalação e solução de problemas](README.pt-BR.md). The ZIP also includes `LEIA-ME-PT-BR.txt`.
 
-The release and avatar runtime are version 0.3.2. The bootstrap keeps its independent
+0.3.3 restores compatibility with Enshrouded Steam build **26320373** and adds a Portuguese installation guide. Start normally through Steam and configure the mod with **F8**. Local-player ownership, correct inventory/survivor previews, held equipment, both lip-sync sources, model switching and saved material presets are retained. Multiplayer avatar synchronization is future work.
+
+The release and avatar runtime are version 0.3.3. The bootstrap keeps its independent
 0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
 records the runtime and bootstrap versions separately.
 
 ## Install and play
 
-1. Download **EnshroudedVRM-0.3.2.zip** from [the 0.3.2 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.2).
+1. Download **EnshroudedVRM-0.3.3.zip** from [the 0.3.3 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.3).
 2. Close Enshrouded. In Steam, choose **Manage â†’ Browse local files**.
 3. Check for an existing `vulkan-1.dll` beside `enshrouded.exe`. If it belongs to another mod, stop: do not overwrite, rename or chain it. Close the game before updating a known EnshroudedVRM installation.
 4. Copy the ZIP's `vulkan-1.dll` and `EnshroudedVRM` folder beside `enshrouded.exe`. Preserve your own models when updating the folder.
@@ -42,13 +44,13 @@ Older avatar settings are read compatibly. New saves use schema 2 to remember re
 
 ## Coverage and limits
 
-The standalone route has desktop evidence on **Windows 10 build 19045 x64**, Windows installed in **C:\Windows**, Vulkan loader **1.4.350**, and Steam build **26082781/resource 1273043**. Desktop manual tests cover startup/F8/model selection, original-character switching and the fog compatibility fix. Laptop reports informed these fixes; the versioned 0.3.2 package has not completed full cross-machine validation. Windows 11, other loader versions, other Windows-directory layouts and combined-loader operation remain unverified.
+The standalone route has desktop evidence on **Windows 10 build 19045 x64**, Windows installed in **C:\Windows**, Vulkan loader **1.4.350**, and Steam build **26320373**. Desktop checks on the new game build cover Steam startup/F8, world avatar and held equipment, inventory/survivor/inventory previews, title/character reload, and Game voice plus Local microphone lip sync. Laptop reports informed these fixes; the versioned 0.3.3 package has not completed full cross-machine validation. Windows 11, other loader versions, other Windows-directory layouts and combined-loader operation remain unverified.
 
 An existing Vulkan loader loaded first, or a System32-only load, can bypass the local bootstrap. Other mods' `vulkan-1.dll` files conflict with this installation. Earlier EML/ShroudForge coexistence observations for the script route do not validate this route. Game-version and package checks intentionally decline unsupported or changed files. See [known issues](KNOWN-ISSUES.txt).
 
 Higher fog settings no longer hit the old snapshot dimension limit. The fog snapshot uses a packed representation within the existing 64 MiB allocation budget; driver allocation requirements remain checked. Local-player ownership is used before matching model parts, so unrelated world characters are excluded from that selection.
 
-World replacement now follows the game's explicit local-player selector. Inventory previews require their own verified local subject; survivor previews stay native. The selected local build passed inventory/survivor/inventory, equipment and title/character reload checks on the desktop. Wider scene and hardware coverage is still needed. Base-area stutters can still occur: a complete VRM-off comparison reduced, but did not eliminate, them. The included sampled hook timings are diagnostic evidence; no gameplay FPS improvement is claimed. Large avatars can reduce FPS. The release provides [exact-hash validation and scan evidence](validation/0.3.2/README.md); unsupported engines and scan limits are coverage gaps.
+World replacement now follows the game's explicit local-player selector. Inventory previews require their own verified local subject; survivor previews stay native. The selected local build passed inventory/survivor/inventory, equipment and title/character reload checks on the desktop. Wider scene and hardware coverage is still needed. Base-area stutters can still occur: a complete VRM-off comparison reduced, but did not eliminate, them. The included sampled hook timings are diagnostic evidence; no gameplay FPS improvement is claimed. Large avatars can reduce FPS. The release provides [exact-hash validation and scan evidence](validation/0.3.3/README.md); unsupported engines and scan limits are coverage gaps.
 
 ## Remove
 
@@ -63,3 +65,9 @@ In F8, choose **Create debug report**. The ZIP is saved under `%LOCALAPPDATA%/En
 Reports reconstruct allowlisted recent diagnostics and settings, CPU/RAM/active GPU/driver details, anonymous model statistics, and observed terrain/building/depth/fog rendering context. Fresh qualified **in-game Enshrouded XYZ coordinates** are included when available (Y up, X/Z horizontal). Real-world location, actual voxel blocks and saves are not collected.
 
 Screenshots are off for every new report. If requested, capture is limited to the game image; F8 is hidden for that frame. Inspect the exact preview and choose **Include this screenshot** or **Save without screenshot**. An approved image can contain visible names/chat. Raw logs/settings, personal paths, account/server identifiers, microphone endpoint IDs, audio, models and memory dumps are omitted. Missing fields are marked unavailable. Review the ZIP before sharing it yourself.
+
+## Game update compatibility
+
+0.3.3 supports only Steam build **26320373**, executable SHA-256 `0403981fd2e8ad18bd8c5698dff03c8d505b5a46677832c496db9c645513f2a6`. **0.3.2 is retained for the previous game build 26082781** (resource 1273043); it is not a fallback for the updated game. Update all package files together. Fog Ultra hotspots, model/material persistence, optional report screenshots and the laptop still need fresh coverage on this patch; older tests do not establish that coverage.
+
+The exported report records the selected voice source at capture time. It currently omits voice-source history/counters; a later microphone selection does not mean Game voice was never used. Raw session logs stay local and may contain private details; do not publish them without reviewing them.

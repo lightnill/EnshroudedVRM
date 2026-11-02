@@ -1,5 +1,6 @@
 // Actual runtime helper bodies, fake external callbacks, no device or driver.
 #include "../src/runtime_hook_timing.hpp"
+#include "../src/device_dispatch_cache.hpp"
 #include <vulkan/vulkan.h>
 #include <memory>
 #include <unordered_map>
@@ -21,6 +22,7 @@ void need(bool value,const char* why){if(!value)throw std::runtime_error(why);}
 struct DeviceState {
     VkDevice handle=reinterpret_cast<VkDevice>(0x100);
     PFN_vkGetDeviceProcAddr get_proc=nullptr;
+    evrm::DeviceDispatchCache dispatch_cache;
     evrm::RuntimeHookTiming hook_timing;
     std::shared_ptr<evrm::GpuProbe> probe=std::make_shared<evrm::GpuProbe>();
     std::shared_ptr<evrm::GraphicsState> graphics=std::make_shared<evrm::GraphicsState>();

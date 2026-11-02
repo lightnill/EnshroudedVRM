@@ -1,0 +1,41 @@
+{
+  "sameFixtureSha256": "57ae04019c6a2a1d559441a9adca3d7f1585ed3335561779b29d23bb711fe24e",
+  "samplesAfterWarmup": 25,
+  "fixtureEntities": 6500,
+  "measurements": [
+    {
+      "resolver": "baseline",
+      "mode": "benchmark-cold-batched",
+      "measurement": "benchmark kind=cold batched=1 mean-ms=7.597920 p50-ms=7.477000 p95-ms=8.593000 worst-ms=8.786000 reads=9382 bytes=1406461 registry=600 entities=6500"
+    },
+    {
+      "resolver": "baseline",
+      "mode": "benchmark-warm-batched",
+      "measurement": "benchmark kind=warm batched=1 mean-ms=1.023000 p50-ms=1.029000 p95-ms=1.067000 worst-ms=1.109000 reads=384 bytes=867689 registry=600 entities=6500"
+    },
+    {
+      "resolver": "baseline",
+      "mode": "benchmark-batched",
+      "measurement": "benchmark kind=selected-refresh batched=1 mean-ms=6.689160 p50-ms=6.736000 p95-ms=7.041000 worst-ms=7.075000 reads=7283 bytes=2063445 registry=600 entities=6500"
+    },
+    {
+      "resolver": "current",
+      "mode": "benchmark-cold-batched",
+      "measurement": "benchmark kind=cold batched=1 mean-ms=2.388960 p50-ms=2.396000 p95-ms=2.427000 worst-ms=2.458000 reads=2693 bytes=568041 registry=600 entities=6500"
+    },
+    {
+      "resolver": "current",
+      "mode": "benchmark-warm-batched",
+      "measurement": "benchmark kind=warm batched=1 mean-ms=0.378120 p50-ms=0.356000 p95-ms=0.506000 worst-ms=0.530000 reads=167 bytes=361886 registry=600 entities=6500"
+    },
+    {
+      "resolver": "current",
+      "mode": "benchmark-batched",
+      "measurement": "benchmark kind=selected-refresh batched=1 mean-ms=0.921800 p50-ms=0.907000 p95-ms=1.059000 worst-ms=1.071000 reads=348 bytes=720653 registry=600 entities=6500"
+    }
+  ],
+  "onlyOwnedCpuMemory": true,
+  "gameOpened": false,
+  "gpuExecuted": false,
+  "dllLoaded": false
+}

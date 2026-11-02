@@ -1,5 +1,7 @@
 #define VK_NO_PROTOTYPES
 #include "mod_menu_gpu.hpp"
+#include "debug_report_gpu.hpp"
+#include "debug_report_service.hpp"
 #include "../vendor/imgui/imgui.h"
 #include "../vendor/imgui/backends/imgui_impl_vulkan.h"
 #include <mutex>
@@ -20,6 +22,8 @@ struct MenuGpuContext {
     VkInstance instance{};VkPhysicalDevice physical{};VkDevice device{};PFN_vkGetInstanceProcAddr gipa{};PFN_vkGetDeviceProcAddr gdpa{};PFN_vkSetDeviceLoaderData loader{};
     VkQueue queue{};VkExtent2D extent{};VkRenderPass pass{};ImGuiContext* gui=nullptr;
     std::vector<Slot> slots;std::vector<Image> images;ModMenuPlacement placement;
+    std::vector<VkImage> report_targets;VkFormat report_format{};VkImageLayout report_layout{};bool report_supported=false;
+    std::unique_ptr<DebugReportGpu> report_gpu;
     std::uint64_t rendered=0;float dpi=1;bool presentation_safe=true,uncertain=false,broken=false,font_upload_pending=false;
     template<class F>F fn(const char* name)const{return reinterpret_cast<F>(gdpa(device,name));}
     static VkResult VKAPI_CALL allocate(VkDevice device,const VkCommandBufferAllocateInfo* allocation,VkCommandBuffer* commands){
@@ -51,10 +55,11 @@ struct MenuGpuContext {
             if(result!=VK_SUCCESS&&result!=VK_ERROR_DEVICE_LOST)return false;}
         return true;
     }
+    bool all_slots_complete(){for(const auto& slot:slots)if(slot.submitted&&fn<PFN_vkGetFenceStatus>("vkGetFenceStatus")(device,slot.fence)!=VK_SUCCESS)return false;return true;}
     void cleanup()noexcept {
         if(uncertain||!presentation_safe||!finish())return;
         try{
-            if(gui){select();if(ImGui::GetIO().BackendRendererUserData)ImGui_ImplVulkan_Shutdown();ImGui::DestroyContext(gui);gui=nullptr;if(loaded==this)loaded=nullptr;}
+            if(gui){select();report_gpu.reset();if(ImGui::GetIO().BackendRendererUserData)ImGui_ImplVulkan_Shutdown();ImGui::DestroyContext(gui);gui=nullptr;if(loaded==this)loaded=nullptr;}
             for(auto& image:images){if(image.framebuffer)fn<PFN_vkDestroyFramebuffer>("vkDestroyFramebuffer")(device,image.framebuffer,nullptr);
                 if(image.view)fn<PFN_vkDestroyImageView>("vkDestroyImageView")(device,image.view,nullptr);
                 if(image.completion)fn<PFN_vkDestroySemaphore>("vkDestroySemaphore")(device,image.completion,nullptr);}
@@ -66,9 +71,10 @@ struct MenuGpuContext {
 }
 struct ModMenuGpu::Impl:MenuGpuContext{};
 ModMenuGpu::ModMenuGpu(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr gipa,PFN_vkGetDeviceProcAddr gdpa,
-    PFN_vkSetDeviceLoaderData loader,VkQueue queue,std::uint32_t family,VkFormat format,VkExtent2D extent,const std::vector<VkImage>& targets,VkImageLayout layout,float dpi):impl(std::make_unique<Impl>()){
+    PFN_vkSetDeviceLoaderData loader,VkQueue queue,std::uint32_t family,VkFormat format,VkExtent2D extent,const std::vector<VkImage>& targets,VkImageLayout layout,float dpi,bool sampled_compute):impl(std::make_unique<Impl>()){
     std::lock_guard<std::mutex> guard(gui_mutex);auto& state=*impl;
     state.instance=instance;state.physical=physical;state.device=device;state.gipa=gipa;state.gdpa=gdpa;state.loader=loader;state.queue=queue;state.extent=extent;state.dpi=std::clamp(dpi,1.f,3.f);
+    state.report_targets=targets;state.report_format=format;state.report_layout=layout;state.report_supported=sampled_compute;
     if(targets.empty()||targets.size()>16||!extent.width||!extent.height)throw std::runtime_error("unsupported menu targets");
     try{
         VkAttachmentDescription attachment{};attachment.format=format;attachment.samples=VK_SAMPLE_COUNT_1_BIT;attachment.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -88,7 +94,7 @@ ModMenuGpu::ModMenuGpu(VkInstance instance,VkPhysicalDevice physical,VkDevice de
             auto fence=info<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);fence.flags=VK_FENCE_CREATE_SIGNALED_BIT;checked(state.fn<PFN_vkCreateFence>("vkCreateFence")(device,&fence,nullptr,&slot.fence));}
         state.gui=ImGui::CreateContext();configure_mod_menu(state.dpi,format==VK_FORMAT_R8G8B8A8_SRGB||format==VK_FORMAT_B8G8R8A8_SRGB);state.select();
         ImGui_ImplVulkan_InitInfo init{};init.ApiVersion=VK_API_VERSION_1_1;init.Instance=instance;init.PhysicalDevice=physical;init.Device=device;init.QueueFamily=family;init.Queue=queue;init.RenderPass=state.pass;
-        init.MinImageCount=2;init.ImageCount=state.slots.size();init.MSAASamples=VK_SAMPLE_COUNT_1_BIT;init.DescriptorPoolSize=2;init.CheckVkResultFn=&backend_result;
+        init.MinImageCount=2;init.ImageCount=state.slots.size();init.MSAASamples=VK_SAMPLE_COUNT_1_BIT;init.DescriptorPoolSize=3;init.CheckVkResultFn=&backend_result;
         if(!ImGui_ImplVulkan_Init(&init))throw std::runtime_error("menu renderer unavailable");
         // The unmodified backend submits its own font upload, independently of
         // our frame slots. Only its successful completion return proves it safe.
@@ -103,12 +109,19 @@ ModMenuGpu::ModMenuGpu(VkInstance instance,VkPhysicalDevice physical,VkDevice de
 }
 ModMenuGpu::~ModMenuGpu(){
     std::lock_guard<std::mutex> guard(gui_mutex);if(!impl)return;
+    if(impl->report_gpu)impl->report_gpu->invalidate();
     if(impl->uncertain||!impl->presentation_safe||!impl->finish()){impl.release();return;}
     impl->cleanup();
 }
 ModMenuGpuReadiness ModMenuGpu::readiness()noexcept {try{std::lock_guard<std::mutex> guard(gui_mutex);return impl?impl->ready():ModMenuGpuReadiness::Failed;}catch(...){return ModMenuGpuReadiness::Failed;}}
 VkSemaphore ModMenuGpu::completion(std::uint32_t image)const noexcept{return impl&&image<impl->images.size()?impl->images[image].completion:VK_NULL_HANDLE;}
 void ModMenuGpu::presentation_complete()noexcept {if(impl)impl->presentation_safe=true;}
+void ModMenuGpu::poll_report(const DebugReportStatus& status)noexcept{try{std::lock_guard<std::mutex> guard(gui_mutex);if(!impl||!impl->report_gpu)return;
+    impl->select();impl->report_gpu->poll(status);impl->report_gpu->prepare_preview(status,impl->all_slots_complete());
+    if(status.phase!=DebugReportPhase::Preview&&status.phase!=DebugReportPhase::Collecting&&status.phase!=DebugReportPhase::AwaitingPixels&&status.phase!=DebugReportPhase::Encoding&&impl->all_slots_complete())impl->report_gpu.reset();
+}catch(...) {}}
+void ModMenuGpu::report_presented(std::uint32_t image,VkResult result)noexcept{if(impl&&impl->report_gpu)impl->report_gpu->presented(image,result);}
+void ModMenuGpu::report_invalidated()noexcept{if(impl&&impl->report_gpu)impl->report_gpu->invalidate();}
 ModMenuGpuResult ModMenuGpu::draw(std::uint32_t image,std::uint32_t waits,const VkSemaphore* semaphores,ModSettings& settings,const ModMenuStatus& status,bool& expanded,bool& close,const ModInputFrame& input,ModMenuPlacement* placement)noexcept {
     ModMenuGpuResult result;
     try{
@@ -117,20 +130,28 @@ ModMenuGpuResult ModMenuGpu::draw(std::uint32_t image,std::uint32_t waits,const 
         const auto readiness=state.ready();
         if(readiness!=ModMenuGpuReadiness::Ready){result.result=readiness==ModMenuGpuReadiness::Busy?VK_NOT_READY:VK_ERROR_UNKNOWN;return result;}
         state.select();auto& io=ImGui::GetIO();io.DisplaySize={state.extent.width/state.dpi,state.extent.height/state.dpi};io.DisplayFramebufferScale={state.dpi,state.dpi};io.DeltaTime=1.f/60;
+        auto display=status;bool capture=false;ModMenuLayout report_layout;
+        if(status.report){try{
+            if(!state.report_gpu&&(status.report->capture_requested||status.report->phase==DebugReportPhase::Preview))state.report_gpu=std::make_unique<DebugReportGpu>(state.instance,state.physical,state.device,state.gipa,state.gdpa,state.report_format,state.extent,state.report_targets,state.report_layout,state.report_supported);
+            if(state.report_gpu){state.report_gpu->poll(*status.report);state.report_gpu->prepare_preview(*status.report,state.all_slots_complete());capture=state.report_gpu->prepare_capture(*status.report);display.report_texture=state.report_gpu->preview_texture(*status.report);}
+        }catch(...){debug_report_capture_failed(status.report->job,DebugReportCode::Unavailable);}}
         auto& menu_placement=placement?*placement:state.placement;
         feed_mod_menu_input(input.input,input.x/state.dpi,input.y/state.dpi,menu_placement,state.dpi);ImGui_ImplVulkan_NewFrame();ImGui::NewFrame();
-        result.changed=draw_mod_menu(settings,status,expanded,close,menu_placement,nullptr,&result.avatar_action);ImGui::Render();auto* data=ImGui::GetDrawData();
+        if(!capture)result.changed=draw_mod_menu(settings,display,expanded,close,menu_placement,&report_layout,&result.avatar_action,&result.report_action);
+        ImGui::Render();auto* data=ImGui::GetDrawData();
         if(!data||data->TotalVtxCount>32768||data->TotalIdxCount>131072||data->CmdListsCount>16)throw std::runtime_error("menu draw limit");
         auto& slot=state.slots[(state.rendered+1)%state.slots.size()];slot.submitted=false;
         checked(state.fn<PFN_vkResetCommandPool>("vkResetCommandPool")(state.device,slot.pool,0));auto begin=info<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        checked(state.fn<PFN_vkBeginCommandBuffer>("vkBeginCommandBuffer")(slot.command,&begin));auto pass=info<VkRenderPassBeginInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);pass.renderPass=state.pass;pass.framebuffer=state.images[image].framebuffer;pass.renderArea.extent=state.extent;
-        state.fn<PFN_vkCmdBeginRenderPass>("vkCmdBeginRenderPass")(slot.command,&pass,VK_SUBPASS_CONTENTS_INLINE);
-        ImGui_ImplVulkan_RenderDrawData(data,slot.command);++state.rendered;
-        state.fn<PFN_vkCmdEndRenderPass>("vkCmdEndRenderPass")(slot.command);checked(state.fn<PFN_vkEndCommandBuffer>("vkEndCommandBuffer")(slot.command));
+        checked(state.fn<PFN_vkBeginCommandBuffer>("vkBeginCommandBuffer")(slot.command,&begin));
+        if(state.report_gpu){if(capture)state.report_gpu->record_capture(slot.command,image);else state.report_gpu->record_preview_upload(slot.command);}
+        if(!capture){auto pass=info<VkRenderPassBeginInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);pass.renderPass=state.pass;pass.framebuffer=state.images[image].framebuffer;pass.renderArea.extent=state.extent;
+            state.fn<PFN_vkCmdBeginRenderPass>("vkCmdBeginRenderPass")(slot.command,&pass,VK_SUBPASS_CONTENTS_INLINE);ImGui_ImplVulkan_RenderDrawData(data,slot.command);state.fn<PFN_vkCmdEndRenderPass>("vkCmdEndRenderPass")(slot.command);}
+        ++state.rendered;checked(state.fn<PFN_vkEndCommandBuffer>("vkEndCommandBuffer")(slot.command));
         checked(state.fn<PFN_vkResetFences>("vkResetFences")(state.device,1,&slot.fence));
-        std::array<VkPipelineStageFlags,64> stages{};stages.fill(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        std::array<VkPipelineStageFlags,64> stages{};stages.fill(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|(capture?VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT:0));
         auto submit=info<VkSubmitInfo>(VK_STRUCTURE_TYPE_SUBMIT_INFO);submit.waitSemaphoreCount=waits;submit.pWaitSemaphores=semaphores;submit.pWaitDstStageMask=stages.data();submit.commandBufferCount=1;submit.pCommandBuffers=&slot.command;submit.signalSemaphoreCount=1;submit.pSignalSemaphores=&state.images[image].completion;
         result.result=state.fn<PFN_vkQueueSubmit>("vkQueueSubmit")(state.queue,1,&submit,slot.fence);
+        if(state.report_gpu)state.report_gpu->submitted(slot.fence,result.result==VK_SUCCESS,image,report_layout.report_preview_visible);
         if(result.result==VK_SUCCESS){slot.submitted=true;state.presentation_safe=false;result.submitted=true;result.completion=state.images[image].completion;}
         else if(result.result!=VK_ERROR_OUT_OF_HOST_MEMORY&&result.result!=VK_ERROR_OUT_OF_DEVICE_MEMORY)state.uncertain=true;
     }catch(...){if(impl)impl->broken=true;result.result=VK_ERROR_OUT_OF_HOST_MEMORY;close=true;}

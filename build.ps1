@@ -55,10 +55,14 @@ try {
         }
         & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'cs_snapshot' (Join-Path $taskProjectRoot 'shaders/native_volume_snapshot.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_volume_snapshot.comp.spv')
         if ($LASTEXITCODE -ne 0) { throw 'Native volume snapshot shader compilation failed.' }
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/debug_report_capture.hlsl') '-Fo' (Join-Path $taskShaderOutput 'debug_report_capture.comp.spv')
+        if ($LASTEXITCODE -ne 0) { throw 'Debug report capture shader compilation failed.' }
         $taskSources = @('runtime_bridge.cpp','device_features.cpp','command_trace.cpp','command_trace_runtime.cpp','deferred_rendering.cpp','deferred_runtime.cpp','gpu_probe.cpp','graphics_state.cpp','avatar_renderer.cpp','enshrouded_bridge.cpp','vrm_asset.cpp','retarget.cpp','spring_bones.cpp','tool_grip.cpp','secondary_hand_contact.cpp','native_tool_slots.cpp','native_tool_slot_target.cpp','native_tool_slots_runtime.cpp','native_visual_slot_write.cpp','native_tool_call_patch.cpp','native_avatar_pose.cpp','native_state.cpp','native_draw.cpp','native_backend.cpp','native_owner.cpp','native_owner_process.cpp','native_clip_shader.cpp','native_clip_pipelines.cpp','native_buffer_memory.cpp','native_body_coverage.cpp','native_body_selection.cpp','native_instance_qualifiers.cpp','native_oit_window.cpp','native_transparency_trace.cpp','native_image_memory.cpp','native_material_plan.cpp','native_volume_snapshot.cpp','native_oit_draw.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/' + $_) }
         $taskSources += @('native_skinning.cpp','native_skinning_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += Join-Path $taskProjectRoot 'src/mouth_deformation.cpp'
         $taskSources += @('local_voice_observation.cpp','local_voice_copy.cpp','local_voice_observer.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += Join-Path $taskProjectRoot 'src/native_preview_handoff.cpp'
+        $taskSources += Join-Path $taskProjectRoot 'src/native_relative_call.cpp'
         $taskSources += @('voice_clock.cpp','voice_stream.cpp','voice_features.cpp','voice_profiles.cpp','voice_analyser.cpp','voice_automatic.cpp','voice_worker.cpp','voice_profile_io.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('voice_setup.cpp','mod_settings.cpp','mod_settings_service.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('microphone_backend.cpp','microphone_source.cpp','voice_inputs.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
@@ -66,6 +70,7 @@ try {
         $taskSources += @('standalone_startup.cpp','standalone_startup_runtime.cpp','standalone_startup_environment.cpp','standalone_files.cpp','standalone_settings.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('mod_input_state.cpp','mod_input_win32.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('mod_menu.cpp','mod_menu_gpu.cpp','mod_overlay.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('debug_report_policy.cpp','debug_report_archive.cpp','debug_report_sources.cpp','debug_report_service.cpp','debug_report_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskFlags+=('-I'+(Join-Path $taskProjectRoot 'vendor/imgui'))
         foreach($taskGuiSource in @('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp','backends/imgui_impl_vulkan.cpp')){
             $taskGuiObject=Join-Path $OutputDirectory ('gui-'+[IO.Path]::GetFileNameWithoutExtension($taskGuiSource)+'.o')
@@ -90,7 +95,7 @@ try {
             if($LASTEXITCODE -ne 0){throw 'Runtime release metadata compilation failed'}
             $taskSources+=$taskResourceObject
         }
-        & $taskCompiler @taskFlags '-shared' @taskSources '-Wl,--image-base,0x190000000' '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-lshell32' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll')
+        & $taskCompiler @taskFlags '-shared' @taskSources '-Wl,--image-base,0x190000000' '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-lshell32' '-ladvapi32' '-lbcrypt' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll')
         if ($LASTEXITCODE -ne 0) { throw "Bridge compilation failed: $LASTEXITCODE" }
         $taskVoiceSdk = Join-Path $taskProjectRoot 'vendor/oculus-lipsync/Win64/OVRLipSync.dll'
         if ((Get-FileHash -LiteralPath $taskVoiceSdk -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7') { throw 'Official voice detector pin mismatch' }

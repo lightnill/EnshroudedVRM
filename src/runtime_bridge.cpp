@@ -15,9 +15,13 @@
 #include "native_buffer_memory.hpp"
 #include "voice_inputs.hpp"
 #include "mod_settings_service.hpp"
+#include "native_preview_handoff.hpp"
 #include "mod_overlay.hpp"
 #include "queue_dispatch.hpp"
 #include "runtime_hook_timing.hpp"
+#include "device_dispatch_cache.hpp"
+#include "debug_report_sources.hpp"
+#include "debug_report_service.hpp"
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 
@@ -58,11 +62,13 @@ struct InstanceState {
 struct DeviceState {
     VkDevice handle{};
     PFN_vkGetDeviceProcAddr get_proc{};
+    evrm::DeviceDispatchCache dispatch_cache;
     PFN_vkDestroyDevice destroy{};
     PFN_vkQueuePresentKHR present{};
     std::shared_ptr<InstanceState> parent;
     std::atomic<uint64_t> frame_count{0};
     evrm::RuntimeHookTiming hook_timing;
+    evrm::DebugReportGpuInfo report_gpu;
     std::shared_ptr<evrm::GpuProbe> probe;
     std::shared_ptr<evrm::GraphicsState> graphics;
     std::shared_ptr<evrm::AvatarRenderer> avatar;
@@ -83,6 +89,7 @@ struct DeviceState {
     std::map<VkQueue,std::uint32_t> queue_families;
 };
 std::mutex state_mutex;
+void initialize_device_dispatch(DeviceState&)noexcept;
 std::unordered_map<void*, std::shared_ptr<InstanceState>> instances;
 std::unordered_map<void*, std::shared_ptr<DeviceState>> devices;
 
@@ -120,7 +127,7 @@ template<class Function> PFN_vkVoidFunction as_proc(Function function) {
 }
 template<class Function> Function device_proc(const std::shared_ptr<DeviceState>& state, const char* name) {
     evrm::RuntimeHookSample timing(evrm::RuntimeHookKind::ProcLookup,state?&state->hook_timing:nullptr);
-    return state ? reinterpret_cast<Function>(state->get_proc(state->handle, name)) : nullptr;
+    return state ? reinterpret_cast<Function>(state->dispatch_cache.lookup(state->handle,state->get_proc,name)) : nullptr;
 }
 template<class Function> void observe(const std::shared_ptr<DeviceState>& state, Function function) noexcept {
     if (!state || !state->probe) return;
@@ -380,7 +387,15 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
         auto state = std::make_shared<DeviceState>();
         state->handle = *device;
         state->parent=parent;
+        if(startup.ready())try{
+            const auto properties=reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(parent->get_proc(parent->handle,"vkGetPhysicalDeviceProperties"));
+            const auto memory=reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(parent->get_proc(parent->handle,"vkGetPhysicalDeviceMemoryProperties"));
+            if(properties){VkPhysicalDeviceProperties value{};properties(physical,&value);auto& gpu=state->report_gpu;gpu.available=true;gpu.model.assign(value.deviceName,std::find(value.deviceName,value.deviceName+VK_MAX_PHYSICAL_DEVICE_NAME_SIZE,'\0'));
+                gpu.vendor=value.vendorID;gpu.device=value.deviceID;gpu.driver_version=value.driverVersion;gpu.api_version=value.apiVersion;gpu.shared_memory=value.deviceType==VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;}
+            if(memory){VkPhysicalDeviceMemoryProperties value{};memory(physical,&value);for(unsigned i=0;i<value.memoryHeapCount&&i<VK_MAX_MEMORY_HEAPS;++i)if(value.memoryHeaps[i].flags&VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)state->report_gpu.local_bytes+=value.memoryHeaps[i].size;}
+        }catch(...){}
         state->get_proc = next_get_proc;
+        if(parent->active)initialize_device_dispatch(*state);
         state->destroy = next_destroy;
         state->present = reinterpret_cast<PFN_vkQueuePresentKHR>(next_get_proc(*device, "vkQueuePresentKHR"));
         if(startup.ready())state->graphics = std::make_shared<evrm::GraphicsState>(*device, next_get_proc);
@@ -444,6 +459,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
         if(startup.ready()){
             evrm::initialize_voice_inputs();
             evrm::initialize_mod_settings_service(startup.state_directory);
+            evrm::initialize_native_preview_handoff();
         }
         return result;
     } catch (...) {
@@ -540,10 +556,18 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
         evrm::ModMenuStatus status;status.voice=evrm::selected_voice_mouth_snapshot().activity;status.starting=evrm::selected_voice_starting();status.save_failed=!startup.state_writable||evrm::mod_settings_save_failed();
         status.startup_ready=startup.ready();status.startup_version=startup.version.c_str();
         status.avatar=evrm::avatar_runtime_snapshot();
+        status.report=evrm::debug_report_status();
         status.microphone=evrm::local_microphone_state();status.microphones=evrm::local_microphone_devices();
         if(replacement_enabled&&state->avatar)status.mouth=state->avatar->mouth_support();
         if(state->native&&state->native->mouth_gpu_unavailable())status.mouth=evrm::ModMouthSupport::Unavailable;
         state->overlay->before_present(queue,family,*info,consumed,accessible,status,menu);presenting=menu.view();
+        if(!retry&&evrm::debug_report_sources_pending())try{
+            evrm::debug_report_observe_gpu(state->report_gpu);evrm::debug_report_observe_settings(evrm::mod_settings_snapshot(),status.avatar.get());
+            if(state->avatar){const auto model=state->avatar->prepared_model();evrm::debug_report_observe_model(model.get());}
+            if(state->graphics&&info->swapchainCount==1&&info->pSwapchains){const auto target=state->graphics->swapchain(info->pSwapchains[0]);
+                const auto depth=state->graphics->scene_depth();evrm::debug_report_observe_view(target.extent.width,target.extent.height,depth?depth.format:0,depth?depth.samples:0);}
+            evrm::debug_report_end_source_frame(GetTickCount64());
+        }catch(...){} // Diagnostic-only data never controls rendering.
     }
     observe(state, [&](evrm::GpuProbe& probe) { probe.finish_frame(); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.finish_frame(frame); });
@@ -553,6 +577,10 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
     const auto present_elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-present_started).count();
     evrm::RuntimeHookSample post_present(evrm::RuntimeHookKind::PostPresent,&state->hook_timing);
     if(info&&state->overlay&&menu.stop==VK_SUCCESS)state->overlay->presented(menu,result);
+    if(info&&state->overlay&&(result==VK_SUCCESS||result==VK_SUBOPTIMAL_KHR)&&info->swapchainCount==1&&info->pSwapchains){
+        const auto stamp=std::chrono::duration_cast<std::chrono::microseconds>(present_started.time_since_epoch()).count();
+        const auto source=std::uint64_t(reinterpret_cast<std::uintptr_t>(info->pSwapchains[0]))^std::uint64_t(reinterpret_cast<std::uintptr_t>(state->handle));
+        evrm::debug_report_presented(std::uint64_t(stamp),source,state->overlay->menu_open(),evrm::debug_report_busy());}
     evrm::poll_voice_inputs(GetTickCount64());
     try{if(state->native){
         double average=-1,maximum=0;
@@ -584,6 +612,22 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
 #include "graphics_hooks.inl"
 #include "command_trace_hooks.inl"
 #include "command_forwarders.generated.inl"
+
+namespace {
+void initialize_device_dispatch(DeviceState& state)noexcept {
+    static const char* const names[]={
+#define EVRM_DISPATCH_NAME(name_) #name_,
+        EVRM_DEVICE_HOOK_NAMES(EVRM_DISPATCH_NAME)
+        EVRM_GRAPHICS_HOOK_NAMES(EVRM_DISPATCH_NAME)
+        EVRM_TRACE_HOOK_NAMES(EVRM_DISPATCH_NAME)
+        EVRM_FORWARD_COMMAND_HOOK_NAMES(EVRM_DISPATCH_NAME)
+#undef EVRM_DISPATCH_NAME
+    };
+    const bool ready=state.dispatch_cache.seed(state.handle,state.get_proc,names,sizeof(names)/sizeof(names[0]));
+    try{evrm::log_event(std::string("device.dispatch-cache status=")+(ready?"ready":"direct-fallback")+
+        " entries="+std::to_string(state.dispatch_cache.size()));}catch(...){}
+}
+}
 
 EVRM_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* name) {
     if (!name) return nullptr;

@@ -4,6 +4,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <chrono>
 #include "../src/native_tool_slots.hpp"
 #include "../src/native_tool_call_patch.hpp"
 #include "../src/native_visual_slot_write.hpp"
@@ -28,7 +29,16 @@ struct Memory final:evrm::NativeOwnerMemory {
         if(!out||address<base||address-base>guard.size()||bytes>guard.size()-(address-base))return false;
         std::memcpy(out,reinterpret_cast<const void*>(address),bytes);return true;
     }
-    U milliseconds()const noexcept override{return now?now:GetTickCount64();}
+    U milliseconds()const noexcept override{
+        if(now)return now;
+#ifdef EVRM_TOOL_PROCESS_POSE_CLOCK
+#include "native_owner_pose_clock.inc"
+#else
+        return GetTickCount64();
+#endif
+    }
+    // Deliberately incompatible epoch: hand authorization must never use it.
+    U work_milliseconds()const noexcept{return 1000000000+milliseconds();}
 } memory;
 std::shared_ptr<evrm::NativeAvatarPublication> publication(unsigned serial=1){
     auto p=std::make_shared<evrm::NativeAvatarPublication>();
@@ -90,6 +100,8 @@ int main(){try{
         auto p=publication(1001);auto before=visual_writes;
         p->published_milliseconds-=251;slots.publish(memory,owner,p,1);expect_no_write(before,"stale pose accepted after disable");
         p=publication(1002);slots.publish(memory,owner,p,1);callback();need(visual_writes==before+3,"fresh authority failed");before=visual_writes;
+        auto advanced=std::make_shared<evrm::NativeAvatarPublication>(*p);++advanced->serial;advanced->published_milliseconds=GetTickCount64();
+        slots.advance(memory,advanced,1);callback();need(visual_writes==before+3,"fresh pose advance lost hand attachment across clock domains");before=visual_writes;advanced.reset();
         {evrm::NativeToolSlots other;other.publish(memory,owner,publication(1003),1);other.disable();}
         callback();need(visual_writes==before+3,"another owner revoked existing authority");before=visual_writes;
         guard[0]^=1;expect_no_write(before,"changed target guard accepted by callback");slots.publish(memory,owner,p,1);expect_no_write(before,"changed target guard accepted by resolver");guard[0]^=1;

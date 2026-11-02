@@ -50,8 +50,37 @@ struct Fixture {
  }
  void write(int set,unsigned binding,VkDescriptorType type=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER){VkDescriptorBufferInfo info{buf,0,128};VkWriteDescriptorSet w{};w.dstSet=sets[set];w.dstBinding=binding;w.descriptorCount=1;w.descriptorType=type;w.pBufferInfo=&info;p.descriptors_written(1,&w);}
  void run(){VkSubmitInfo s{};s.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;s.commandBufferCount=1;s.pCommandBuffers=&cmd;if(p.submit_async(q,1,&s,VK_NULL_HANDLE,submit,7)!=VK_SUCCESS)throw 1;}
+ // NativeState and GpuProbe use independent generation counters. Their source
+ // leases must remain separate, never compared as if they shared a counter.
+ NativePreviewContext subject_context(){return native_preview_subjects().configure({{1,2,3,4,5,6,7,8,9,10},123,3,30,77,456,0});}
+ NativePreviewStamp subject(const NativePreviewContext& c,NativePreviewSubject kind){auto& core=native_preview_subjects();auto t=core.begin_request(c.epoch);core.finish_request(t,kind);return core.copied(core.copy_proposal(c.epoch));}
+ void record_subject(const NativePreviewStamp& stamp,bool reset=true){
+  native_preview_subject_thread().working=stamp;if(reset){p.command_begin(cmd);p.sets_bound(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,pl,0,3,sets,0,nullptr);p.pipeline_bound(cmd,true,pl);}
+  p.draw_indexed_indirect(cmd,buf,0,1,sizeof(VkDrawIndexedIndirectCommand));
+ }
 };
 int main(){try {
+ {Fixture f;const auto c=f.subject_context();const auto local=f.subject(c,NativePreviewSubject::local);f.record_subject(local);if(!f.p.capture_inline(f.cmd,0))return 20;f.run();
+  f.subject(c,NativePreviewSubject::other);const auto captured=f.p.poll_async(f.q);
+  if(!same_native_preview_stamp(captured.preview_subject,local)){std::cerr<<"FAIL actual completed inline copy lost or relabeled its local subject\n";return 21;}}
+ {Fixture f;const auto c=f.subject_context();const auto other=f.subject(c,NativePreviewSubject::other);f.record_subject(other);if(!f.p.capture_inline(f.cmd,0))return 22;f.run();
+  f.subject(c,NativePreviewSubject::local);const auto captured=f.p.poll_async(f.q);
+  if(!same_native_preview_stamp(captured.preview_subject,other)||captured.preview_subject.local()){std::cerr<<"FAIL later local publication relabeled captured survivor\n";return 23;}}
+ {Fixture f;const auto c=f.subject_context();f.record_subject(f.subject(c,NativePreviewSubject::local));f.record_subject(f.subject(c,NativePreviewSubject::other),false);
+  if(!f.p.capture_inline(f.cmd,0))return 24;
+  f.run();const auto captured=f.p.poll_async(f.q);
+  if(captured.preview_subject.request){std::cerr<<"FAIL descriptor-preserving local/other draws retained single-subject authority\n";return 25;}}
+ {Fixture f;const auto c=f.subject_context();f.record_subject(f.subject(c,NativePreviewSubject::other));f.record_subject(f.subject(c,NativePreviewSubject::local),false);
+  if(!f.p.capture_inline(f.cmd,0))return 26;
+  f.run();if(f.p.poll_async(f.q).preview_subject.request){std::cerr<<"FAIL other/local draw order inherited latest tag\n";return 27;}}
+ {Fixture f;const auto c=f.subject_context();f.record_subject(f.subject(c,NativePreviewSubject::local));native_preview_subject_thread().working={};
+  if(!f.p.capture_inline(f.cmd,0))return 28;
+  f.run();if(f.p.poll_async(f.q).preview_subject.request){std::cerr<<"FAIL copy outside matching original task retained preview authority\n";return 29;}}
+ native_preview_subject_thread()={};native_preview_subjects().retire_owner(123);
+ {Fixture f;const auto c=f.subject_context();const auto old=f.subject(c,NativePreviewSubject::local);f.record_subject(old);if(!f.p.capture_inline(f.cmd,0))return 30;f.run();
+  native_preview_subjects().begin_lifetime();native_preview_subjects().end_lifetime();const auto next=f.subject_context();const auto captured=f.p.poll_async(f.q);
+  if(!same_native_preview_stamp(captured.preview_subject,old)||native_preview_subjects().current(captured.preview_subject)||next.epoch==c.epoch){std::cerr<<"FAIL delayed completion inherited a reconstructed same-address world lifetime\n";return 31;}}
+ native_preview_subject_thread()={};native_preview_subjects().retire_owner(123);
  {Fixture f;f.run();f.write(2,4);auto x=f.p.poll_async(f.q);if(x.buffers.count("instances")!=1||x.buffers.at("instances").bytes!=std::vector<unsigned char>(128,0x5a)){std::cerr<<"FAIL post-submit descriptor churn lost snapshot\n";return 1;}}
  {Fixture f;if(!f.p.capture_inline(f.cmd,0)){std::cerr<<"FAIL inline setup\n";return 2;}f.write(2,4);f.run();if(!f.p.poll_async(f.q).buffers.empty()){std::cerr<<"FAIL changed before inline submit published\n";return 3;}}
  {Fixture f;if(!f.p.capture_inline(f.cmd,0))return 9;f.run();f.write(2,4);if(f.p.poll_async(f.q).buffers.empty()){std::cerr<<"FAIL inline post-submit churn lost snapshot\n";return 10;}}

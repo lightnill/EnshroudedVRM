@@ -34,6 +34,10 @@ struct PlayerFrame {
     vrm::Matrix camera_stable_world_to_clip{};
     std::array<float,2> camera_jitter_uv{};
     std::array<std::uint32_t, 3> camera_packed_origin{};
+    // Native fixed17 world coordinates, diagnostic only and available solely
+    // for a successful owner-filtered local-world selection. Not a permit.
+    std::array<double,3> map_position{};
+    bool map_position_known=false;
     std::vector<SelectedPart> parts;
     std::uint32_t queue_family = 0;
     std::size_t observed_joint_count = 0;

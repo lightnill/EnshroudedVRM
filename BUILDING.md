@@ -1,4 +1,4 @@
-# Building EnshroudedVRM 0.3.1
+# Building EnshroudedVRM 0.3.2
 
 Players use the release ZIP and normal Steam startup. These instructions are for developers.
 
@@ -15,14 +15,14 @@ https://github.com/lightnill/EnshroudedVRM/releases/download/v0.2.0/EnshroudedVR
 
 Required SHA-256: 6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26
 
-The baseline supplies checked compatibility/vendor files and twelve unchanged shader modules. The packed fog snapshot shader has the explicit current-source pin in portable/package_standalone_release.py (31305bfdccb504f29b719e08d06aa4557c2402bbd5da3b63b9da36bfaf938fd5); the old interface is not accepted for this runtime. The release and runtime are 0.3.1; the bootstrap retains its independent 0.2.0-standalone-dev version and tested DLL bytes (d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef). See SOURCE-BUILD-INFO.json for the exact rebuilt runtime hash. Dependencies are not downloaded automatically.
+The baseline supplies checked compatibility/vendor files and the accepted shader set. The packed fog snapshot and debug-report capture module have explicit checked hashes. Release/runtime version is 0.3.2. The bootstrap is retained byte-identically with independent 0.2.0-standalone-dev metadata and SHA-256 d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef. SOURCE-BUILD-INFO.json and validation/0.3.2 record the exact runtime/source/shader/package hashes. Dependencies are not downloaded automatically.
 
 ## Build and freeze
 
 Run the following as one command, using absolute paths for your toolchain and baseline:
 
 ```powershell
-python portable/build_standalone.py --compiler-directory C:/Tools/w64devkit/bin --bootstrap-compiler-directory C:/Tools/MSVC/bin/Hostx64/x64 --vulkan-include-directory C:/Tools/Vulkan-Headers/include --shader-compiler C:/Tools/dxc/bin/x64/dxc.exe --powershell C:/Tools/PowerShell/pwsh.exe --base-package C:/Releases/EnshroudedVRM-0.2.0-docs1.zip --output-directory C:/Builds/evrm-031 --version 0.3.1 --publication-status preview
+python portable/build_standalone.py --compiler-directory C:/Tools/w64devkit/bin --bootstrap-compiler-directory C:/Tools/MSVC/bin/Hostx64/x64 --vulkan-include-directory C:/Tools/Vulkan-Headers/include --shader-compiler C:/Tools/dxc/bin/x64/dxc.exe --powershell C:/Tools/PowerShell/pwsh.exe --base-package C:/Releases/EnshroudedVRM-0.2.0-docs1.zip --output-directory C:/Builds/evrm-032 --version 0.3.2 --publication-status preview
 ```
 
 The command above performs fresh native builds for development. A new compiler/linker can produce different bootstrap bytes even when its source and version are unchanged. To package retained binaries, use portable/package_standalone_release.py with explicit --bootstrap-dll/--bootstrap-sha256 and --runtime-dll/--runtime-sha256 inputs, a complete current source-pin file, and the accepted shader manifest. Do not change the retained DLL version resource. BUILD-INFO.json records nativeMetadataVersion for the runtime and bootstrapMetadataVersion separately.
@@ -41,10 +41,22 @@ Run the selected CPU tests/test_*.py modules with the Windows compiler, Vulkan h
 
 `python -m unittest discover -s tests -p test_graphics_lifecycle.py -v` runs the pose-snapshot and menu busy-frame regressions with fake Vulkan callbacks. It compiles production code but does not create a graphics device or window, load the runtime DLL, or launch the game. Real GPU fixtures are separate and must be selected explicitly when appropriate.
 
-The retained script-launcher tests require their owned portable_child.exe fixture, built with tests/build_script_fixture.ps1 or test_script_fixture_build.py. They test the legacy source only; no script launcher is included in the 0.3.1 player ZIP. Suppress Windows error dialogs in the test parent with SetErrorMode(0x8003) for intentional fault cases. Fixtures must not launch the real game or capture microphone input.
+The retained script-launcher tests require their owned portable_child.exe fixture, built with tests/build_script_fixture.ps1 or test_script_fixture_build.py. They test the legacy source only; no script launcher is included in the 0.3.2 player ZIP. Suppress Windows error dialogs in the test parent with SetErrorMode(0x8003) for intentional fault cases. Fixtures must not launch the real game or capture microphone input.
 
-Historical feature tests are retained in the 0.3.0 validation record. The 0.3.1 exact-source/package/CPU checks and their limits are recorded under validation/0.3.1. The graphics lifecycle suite now also covers fog budgets, owned-part extraction/recovery, readback/menu lifetimes and sampled hook timing. Pure CPU timings are not gameplay FPS evidence. Real GPU fixtures remain separate; do not run them as part of the ordinary CPU verification workflow.
+Historical feature checks are retained in earlier validation records. The 0.3.2 release source passed 87 selected CPU/source/import/package methods without skips. The final package-only fog-pin correction has its own subsequent complete packaging-module result in validation/0.3.2. User-run inventory/survivor/inventory, equipment and title/character reload checks passed on the selected local implementation. The rebuilt runtime changes only its version-resource section. Wider exact-package laptop, scene and optional screenshot coverage remains pending.
 
 ## Legacy tooling
 
-portable/script, the legacy portable/docs README/building notes and package_script_release.py remain for historical source/tests. portable/docs/NEXUS-DESCRIPTION.txt is the current public Nexus description. They describe older releases and are not the 0.3.1 installation or startup path. Research-only build.ps1 targets may reference omitted research fixtures; the supported release build is the Bridge route used by build_standalone.py.
+The debug-report feature adds `debug_report_policy/archive/sources/service/gpu.cpp` and `debug_report_capture.comp.spv` to the standalone Bridge build. The historical script package keeps its accepted shader set; standalone packaging adds the new, explicitly hashed report module while preserving every accepted 0.2.0 shader pin. The runtime manifest requires the complete new member set.
+
+Run `python -m unittest -v test_debug_report` with `PYTHONPATH=tests`, `EVRM_TEST_COMPILER` and `EVRM_VULKAN_INCLUDE_DIRECTORY` configured. These tests use synthetic metadata, temporary owned files and fake Vulkan callbacks; they do not query actual hardware, load a DLL, record audio, capture the screen or create a graphics device. They cover field allowlists, private canaries, native map admission, PNG/ZIP validation, cancelled jobs, exact presented-image consent, write failures and graphics retirement. Live capture/preview, native map-coordinate interpretation and reports from different hardware still require a player-run test.
+
+portable/script, the legacy portable/docs README/building notes and package_script_release.py remain for historical source/tests. portable/docs/NEXUS-DESCRIPTION.txt is the current public Nexus description. Research-only build.ps1 targets may reference omitted research fixtures; the supported release build is the Bridge route used by build_standalone.py.
+
+The local ownership diagnostic milestone uses the original `LocalPlayerData+4` selector and selected entity hash chain. `tests/test_native_preview_trace.py` tests its separate bounded GPU ancestry history, privacy fields, actual fake-driver observation/copy/retirement wiring and report archive export. That first trace adds no engine hook or GPU submit/wait. Stages are binding/inline-plan/queued-plan observations; successful GPU execution is not implied.
+
+The refined diagnostic milestone originally added four exact-image observations to trace requests through command-task creation and consumption, preserving rendering decisions. Its live trace separated inventory and survivor origins. `tests/test_native_preview_handoff.py` retains correlation/export, forwarding, unsupported-host and report-contention coverage.
+
+The 0.3.2 preview-ownership implementation uses six original entry observations (request, Character render, returning task allocator, worker, main-context constructor and destructor), plus exact CALL observers around accepted publication and consumer copy. Setup checks the supported image and every original entry/call byte before mutation, outside rendering/loader callbacks. Relays remain process-owned. The redundant command-builder constructor observation and borrowed-builder read are removed. A separate native main-context lifetime generation rejects identical-address/ID reuse and blocks preview admission throughout construction/destruction, including nested or throwing calls. Unknown/reused task addresses cannot inherit old labels.
+
+`tests/test_native_preview_subject.py` exercises accepted/rejected/unknown requests, publication/copy overlap, immutable deferred local/other tasks, fixed capacity, exact-key retirement, source/actor generation changes, original-call exceptions and a real owned CALL relay with return-address preservation. Its actual extracted backend methods check Character preparation, full actor verification, VRM emission, native clipping and pipeline restoration using fake external callbacks. The graphics lifecycle readback fixture records tags on every draw, including unchanged descriptors, and tests actual completion and mixed-subject rejection. These are CPU fixtures; they open no game process and create no graphics device. The selected local implementation passed user-run inventory/survivor, equipment and title/character reload checks. The versioned package still needs wider cross-machine testing. Exact release checks and scan coverage are recorded under validation/0.3.2.

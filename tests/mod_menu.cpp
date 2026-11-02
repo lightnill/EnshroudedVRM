@@ -8,7 +8,7 @@ void require(bool value,const char* message){if(!value)throw std::runtime_error(
 }
 int main(){try{
     IMGUI_CHECKVERSION();ImGui::CreateContext();evrm::configure_mod_menu(1,false);
-    auto& io=ImGui::GetIO();io.DisplaySize={1000,800};io.DeltaTime=1.f/60;unsigned char* pixels;int w,h;io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
+    auto& io=ImGui::GetIO();io.DisplaySize={1000,1100};io.DeltaTime=1.f/60;unsigned char* pixels;int w,h;io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     require(io.IniFilename==nullptr&&io.LogFilename==nullptr,"GUI file IO disabled");
     const auto& style=ImGui::GetStyle();require(style.Colors[ImGuiCol_WindowBg].w==1&&style.Colors[ImGuiCol_WindowBg].x<.12f,"opaque dark surface");
     for(auto color:{ImGuiCol_Text,ImGuiCol_TextDisabled,ImGuiCol_SliderGrab,ImGuiCol_SliderGrabActive,ImGuiCol_CheckMark,ImGuiCol_NavCursor}){
@@ -56,7 +56,7 @@ int main(){try{
     require(settings.voice_enabled,"queued click retains its event position after the physical pointer moves away");
     io.ClearEventsQueue();io.ClearInputMouse();expanded=false;frame();frame();
     const float original_x=layout.voice.x0,original_y=layout.voice.y0;
-    const float title_x=original_x+90,title_y=original_y-55;
+    const float title_x=(layout.title.x0+layout.title.x1)*.5f,title_y=(layout.title.y0+layout.title.y1)*.5f;
     io.AddMousePosEvent(title_x,title_y);frame();io.AddMouseButtonEvent(0,true);frame();
     io.AddMousePosEvent(title_x+100,title_y+60);frame();frame();
     require(std::abs(layout.voice.x0-original_x-100)<1&&std::abs(layout.voice.y0-original_y-60)<1,"title drag moves the panel");

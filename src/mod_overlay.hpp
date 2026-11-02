@@ -26,6 +26,7 @@ public:
     void before_present(VkQueue,std::uint32_t family,const VkPresentInfoKHR&,bool consumed,bool accessible,const ModMenuStatus&,ModOverlayPresentation&)noexcept;
     void presented(const ModOverlayPresentation&,VkResult)noexcept;
     void fence_changing(VkFence,bool destroying)noexcept;
+    bool menu_open()const noexcept;
 private:
     struct Impl;std::unique_ptr<Impl> impl;
 };

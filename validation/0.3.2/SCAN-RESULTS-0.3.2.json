@@ -1,0 +1,117 @@
+{
+  "version": "0.3.2",
+  "dateUTC": "2026-11-02",
+  "maliciousOrSuspiciousDetections": 0,
+  "bitdefender": [
+    {
+      "kind": "runtime",
+      "sha256": "2af384d602a6db17608071d94b89e691c34c4b2257c102ec73adbda253369fea",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "bootstrap",
+      "sha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "voice-sdk",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "members",
+      "sha256": null,
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    },
+    {
+      "kind": "archive",
+      "sha256": "0587b67d2ae08394431b1cc1f734c47ae5a1e7d9a68354bf045a451e40ed15e1",
+      "issues": 0,
+      "unscannedObjects": 0,
+      "hashUnchanged": true
+    }
+  ],
+  "virusTotal": [
+    {
+      "kind": "runtime",
+      "sha256": "2af384d602a6db17608071d94b89e691c34c4b2257c102ec73adbda253369fea",
+      "analysisDate": "2026-11-02T09:10:37Z",
+      "retrievedAt": "2026-11-02T09:11:45.293657+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/2af384d602a6db17608071d94b89e691c34c4b2257c102ec73adbda253369fea",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 70,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 1,
+        "type-unsupported": 4
+      },
+      "newFileSubmission": true
+    },
+    {
+      "kind": "archive",
+      "sha256": "0587b67d2ae08394431b1cc1f734c47ae5a1e7d9a68354bf045a451e40ed15e1",
+      "analysisDate": "2026-11-02T09:12:08Z",
+      "retrievedAt": "2026-11-02T09:14:08.437389+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/0587b67d2ae08394431b1cc1f734c47ae5a1e7d9a68354bf045a451e40ed15e1",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 65,
+        "harmless": 0,
+        "timeout": 2,
+        "confirmed-timeout": 0,
+        "failure": 1,
+        "type-unsupported": 7
+      },
+      "newFileSubmission": true
+    },
+    {
+      "kind": "bootstrap",
+      "sha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "analysisDate": "2026-11-01T00:13:47Z",
+      "retrievedAt": "2026-11-02T08:52:52.815659+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 71,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 0,
+        "type-unsupported": 4
+      },
+      "newFileSubmission": false
+    },
+    {
+      "kind": "voice-sdk",
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "analysisDate": "2026-09-07T19:12:50Z",
+      "retrievedAt": "2026-11-02T08:52:53.961558+00:00",
+      "reportUrl": "https://www.virustotal.com/gui/file/f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 70,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 1,
+        "type-unsupported": 4
+      },
+      "newFileSubmission": false
+    }
+  ],
+  "coverage": "VirusTotal warns this multi-file archive exceeds its full-content inspection limit. The three DLLs have separate exact-hash reports; the retained bootstrap/SDK keep their original analysis dates. Engine failures, unsupported types and timeouts are coverage gaps. Bitdefender separately scanned all 43 extracted members. Zero detections do not guarantee safety."
+}

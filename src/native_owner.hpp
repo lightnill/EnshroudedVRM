@@ -12,6 +12,13 @@ struct NativeOwnerMemory {
     virtual ~NativeOwnerMemory() = default;
     virtual bool read(std::uint64_t, void*, std::size_t) const noexcept = 0;
     virtual std::uint64_t milliseconds() const noexcept = 0;
+    // Presentation/pose timestamps keep the adapter's original clock above.
+    // Elapsed work may use a separate monotonic epoch; never publish this value
+    // as a pose timestamp. Existing adapters keep their original behavior.
+    virtual std::uint64_t work_milliseconds() const noexcept {return milliseconds();}
+    // Optional current-pass read-ahead. Reserve worst-case physical requests,
+    // including exact-read fallback; unspecified adapters remain exact-only.
+    virtual bool permit_read_ahead(std::size_t,std::size_t) const noexcept {return false;}
 };
 struct NativeOwnerImage {
     std::uint64_t base=0, size=0;
@@ -72,6 +79,7 @@ struct NativeOwnerModel {
 struct NativeOwnerCandidate {
     NativeOwnerImage image;
     std::uint64_t root=0, client=0, controller=0, main=0, execution=0, registry=0, entity_manager=0;
+    std::uint64_t local_player_data=0;
     std::uint64_t entity=0, entity_layout=0, entity_storage=0, equipment=0;
     std::uint32_t entity_id=0, entity_generation=0, entity_slot=0, entity_row=0;
     std::uint32_t input_registration=0, equipment_registration=0;
@@ -91,12 +99,15 @@ bool revalidate_native_owner(const NativeOwnerMemory&, NativeOwnerCandidate&, st
 
 // Externally synchronized. Retains owned immutable guards, never an ownership
 // lease: all guards are freshly read before reuse and again at submission.
+struct NativeOwnerCachePrefix;
 class NativeOwnerCache {
     NativeOwnerCandidate cached_;
+    // Decoded metadata only; usable after this call verifies its whole prefix.
+    std::shared_ptr<const NativeOwnerCachePrefix> prefix_;
     const NativeOwnerMemory* source_=nullptr;
 public:
     bool capture(const NativeOwnerMemory&,const NativeOwnerImage&,NativeOwnerCandidate&,std::string&,
                  const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr,bool* reused=nullptr) noexcept;
-    void clear() noexcept {cached_={};source_=nullptr;}
+    void clear() noexcept {cached_={};prefix_.reset();source_=nullptr;}
 };
 }

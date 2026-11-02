@@ -154,6 +154,8 @@ VkResult GpuProbe::submit_async(VkQueue queue,uint32_t count,const VkSubmitInfo*
                 if(draws.empty())continue;
                 auto plan=impl->make_plan(queue,impl->async_limits,draws,true);
                 if(plan.reads.empty())continue;
+                for(const auto& read:plan.reads)if(read.target.role=="instances")native_preview_trace_event(bits(read.target.binding.buffer),NativePreviewTraceStage::Submit);
+                for(const auto& view:plan.additional)for(const auto& read:view.reads)if(read.target.role=="instances")native_preview_trace_event(bits(read.target.binding.buffer),NativePreviewTraceStage::Submit);
                 planned=true;
                 // Shared culling/indirect scratch may be overwritten by the next
                 // primary, even in this batch. Copy directly after its producer.

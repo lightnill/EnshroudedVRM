@@ -1,14 +1,12 @@
-EnshroudedVRM 0.3.1 — standalone preview
+EnshroudedVRM 0.3.2 â€” standalone preview
 
-The release and avatar runtime are version 0.3.1. The bootstrap keeps its independent
+The release and avatar runtime are version 0.3.2. The bootstrap keeps its independent
 0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
 records the runtime and bootstrap versions separately.
 
-0.3.1 updates higher-fog compatibility, local-player ownership selection and
-recovery, transient GPU/menu/readback handling and local timing diagnostics.
-Start through Steam and configure in F8. Some fallbacks, preview identification
-and base-area stutters remain under investigation; see KNOWN-ISSUES.txt.
-No gameplay performance improvement is claimed for the complete package.
+0.3.2 adds explicit local-player ownership, correct inventory/survivor previews,
+ownership/driver-lookup optimizations and private one-click F8 debug reports.
+Launch through Steam and configure in F8. See KNOWN-ISSUES.txt for coverage.
 
 INSTALL
 This preview is validated only with Windows installed in C:\Windows.
@@ -73,3 +71,11 @@ Close the game first. Remove only this package's vulkan-1.dll and mod files.
 Keep or move any avatars/import preferences you placed in EnshroudedVRM before
 deleting that folder. Personal settings in your user folder remain. Never
 delete another mod's files. Leave published 0.2.0 packages intact for rollback.
+
+REPORT AN ISSUE
+F8 -> Create debug report saves a local ZIP. Open reports folder opens its
+location. Nothing uploads automatically. Reports contain allowlisted diagnostics,
+settings, hardware and terrain/rendering context, with fresh qualified in-game
+XYZ coordinates when available. Real-world location and voxel/save extraction
+are never used. Screenshots are off; preview and explicit inclusion are needed.
+Review any visible names/chat and the completed ZIP before sharing it yourself.

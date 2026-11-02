@@ -27,11 +27,14 @@ void mod_input_request_close(HWND,std::uint64_t token)noexcept{if(token==admissi
 ModInputFrame mod_input_drain(HWND)noexcept{++drains;ModInputFrame f;f.open=opened;return f;} ModSettings mod_settings_snapshot()noexcept{return {};}
 bool request_mod_settings(const ModSettings&)noexcept{return true;} void apply_avatar_action(const AvatarMenuAction&,std::uintptr_t)noexcept{}
 struct ModMenuGpu::Impl{};
-ModMenuGpu::ModMenuGpu(VkInstance,VkPhysicalDevice,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,PFN_vkSetDeviceLoaderData,VkQueue,std::uint32_t,VkFormat,VkExtent2D,const std::vector<VkImage>&,VkImageLayout,float):impl(new Impl){}
+ModMenuGpu::ModMenuGpu(VkInstance,VkPhysicalDevice,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,PFN_vkSetDeviceLoaderData,VkQueue,std::uint32_t,VkFormat,VkExtent2D,const std::vector<VkImage>&,VkImageLayout,float,bool):impl(new Impl){}
 ModMenuGpu::~ModMenuGpu()=default;
 ModMenuGpuReadiness ModMenuGpu::readiness()noexcept{return gpu_failed?ModMenuGpuReadiness::Failed:(gpu_ready?ModMenuGpuReadiness::Ready:ModMenuGpuReadiness::Busy);}
 ModMenuGpuResult ModMenuGpu::draw(std::uint32_t,std::uint32_t,const VkSemaphore*,ModSettings&,const ModMenuStatus&,bool&,bool&,const ModInputFrame&,ModMenuPlacement*)noexcept{ModMenuGpuResult r;r.result=draw_status;r.submitted=draw_status==VK_SUCCESS;return r;}
 VkSemaphore ModMenuGpu::completion(std::uint32_t)const noexcept{return reinterpret_cast<VkSemaphore>(101);} void ModMenuGpu::presentation_complete()noexcept{}
+void ModMenuGpu::poll_report(const DebugReportStatus&)noexcept{} void ModMenuGpu::report_presented(std::uint32_t,VkResult)noexcept{}
+void ModMenuGpu::report_invalidated()noexcept{}
+void debug_report_apply(const DebugReportAction&)noexcept{}
 }
 int main(int argc,char** argv){try{
 require(argc==2,"case required"); evrm::ModOverlay overlay(nullptr,nullptr,nullptr,gipa,gdpa,nullptr,true); evrm::SwapchainState state;

@@ -5,6 +5,7 @@
 #include "native_submit.hpp"
 #include "gpu_probe_capture_frames.hpp"
 #include "fallback_diagnostics.hpp"
+#include "native_preview_trace.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -66,6 +67,7 @@ struct RecordedDraw {
     VkBuffer buffer{},count_buffer{};VkDeviceSize offset=0,count_offset=0;
     uint32_t count=0,stride=0;
     std::map<std::string,BoundTarget> bindings;
+    NativePreviewStamp preview_subject;
 };
 struct ComputeEvent {
     enum class Kind {dispatch,unsupported,execute};Kind kind=Kind::dispatch;
@@ -86,6 +88,7 @@ struct CaptureRead { Target target; VkDeviceSize size{},destination{}; };
 struct ResolveDraw {std::string role,count_role;uint32_t count=0,stride=0;};
 struct CapturePlan {
     GpuSnapshot snapshot;
+    NativePreviewStamp preview_proposal;
     std::vector<CaptureRead> reads;
     std::vector<ResolveDraw> draw_reads;
     std::map<VkDescriptorSet,uint64_t> descriptor_leases;
@@ -360,6 +363,24 @@ CapturePlan GpuProbe::Impl::make_single_plan(VkQueue queue,const std::map<std::s
                 for(const auto& version:draw.versions){const auto set=sets.find(version.first);if(set==sets.end()||set->second.version!=version.second)throw std::runtime_error("Descriptor contents changed after draw submission");descriptor_leases[version.first]=version.second;}
             };
             if(latest)validate_generations(*latest);
+            const auto instance=targets.find("instances");
+            if(instance!=targets.end()){
+                const auto& binding=instance->second.binding;bool first=true,mixed=false;
+                const auto allocation=buffers.find(binding.buffer);
+                for(const auto& submitted:draws){const auto found=submitted.bindings.find("instances");
+                    if(submitted.queue!=queue||found==submitted.bindings.end())continue;
+                    const auto& other=found->second.binding;
+                    if(other.buffer!=binding.buffer||other.offset!=binding.offset||other.range!=binding.range)continue;
+                    auto stamp=submitted.draw.preview_subject;
+                    // Probe generations protect readback leases; source.generation
+                    // belongs to NativeState and is verified by the backend.
+                    if(allocation==buffers.end()||stamp.source.device!=bits(device)||stamp.source.buffer!=bits(binding.buffer)||
+                        !native_preview_subjects().current(stamp))stamp={};
+                    if(first){plan.preview_proposal=stamp;first=false;}
+                    else if(!same_native_preview_stamp(plan.preview_proposal,stamp))mixed=true;
+                }
+                if(mixed)plan.preview_proposal={};
+            }
             for (const auto& item : targets) {
                 if (!limits.count(item.first) || !limits.at(item.first)) continue;
                 const auto& binding = item.second.binding;
@@ -534,10 +555,13 @@ bool GpuProbe::needs_transfer_source(const VkBufferCreateInfo& info) const {
 }
 void GpuProbe::buffer_created(VkBuffer buffer, const VkBufferCreateInfo& info) {
     if (!enabled()) return;
+    native_preview_subjects().retire_buffer(bits(impl->device),bits(buffer));
     std::lock_guard<std::mutex> lock(impl->mutex);
     impl->buffers[buffer] = {info.size, info.usage,++impl->buffer_generation,VK_NULL_HANDLE,!info.pNext&&!info.flags};
 }
 void GpuProbe::buffer_destroyed(VkBuffer buffer) {
+    native_preview_subjects().retire_buffer(bits(impl->device),bits(buffer));
+    native_preview_trace_retired(bits(buffer));
     if (!enabled()) return;
     {
         std::lock_guard<std::mutex> lock(impl->mutex);
@@ -748,6 +772,7 @@ void GpuProbe::sets_bound(VkCommandBuffer command,VkPipelineBindPoint point,VkPi
             if (impl->logged_roles.insert(role).second) log_event("probe.binding.available role=" + std::string(role));
             impl->targets[role] = {role, value};
             command_state.bindings[role]={handles[i],binding,dynamic==dynamics.end()?0:dynamic->second};
+            if(binding==4)native_preview_trace_event(bits(value.buffer),NativePreviewTraceStage::Bindings);
         };
         if(slot==0&&set->second.layout.kind==SetKind::global){take(5,"skin");take(6,"previous-skin");}
         if(slot==1&&set->second.layout.kind==SetKind::camera)take(16,"camera");
@@ -784,7 +809,9 @@ void GpuProbe::draw_indexed_indirect(VkCommandBuffer command,VkBuffer buffer,VkD
     std::lock_guard<std::mutex> lock(impl->mutex);auto& state=impl->commands[command];
     if(!state.model||!state.expected_layout||state.bound_layout!=state.expected_layout)return;
     for(const auto* role:{"camera","skin","instances","mesh-draw","culled-instances"})if(!state.bindings.count(role))return;
-    state.draws.push_back({buffer,count_buffer,offset,count_offset,count,stride,state.bindings});
+    const auto stamp=native_preview_subject_thread().working;
+    state.draws.push_back({buffer,count_buffer,offset,count_offset,count,stride,state.bindings,
+        native_preview_subjects().current(stamp)?stamp:NativePreviewStamp{}});
 }
 void GpuProbe::execute(VkCommandBuffer command,uint32_t count,const VkCommandBuffer* children) {
     if(!enabled())return;

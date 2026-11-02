@@ -11,7 +11,17 @@
 // Read-only contracts adapted from ShroudForge commit
 // 46b59da1b3642f91fee3808c513efb996ec33f23, Copyright(c)2026 bonsaibauer.
 // The accompanying native_owner_profile.hpp preserves provenance and MIT license.
-namespace evrm { namespace {
+namespace evrm {
+// Private decoded image/registry metadata. This is not ownership authority;
+// its original guard prefix must pass fresh reads in the same cache call.
+struct NativeOwnerCachePrefix {
+    struct Descriptor {std::string name;std::uint32_t size=0,hash=0;bool structure=false;};
+    struct Registration {Descriptor storage;std::uint64_t storage_pointer=0;std::uint32_t size=0,index=0;};
+    std::vector<Registration> registrations;
+    std::vector<std::pair<std::uint64_t,std::uint64_t>> executable;
+    std::size_t guard_count=0;
+};
+namespace {
 namespace p=native_owner_profile;
 namespace o=p::ownerLayout;
 namespace e=p::ecsReadLayout;
@@ -28,6 +38,49 @@ U mul(U a,U b){need(!b||a<=std::numeric_limits<U>::max()/b,"size overflow");retu
 template<class T> T get(const Bytes& data,std::size_t offset){need(offset<=data.size()&&sizeof(T)<=data.size()-offset,"field outside structure");T value;std::memcpy(&value,data.data()+offset,sizeof value);return value;}
 std::uint32_t fnv(const std::string& name){std::uint32_t h=2166136261u;for(unsigned char c:name)h=(h^c)*16777619u;return h;}
 void reason_set(std::string& out,const char* why)noexcept{try{out=why;}catch(...){out.clear();}}
+// Ephemeral to ONE verify() call. Physical reads can include small gaps between
+// known spans, but never cross a4096-byte region. Only original guards compare;
+// gaps are neither interpreted nor retained in the candidate.
+struct OwnerReadBatches {
+    static constexpr std::uint16_t absent=65535;
+    struct Group {U address=0;std::size_t size=0,offset=0;unsigned state=0;};
+    std::vector<std::uint16_t> lookup;
+    std::vector<Group> groups;
+    Bytes data;
+    static OwnerReadBatches prepare(const NativeOwnerMemory& memory,const NativeOwnerLimits& limits,
+                                   std::size_t used_calls,std::size_t used_bytes,const std::vector<NativeOwnerGuard>& saved)noexcept{
+        try{
+            if(saved.size()<64||saved.size()>16384||!memory.permit_read_ahead(0,0)||used_calls>limits.max_calls||used_bytes>limits.max_bytes)return {};
+            const auto available_calls=limits.max_calls-used_calls,available_bytes=limits.max_bytes-used_bytes;
+            if(saved.size()>available_calls)return {};
+            std::size_t exact_bytes=0;
+            struct Request {U address,end;std::size_t ordinal;};
+            std::vector<Request> requests;requests.reserve(saved.size());
+            for(std::size_t i=0;i<saved.size();++i){const auto& g=saved[i];
+                // A malformed later guard must not preempt an earlier mismatch.
+                if(g.bytes.empty()||g.bytes.size()>limits.max_read||!range(g.address,g.bytes.size())||g.bytes.size()>available_bytes-exact_bytes)return {};
+                exact_bytes+=g.bytes.size();const U end=g.address+g.bytes.size();
+                if(g.bytes.size()<=512&&g.address/4096==(end-1)/4096)requests.push_back({g.address,end,i});
+            }
+            std::sort(requests.begin(),requests.end(),[](const auto& a,const auto& b){return a.address<b.address;});
+            OwnerReadBatches plan;plan.lookup.assign(saved.size(),absent);plan.groups.reserve(512);std::size_t total=0;
+            for(std::size_t first=0;first<requests.size();){
+                std::size_t last=first+1;U end=requests[first].end;
+                while(last<requests.size()&&requests[last].address/4096==requests[first].address/4096){end=std::max(end,requests[last].end);++last;}
+                const auto size=std::size_t(end-requests[first].address);
+                if(last-first>1&&plan.groups.size()<512&&size<=limits.max_read){
+                    const auto group=static_cast<std::uint16_t>(plan.groups.size());
+                    plan.groups.push_back({requests[first].address,size,total,0});total+=size;
+                    for(auto i=first;i<last;++i)plan.lookup[requests[i].ordinal]=group;
+                }
+                first=last;
+            }
+            if(plan.groups.empty()||plan.groups.size()>available_calls-saved.size()||total>available_bytes-exact_bytes||
+                !memory.permit_read_ahead(saved.size()+plan.groups.size(),exact_bytes+total))return {};
+            plan.data.resize(total);return plan;
+        }catch(...){return {};}// Optional allocation/planning never changes exact-read acceptance.
+    }
+};
 struct Reader {
     const NativeOwnerMemory& memory;
     NativeOwnerLimits limits;
@@ -36,24 +89,26 @@ struct Reader {
     std::size_t calls=0,bytes=0;
     std::vector<NativeOwnerGuard> guards;
     Phase current_phase=Phase::image;
-    Reader(const NativeOwnerMemory& m,const NativeOwnerLimits& l,NativeOwnerObservationStats* out):memory(m),limits(l),started(m.milliseconds()),stats(out){
+    Reader(const NativeOwnerMemory& m,const NativeOwnerLimits& l,NativeOwnerObservationStats* out):memory(m),limits(l),started(m.work_milliseconds()),stats(out){
         location(Location::validation);
         need(l.max_read&&l.max_read<=65536&&l.max_bytes&&l.max_bytes<=64*1024*1024&&l.max_calls&&l.max_calls<=100000&&l.max_milliseconds&&l.max_milliseconds<=30000,"invalid read budget");
     }
     void location(Location value)const noexcept{if(stats)stats->failure_location=value;}
     void phase(Phase value)noexcept{current_phase=value;if(stats){stats->phase=value;stats->failure_location=Location::validation;}}
     void elapsed(U now)const noexcept{if(stats){stats->clock_regressed=stats->clock_regressed||now<started;stats->elapsed_milliseconds=now>=started?now-started:0;}}
-    void check(Location where=Location::precheck)const{const U now=memory.milliseconds();location(where);elapsed(now);
+    void check(Location where=Location::precheck)const{const U now=memory.work_milliseconds();location(where);elapsed(now);
         need(now>=started&&now-started<limits.max_milliseconds,"owner observation deadline exceeded");location(Location::validation);}
-    void read(U address,void* dst,std::size_t count){
+    bool try_read(U address,void* dst,std::size_t count){
         check();location(Location::range);need(range(address,count)&&count<=limits.max_read,"invalid read range");
         location(Location::budget);
         need(calls<limits.max_calls&&count<=limits.max_bytes-bytes,"owner read budget exceeded");
         ++calls;bytes+=count;if(stats){stats->attempted_calls=calls;stats->attempted_bytes=bytes;}
         location(Location::read);const bool readable=memory.read(address,dst,count);
         if(readable&&stats){++stats->completed_calls;stats->completed_bytes+=count;}
-        need(readable,"unreadable owner range");check(Location::postcheck);
+        if(readable)check(Location::postcheck);
+        return readable;
     }
+    void read(U address,void* dst,std::size_t count){need(try_read(address,dst,count),"unreadable owner range");}
     Bytes span(U address,U count,bool guard=true){
         need(range(address,count)&&count<=limits.max_bytes,"invalid bounded span");Bytes result(static_cast<std::size_t>(count));
         for(std::size_t offset=0;offset<result.size();){const auto n=std::min(limits.max_read,result.size()-offset);read(add(address,offset),result.data()+offset,n);if(guard){guards.push_back({add(address,offset),Bytes(result.begin()+offset,result.begin()+offset+n),current_phase});if(stats)stats->guard_total=guards.size();}offset+=n;}
@@ -62,13 +117,25 @@ struct Reader {
     template<class T=U> T scalar(U address){return get<T>(span(address,sizeof(T)),0);}
     void verify(const std::vector<NativeOwnerGuard>& saved){
         std::size_t ordinal=0;if(stats)stats->guard_total=saved.size();
-        // One bounded scratch allocation per verification; every retained
-        // range is still read and compared in its original order.
+        // Every retained range still compares in its original order. Batched
+        // bytes are freshly read in this pass and destroyed on return.
         Bytes current(limits.max_read);
+        auto batches=OwnerReadBatches::prepare(memory,limits,calls,bytes,saved);
         for(const auto& g:saved){if(stats)stats->guard_ordinal=ordinal;location(Location::validation);
             need(!g.bytes.empty()&&g.bytes.size()<=limits.max_read,"invalid owned guard");
             if(stats){stats->guard_capture_phase=g.capture_phase;stats->guard_span_bytes=g.bytes.size();stats->guard_difference_offset=0;}
-            read(g.address,current.data(),g.bytes.size());location(Location::compare);
+            bool from_batch=false;
+            const auto group=batches.lookup.empty()?OwnerReadBatches::absent:batches.lookup[ordinal];
+            if(group!=OwnerReadBatches::absent){auto& batch=batches.groups[group];
+                if(!batch.state){
+                    const bool readable=try_read(batch.address,batches.data.data()+batch.offset,batch.size);
+                    if(!readable)check(Location::postcheck);
+                    batch.state=readable?1:2;
+                }
+                if(batch.state==1){check();std::memcpy(current.data(),batches.data.data()+batch.offset+std::size_t(g.address-batch.address),g.bytes.size());check(Location::postcheck);from_batch=true;}
+            }
+            if(!from_batch)read(g.address,current.data(),g.bytes.size());
+            location(Location::compare);
             if(std::memcmp(current.data(),g.bytes.data(),g.bytes.size())!=0){
                 if(stats){std::size_t at=0;while(at<g.bytes.size()&&current[at]==g.bytes[at])++at;stats->guard_difference_offset=at;}
                 need(false,"owner guard changed");
@@ -84,6 +151,7 @@ struct Image {
     std::vector<std::pair<U,U>> executable;
     bool inside(U address,U count)const{return address>=image.base&&count<=image.size&&address-image.base<=image.size-count;}
     bool code(U address)const{for(auto r:executable)if(r.first<=address&&address<r.second)return true;return false;}
+    Image(Reader& r,const NativeOwnerImage& i,const NativeOwnerCachePrefix& verified):m(r),image(i),executable(verified.executable){}
     Image(Reader& r,const NativeOwnerImage& i):m(r),image(i){
         need(image_identity(image),"unsupported image SHA/timestamp/size");auto dos=m.span(image.base,64);need(dos[0]=='M'&&dos[1]=='Z',"DOS header mismatch");
         U nt=add(image.base,get<std::uint32_t>(dos,0x3C));need(inside(nt,24),"PE header outside image");auto pe=m.span(nt,24);need(get<std::uint32_t>(pe,0)==0x4550&&get<std::uint16_t>(pe,4)==0x8664,"PE signature/machine mismatch");
@@ -99,8 +167,8 @@ struct Image {
         return std::string(data.begin(),data.end());
     }
 };
-struct Descriptor {std::string name;std::uint32_t size=0,hash=0;bool structure=false;};
-struct Registration {Descriptor storage;U storage_pointer=0;std::uint32_t size=0,index=0;};
+using Descriptor=NativeOwnerCachePrefix::Descriptor;
+using Registration=NativeOwnerCachePrefix::Registration;
 std::vector<Registration> registry(Reader& m,Image& image,U address){
     const U records=m.scalar(address+8),count=m.scalar(address+16),capacity=m.scalar(address+24);need(count&&count<=1024&&count<=capacity&&capacity<=4096,"invalid component registry dimensions");
     auto array=[&](U offset,U stride){U pointer=m.scalar(address+offset);need(m.scalar(address+offset+8)==count,"parallel registry count mismatch");return m.span(pointer,mul(count,stride));};
@@ -136,17 +204,22 @@ Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,
     auto selected=[&](const char* name)->const Registration&{auto it=std::find_if(registrations.begin(),registrations.end(),[&](const auto& r){return r.storage.name==name;});need(it!=registrations.end()&&it->storage.structure,"selected reflected runtime struct missing");return *it;};
     const auto& input=selected("keen::ecs::ClientPlayerInput");const auto& equipment=selected("keen::ecs::RenderEquipment");need(input.size==1536&&equipment.size==788,"selected registration size mismatch");c.input_registration=input.index;c.equipment_registration=equipment.index;
     U capacity=m.scalar(c.entity_manager+e::entityManagerCount);need(capacity&&capacity<=e::maximumEntities&&!(capacity&(capacity-1)),"invalid entity table capacity");U table=m.scalar(c.entity_manager+e::entityManagerTable),occupancy=m.scalar(c.entity_manager+e::entityManagerOccupancy),keys=m.scalar(c.entity_manager+e::entityManagerKeys);
-    auto slots=m.span(table,mul(capacity,8)),keydata=m.span(keys,mul(capacity,4)),occupied=m.span(occupancy,((capacity+63)/64)*8);auto bit=[&](U index){return (occupied[index/8]>>(index%8))&1;};for(U i=capacity;i<occupied.size()*8;++i)need(!bit(i),"entity occupancy exceeds capacity");
-    U bit_size=((registrations.size()+63)/64)*8;need(bit_size<=e::componentOffsets&&registrations.size()*2<=e::componentStrides-e::componentOffsets,"component layout arrays overlap");std::map<U,Bytes> layouts;std::set<std::uint32_t> ids;std::set<U> pointers;unsigned candidates=0;
-    for(U slot=0;slot<capacity;++slot){m.check();if(!bit(slot))continue;U pointer=get<U>(slots,slot*8);auto header=m.span(add(pointer,16),36);
-        auto id=get<std::uint32_t>(header,0),generation=get<std::uint32_t>(header,4),row=get<std::uint32_t>(header,32);U layout=get<U>(header,8),storage=get<U>(header,16);
-        need(id&&id==get<std::uint32_t>(keydata,slot*4)&&ids.insert(id).second&&pointers.insert(pointer).second&&range(pointer,52)&&range(layout,1)&&range(storage,1)&&row<=1u<<24,"invalid occupied entity identity/layout/storage/row");auto found=layouts.find(layout);if(found==layouts.end())found=layouts.emplace(layout,m.span(layout,bit_size)).first;
-        if((found->second[input.index/8]>>(input.index%8))&1){++candidates;c.entity=pointer;c.entity_id=id;c.entity_generation=generation;c.entity_slot=static_cast<std::uint32_t>(slot);c.entity_row=row;c.entity_layout=layout;c.entity_storage=storage;}
-    }
-    need(candidates==1,"ClientPlayerInput missing or ambiguous in complete census");std::uint32_t hash=c.entity_id;for(unsigned i=0;i<2;++i)hash=((hash>>16)^hash)*0x45D9F3Bu;U start=(hash^(hash>>16))&(capacity-1);bool found=false;
-    for(U probe=0;probe<std::min<U>(capacity,8192);++probe){U slot=(start+probe)&(capacity-1);need(bit(slot),"entity outside original ID hash chain");if(get<std::uint32_t>(keydata,slot*4)==c.entity_id){need(slot==c.entity_slot,"entity ID selector disagreement");found=true;break;}}need(found,"entity hash probe bound exceeded");
+    need(range(table,mul(capacity,8))&&range(keys,mul(capacity,4))&&range(occupancy,((capacity+63)/64)*8),"invalid entity map ranges");
+    // The original local-player predicate3b4fe0 compares the entity ID with
+    // LocalPlayerData+4. The service and original bindings are in the verified
+    // prefix; this mutable selector belongs to every fresh capture/submission.
+    need(range(c.local_player_data,8),"local player service unavailable");c.entity_id=m.scalar<std::uint32_t>(add(c.local_player_data,4));need(c.entity_id,"local player selector absent");
+    std::uint32_t hash=c.entity_id;for(unsigned i=0;i<2;++i)hash=((hash>>16)^hash)*0x45D9F3Bu;U start=(hash^(hash>>16))&(capacity-1);bool found=false;
+    for(U probe=0;probe<std::min<U>(capacity,8192);++probe){const U slot=(start+probe)&(capacity-1);const auto occupied=m.scalar<std::uint8_t>(add(occupancy,slot/8));
+        need((occupied>>(slot%8))&1,"local entity outside original ID hash chain");if(m.scalar<std::uint32_t>(add(keys,slot*4))!=c.entity_id)continue;
+        c.entity=m.scalar(add(table,slot*8));c.entity_slot=static_cast<std::uint32_t>(slot);found=true;break;}
+    need(found,"local entity hash probe bound exceeded");need(range(c.entity,52),"selected entity range invalid");const auto header=m.span(add(c.entity,16),36);
+    need(get<std::uint32_t>(header,0)==c.entity_id,"local entity header ID mismatch");c.entity_generation=get<std::uint32_t>(header,4);c.entity_row=get<std::uint32_t>(header,32);c.entity_layout=get<U>(header,8);c.entity_storage=get<U>(header,16);
+    need(range(c.entity_layout,1)&&range(c.entity_storage,1)&&c.entity_row<=1u<<24,"invalid selected entity layout/storage/row");
+    const U bit_size=((registrations.size()+63)/64)*8;need(bit_size<=e::componentOffsets&&registrations.size()*2<=e::componentStrides-e::componentOffsets,"component layout arrays overlap");
+    const auto presence=m.span(c.entity_layout,bit_size);need((presence[input.index/8]>>(input.index%8))&1,"local selector entity has no ClientPlayerInput");
     m.phase(Phase::equipment);
-    const auto& presence=layouts.at(c.entity_layout);need((presence[equipment.index/8]>>(equipment.index%8))&1,"RenderEquipment absent on input entity");
+    need((presence[equipment.index/8]>>(equipment.index%8))&1,"RenderEquipment absent on local entity");
     for(const auto* entry:{&input,&equipment}){U offset=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentOffsets+entry->index*2));U stride=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentStrides+entry->index*2));need(stride==entry->size&&stride,"selected runtime component stride mismatch");U address=add(add(c.entity_storage,offset),mul(c.entity_row,stride));need(range(address,stride),"selected component address out of bounds");if(entry==&equipment)c.equipment=address;}
     // Pinned RenderEquipment modelHandles[24]@0 is the ownership input.
     // The remaining692 bytes are visual caches/colors/hide and pose state;
@@ -155,22 +228,42 @@ Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,
     // model handles, each still validated against its allocation generation.
     return m.span(c.equipment,24u*sizeof(std::uint32_t));
 }
-U scene(Reader& m,Image& image,U registry_address){
+void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate){
+    const U registry_address=candidate.registry;
     U rows=m.scalar(add(registry_address,s::recordsPointerOffset)),count=m.scalar(add(registry_address,s::recordCountOffset));need(count&&count<=s::maximumRecords,"invalid service count");
     U bits=m.scalar(add(registry_address,s::mapBitsOffset)),capacity=m.scalar(add(registry_address,s::mapCapacityOffset)),keys=m.scalar(add(registry_address,s::mapKeysOffset)),values=m.scalar(add(registry_address,s::mapValuesOffset));auto used=m.scalar<std::uint32_t>(add(registry_address,s::mapCountOffset));need(capacity&&capacity<=s::maximumMapCapacity&&!(capacity&(capacity-1))&&used&&used<=std::min(count,capacity),"invalid service map dimensions");
     auto occupancy=m.span(bits,((capacity+63)/64)*8),keydata=m.span(keys,capacity*4),valuedata=m.span(values,capacity*2);auto bit=[&](U index){return (occupancy[index/8]>>(index%8))&1;};U population=0;for(U i=0;i<occupancy.size()*8;++i){if(i>=capacity)need(!bit(i),"service occupancy exceeds capacity");else population+=bit(i);}need(population==used,"service occupancy/count disagreement");
-    std::vector<std::uint32_t> hashes;std::set<std::string> names;std::set<std::uint32_t> unique_hashes;U selected=0;unsigned selected_count=0;
-    for(U index=0;index<count;++index){U record=add(rows,mul(index,s::recordStride));auto view=m.span(record,16);std::string name=image.text(get<U>(view,0),get<U>(view,8),128,false);auto hash=m.scalar<std::uint32_t>(add(record,s::recordHashOffset));need(hash==fnv(name)&&names.insert(name).second&&unique_hashes.insert(hash).second,"duplicate service name/hash or hash mismatch");hashes.push_back(hash);if(name=="RenderScene"){selected=index;++selected_count;}}
-    need(selected_count==1,"RenderScene full name missing or ambiguous");std::set<U> seen_indices;std::set<std::uint32_t> seen_keys;
+    std::vector<std::uint32_t> hashes;std::set<std::string> names;std::set<std::uint32_t> unique_hashes;
+    const char* required[]={"RenderScene","LocalPlayerData"};U selected[2]={},resolved[2]={};unsigned selected_count=0;
+    for(U index=0;index<count;++index){U record=add(rows,mul(index,s::recordStride));auto view=m.span(record,16);std::string name=image.text(get<U>(view,0),get<U>(view,8),128,false);auto hash=m.scalar<std::uint32_t>(add(record,s::recordHashOffset));need(hash==fnv(name)&&names.insert(name).second&&unique_hashes.insert(hash).second,"duplicate service name/hash or hash mismatch");hashes.push_back(hash);
+        for(unsigned i=0;i<2;++i)if(name==required[i]){selected[i]=index;++selected_count;}}
+    need(selected_count==2,"required owner service missing or ambiguous");std::set<U> seen_indices;std::set<std::uint32_t> seen_keys;
     for(U slot=0;slot<capacity;++slot)if(bit(slot)){U index=get<std::uint16_t>(valuedata,slot*2);auto hash=get<std::uint32_t>(keydata,slot*4);need(index<count&&seen_indices.insert(index).second&&seen_keys.insert(hash).second&&hashes[index]==hash,"service map record disagreement");}
-    U slot=fnv("RenderScene")&(capacity-1);bool found=false;for(U probe=0;probe<capacity;++probe){need(bit(slot),"RenderScene outside original hash probe chain");if(get<std::uint32_t>(keydata,slot*4)==fnv("RenderScene")){need(get<std::uint16_t>(valuedata,slot*2)==selected,"RenderScene map selector mismatch");found=true;break;}slot=(slot+1)&(capacity-1);}need(found,"service hash probe bound exceeded");
-    U row=add(rows,mul(selected,s::recordStride));U result=m.scalar(add(row,s::recordNormalPointerOffset));need(range(result,0xA0)&&m.scalar(add(row,s::recordAlternatePointerOffset))==result,"RenderScene normal/alternate pointer mismatch");
-    U descriptor=add(image.image.base,0x1DDDE80),function=add(image.image.base,0x383030);need(image.inside(descriptor,0xC0)&&image.code(function),"system metadata/function outside pinned image");auto desc=m.span(descriptor,0xC0);need(image.text(get<U>(desc,0),get<U>(desc,8),128,true)=="render_equipment_models_ag2"&&get<U>(desc,16)==function,"original system full name/function mismatch");
-    const char* services[]={"BasicPlayerInfos","CharacterPresetRegistry","ColorGradientRegistry","MaterialFeedbackRegistry","g38_items::ItemRegistry","RenderScene"};
-    for(unsigned access=0;access<2;++access){U offset=access?0xB0:0x98,pointer=get<U>(desc,offset),length=get<U>(desc,offset+8);need(length==(access?1u:5u)&&image.inside(pointer,length*16),"original system service array mismatch");auto views=m.span(pointer,length*16);for(U i=0;i<length;++i)need(image.text(get<U>(views,i*16),get<U>(views,i*16+8),128,true)==services[access?5:i],"original system service ordinal mismatch");}
-    U systems=m.scalar<std::uint16_t>(add(registry_address,s::systemCountOffset));need(systems&&systems<=s::maximumSystems,"invalid system count");U selected_system=0;unsigned matches=0;for(U index=0;index<systems;++index){U address=add(add(registry_address,s::systemsOffset),mul(index,s::systemStride));if(m.scalar(address)==descriptor){selected_system=address;++matches;}}
-    need(matches==1,"original equipment system missing or ambiguous");need(m.scalar(add(selected_system,0x28))==function,"system function mismatch");need(m.scalar<std::uint8_t>(add(selected_system,s::systemNormalCountOffset))==6&&m.scalar<std::uint8_t>(add(selected_system,s::systemAlternateCountOffset))==6,"system service counts mismatch");
-    need(m.scalar(add(selected_system,s::systemNormalBindingsOffset+40))==result&&m.scalar(add(selected_system,s::systemAlternateBindingsOffset+40))==result,"system ordinal5 scene binding mismatch");return result;
+    for(unsigned i=0;i<2;++i){U slot=fnv(required[i])&(capacity-1);bool found=false;
+        for(U probe=0;probe<capacity;++probe){need(bit(slot),"owner service outside original hash probe chain");if(get<std::uint32_t>(keydata,slot*4)==fnv(required[i])){need(get<std::uint16_t>(valuedata,slot*2)==selected[i],"owner service map selector mismatch");found=true;break;}slot=(slot+1)&(capacity-1);}need(found,"service hash probe bound exceeded");
+        const U row=add(rows,mul(selected[i],s::recordStride));resolved[i]=m.scalar(add(row,s::recordNormalPointerOffset));need(range(resolved[i],i?8:0xA0)&&m.scalar(add(row,s::recordAlternatePointerOffset))==resolved[i],"owner service normal/alternate pointer mismatch");}
+    const char* equipment_services[]={"BasicPlayerInfos","CharacterPresetRegistry","ColorGradientRegistry","MaterialFeedbackRegistry","g38_items::ItemRegistry","RenderScene"};
+    const char* hide_services[]={"LocalPlayerCamera","LocalPlayerData"};
+    const char* ui_services[]={"BasicPlayerInfos","CharacterPresetRegistry","LocalPlayerData","g38_items::ItemRegistry","G38UiPlayData"};
+    struct System {U descriptor,function;const char* name;const char* const* names;unsigned reads,writes,ordinal,owner;};
+    const System contracts[]={
+        {0x1ddde80,0x383030,"render_equipment_models_ag2",equipment_services,5,1,5,0},
+        {0x1ddd790,0x382ac0,"local_player_hide",hide_services,2,0,1,1},
+        {0x1ddd9e0,0x382c20,"local_player_ui_render_setup",ui_services,4,1,2,1}};
+    for(const auto& contract:contracts){const U descriptor=add(image.image.base,contract.descriptor),function=add(image.image.base,contract.function);
+        need(image.inside(descriptor,0xC0)&&image.code(function),"system metadata/function outside pinned image");const auto desc=m.span(descriptor,0xC0);
+        need(image.text(get<U>(desc,0),get<U>(desc,8),128,true)==contract.name&&get<U>(desc,16)==function,"original system full name/function mismatch");
+        for(unsigned access=0;access<2;++access){const U offset=access?0xB0:0x98,pointer=get<U>(desc,offset),length=get<U>(desc,offset+8);need(length==(access?contract.writes:contract.reads)&&bool(pointer)==bool(length),"original system service array mismatch");if(!length)continue;
+            need(image.inside(pointer,length*16),"original system service names outside image");const auto views=m.span(pointer,length*16);for(U i=0;i<length;++i)need(image.text(get<U>(views,i*16),get<U>(views,i*16+8),128,true)==contract.names[(access?contract.reads:0)+i],"original system service ordinal mismatch");}}
+    const U systems=m.scalar<std::uint16_t>(add(registry_address,s::systemCountOffset));need(systems&&systems<=s::maximumSystems,"invalid system count");U system_rows[3]={};
+    for(U index=0;index<systems;++index){const U address=add(add(registry_address,s::systemsOffset),mul(index,s::systemStride)),descriptor=m.scalar(address);
+        for(unsigned i=0;i<3;++i)if(descriptor==add(image.image.base,contracts[i].descriptor)){need(!system_rows[i],"original owner system ambiguous");system_rows[i]=address;}}
+    for(unsigned i=0;i<3;++i){const auto& contract=contracts[i];const U row=system_rows[i];need(row,"original owner system missing");need(m.scalar(add(row,0x28))==add(image.image.base,contract.function),"system function mismatch");
+        need(m.scalar<std::uint8_t>(add(row,s::systemNormalCountOffset))==contract.reads+contract.writes&&m.scalar<std::uint8_t>(add(row,s::systemAlternateCountOffset))==contract.reads+contract.writes,"system service counts mismatch");
+        for(U bindings:{s::systemNormalBindingsOffset,s::systemAlternateBindingsOffset})need(m.scalar(add(row,bindings+contract.ordinal*8))==resolved[contract.owner],"original owner service binding mismatch");}
+    constexpr std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};const U predicate_address=add(image.image.base,0x3b4fe0);need(image.code(predicate_address),"local predicate outside code");
+    const auto code=m.span(predicate_address,sizeof predicate);need(std::memcmp(code.data(),predicate,sizeof predicate)==0,"original local predicate mismatch");
+    candidate.render_scene=resolved[0];candidate.local_player_data=resolved[1];
 }
 void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& handles_input,NativeOwnerCandidate& c){
     U records=m.scalar(add(c.model_manager,0x1B0)),record_bytes=m.scalar(add(c.model_manager,0x1B8));U generations=m.scalar(add(c.model_manager,0x1C8)),capacity=m.scalar(add(c.model_manager,0x1D0));
@@ -274,17 +367,46 @@ bool same_native_menu_owner(const NativeMenuOwnerCandidate& a,const NativeMenuOw
         a.image.timestamp==b.image.timestamp&&a.image.sha256==b.image.sha256&&a.root==b.root&&a.client==b.client&&
         a.controller==b.controller&&a.scene_owner==b.scene_owner&&a.scene_entries==b.scene_entries&&a.scene_capacity==b.scene_capacity;
 }
-bool capture_native_owner(const NativeOwnerMemory& memory,const NativeOwnerImage& identity,NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
+namespace {
+void complete_owner_capture(Reader& m,Image& image,const std::vector<Registration>& registrations,NativeOwnerCandidate& candidate){
+    m.phase(Phase::census);auto equipment=entity_equipment(m,registrations,candidate);
+    m.phase(Phase::models);models_and_buffer(m,image,equipment,candidate);
+    m.phase(Phase::capture_verify);m.verify(m.guards);
+    candidate.read_calls=m.calls;candidate.read_bytes=m.bytes;const U now=m.memory.work_milliseconds();candidate.elapsed_milliseconds=now-m.started;m.elapsed(now);
+    candidate.guards=std::move(m.guards);
+}
+bool capture_owner_complete(const NativeOwnerMemory& memory,const NativeOwnerImage& identity,NativeOwnerCandidate& out,std::string& why,
+                            const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats,std::shared_ptr<const NativeOwnerCachePrefix>* prefix)noexcept{
     if(stats){*stats={};stats->phase=Phase::image;stats->failure_location=Location::validation;}
     // Copy identity first: callers may pass out.image by reference.
-    const NativeOwnerImage identity_copy=identity;out={};why.clear();
+    const NativeOwnerImage identity_copy=identity;out={};why.clear();if(prefix)prefix->reset();
     try{Reader m(memory,limits,stats);NativeOwnerCandidate candidate;candidate.image=identity_copy;Image image(m,candidate.image);
         m.phase(Phase::owners);owners(m,candidate.image,candidate);m.phase(Phase::registry);auto registrations=registry(m,image,candidate.registry);
-        m.phase(Phase::census);auto equipment=entity_equipment(m,registrations,candidate);m.phase(Phase::services);candidate.render_scene=scene(m,image,candidate.registry);
-        m.phase(Phase::models);models_and_buffer(m,image,equipment,candidate);m.phase(Phase::capture_verify);m.verify(m.guards);
-        candidate.read_calls=m.calls;candidate.read_bytes=m.bytes;const U now=memory.milliseconds();candidate.elapsed_milliseconds=now-m.started;m.elapsed(now);
-        candidate.guards=std::move(m.guards);out=std::move(candidate);return true;
+        m.phase(Phase::services);service_owners(m,image,candidate);
+        const auto prefix_guards=m.guards.size();complete_owner_capture(m,image,registrations,candidate);
+        if(prefix){auto decoded=std::make_shared<NativeOwnerCachePrefix>();decoded->registrations=std::move(registrations);
+            decoded->executable=std::move(image.executable);decoded->guard_count=prefix_guards;*prefix=std::move(decoded);}
+        out=std::move(candidate);return true;
     }catch(const Rejected& failure){reason_set(why,failure.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"owner observation allocation/internal failure");}out={};return false;
+}
+// Called only after cache verification compared every prefix guard successfully
+// and first differed in census. Preserve that owned prefix in its original
+// order, recapture the entire tail, then verify ALL prefix and tail bytes again.
+bool capture_owner_after_verified_prefix(const NativeOwnerMemory& memory,const NativeOwnerCandidate& previous,const NativeOwnerCachePrefix& prefix,
+                                        NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
+    out={};why.clear();if(stats){*stats={};stats->phase=Phase::census;stats->failure_location=Location::validation;}
+    try{
+        need(prefix.guard_count&&prefix.guard_count<previous.guards.size()&&!prefix.registrations.empty()&&!prefix.executable.empty(),"invalid verified owner prefix");
+        Reader m(memory,limits,stats);auto candidate=previous;candidate.guards={};candidate.models.clear();
+        m.guards.assign(previous.guards.begin(),previous.guards.begin()+prefix.guard_count);
+        Image image(m,candidate.image,prefix);complete_owner_capture(m,image,prefix.registrations,candidate);
+        out=std::move(candidate);return true;
+    }catch(const Rejected& failure){reason_set(why,failure.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"owner observation allocation/internal failure");}
+    out={};return false;
+}
+}
+bool capture_native_owner(const NativeOwnerMemory& memory,const NativeOwnerImage& identity,NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
+    return capture_owner_complete(memory,identity,out,why,limits,stats,nullptr);
 }
 bool revalidate_native_owner(const NativeOwnerMemory& memory,NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
     if(stats){*stats={};stats->phase=Phase::submission_verify;stats->failure_location=Location::validation;stats->guard_total=candidate.guards.size();}
@@ -302,12 +424,18 @@ struct OwnerCallBudget final:NativeOwnerMemory {
     mutable U last;
     mutable std::size_t calls=0,bytes=0,completed_calls=0,completed_bytes=0;
     mutable bool regressed=false,read_budget=false;
-    OwnerCallBudget(const NativeOwnerMemory& m,const NativeOwnerLimits& l):source(m),limits(l),started(m.milliseconds()),last(started){}
+    OwnerCallBudget(const NativeOwnerMemory& m,const NativeOwnerLimits& l):source(m),limits(l),started(m.work_milliseconds()),last(started){}
     U milliseconds()const noexcept override {
-        last=source.milliseconds();regressed=regressed||last<started;return last;
+        return source.milliseconds();
+    }
+    U work_milliseconds()const noexcept override {
+        last=source.work_milliseconds();regressed=regressed||last<started;return last;
     }
     bool timed_out()const noexcept {return regressed||last<started||last-started>=limits.max_milliseconds;}
     bool available()const noexcept {return !timed_out()&&!read_budget&&calls<limits.max_calls&&bytes<limits.max_bytes;}
+    bool permit_read_ahead(std::size_t wanted_calls,std::size_t wanted_bytes)const noexcept override {
+        return available()&&wanted_calls<=limits.max_calls-calls&&wanted_bytes<=limits.max_bytes-bytes&&source.permit_read_ahead(wanted_calls,wanted_bytes);
+    }
     bool read(U address,void* destination,std::size_t count)const noexcept override {
         if(timed_out())return false;
         if(calls>=limits.max_calls||bytes>limits.max_bytes||count>limits.max_bytes-bytes){read_budget=true;return false;}
@@ -324,19 +452,25 @@ bool NativeOwnerCache::capture(const NativeOwnerMemory& memory,const NativeOwner
                               std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats,bool* reused)noexcept {
     const auto identity=image;out={};why.clear();if(stats)*stats={};if(reused)*reused=false;
     OwnerCallBudget budget(memory,limits);NativeOwnerObservationStats progress;
-    bool accepted=false,hit=false;
+    bool accepted=false,hit=false,resumed=false;
     try{
         if(source_!=&memory||!same_owner_image(identity,cached_.image))clear();
         if(!cached_.guards.empty()) {
+            const auto previous=cached_;
             accepted=revalidate_native_owner(budget,cached_,why,limits,&progress);hit=accepted;
+            if(!accepted&&budget.available()&&prefix_&&progress.phase==Phase::submission_verify&&
+                progress.failure_location==Location::compare&&progress.guard_capture_phase==Phase::census&&
+                progress.guard_ordinal>=prefix_->guard_count){
+                resumed=true;accepted=capture_owner_after_verified_prefix(budget,previous,*prefix_,cached_,why,limits,&progress);
+            }
             progress.phase=Phase::capture_verify;
         }
-        if(!accepted&&budget.available()) {
-            clear();accepted=capture_native_owner(budget,identity,cached_,why,limits,&progress);
+        if(!accepted&&!resumed&&budget.available()) {
+            clear();accepted=capture_owner_complete(budget,identity,cached_,why,limits,&progress,&prefix_);
         }
         if(accepted)out=cached_; // Caller mutations cannot change retained guards/identity.
     }catch(...){progress.failure_location=Location::internal;reason_set(why,"owner observation allocation/internal failure");accepted=false;}
-    (void)budget.milliseconds();
+    (void)budget.work_milliseconds();
     if(budget.timed_out()){reason_set(why,"owner observation deadline exceeded");progress.failure_location=Location::finalcheck;accepted=false;}
     if(budget.read_budget){reason_set(why,"owner read budget exceeded");progress.failure_location=Location::budget;accepted=false;}
     if(!accepted){clear();out={};}else source_=&memory;

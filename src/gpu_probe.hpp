@@ -6,6 +6,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "native_preview_subject.hpp"
 
 namespace evrm {
 struct GpuBufferSnapshot {
@@ -19,6 +20,7 @@ struct PlayerAnchorDispatch {
     uint32_t x=0,y=0,z=0;
 };
 struct GpuSnapshot {
+    NativePreviewStamp preview_subject;
     std::map<std::string, GpuBufferSnapshot> buffers;
     std::vector<CulledInstanceSpan> culled_spans;
     uint32_t queue_family = 0;

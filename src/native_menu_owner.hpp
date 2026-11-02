@@ -3,8 +3,10 @@
 
 namespace evrm {
 enum class NativeMenuOwnerKind:std::uint8_t {frontend,character};
-// Separate frontend and current-local-player Character renderer proofs. Neither
-// grants gameplay ECS ownership or equipment writes. GPU qualifiers still gate.
+// Separate frontend and main-client Character renderer allocation proofs. The
+// latter proves allocation only; callers must separately prove its subject.
+// Neither grants gameplay ECS
+// ownership or equipment writes. GPU qualifiers still gate.
 struct NativeMenuOwnerCandidate {
     NativeOwnerImage image;
     std::uint64_t root=0,client=0,controller=0,scene_owner=0,scene_entries=0,scene_capacity=0;

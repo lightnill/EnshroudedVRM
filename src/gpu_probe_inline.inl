@@ -46,6 +46,12 @@ bool GpuProbe::capture_inline(VkCommandBuffer command,uint32_t family)noexcept{
         if(draws.empty())return false;
         auto plan=impl->make_plan(impl->async_queue,impl->async_limits,draws,true);
         if(plan.reads.empty()||!plan.additional.empty())return false;
+        // Only this exact original task's inline copy freezes preview authority.
+        // A queued copy outside its worker scope cannot infer the buffer writer.
+        const auto working=native_preview_subject_thread().working;
+        if(native_preview_subjects().current(working)&&same_native_preview_stamp(working,plan.preview_proposal))
+            plan.snapshot.preview_subject=working;
+        for(const auto& read:plan.reads)if(read.target.role=="instances")native_preview_trace_event(bits(read.target.binding.buffer),NativePreviewTraceStage::Inline);
         Impl::AsyncSlot* selected=nullptr;
         for(auto& slot:impl->async_slots)if(!slot.pending&&!slot.ready&&!slot.recorded){selected=&slot;break;}
         if(!selected){++impl->async_skipped;return false;}

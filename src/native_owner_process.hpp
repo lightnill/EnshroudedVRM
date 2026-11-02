@@ -13,6 +13,10 @@ public:
     NativeOwnerProcess() noexcept;
     bool read(std::uint64_t,void*,std::size_t) const noexcept override;
     std::uint64_t milliseconds() const noexcept override;
+    std::uint64_t work_milliseconds() const noexcept override;
+    bool permit_read_ahead(std::size_t calls,std::size_t bytes) const noexcept override {
+        return supported_&&calls<=100000&&bytes<=64*1024*1024;
+    }
     const NativeOwnerImage& image() const noexcept{return image_;}
     bool supported() const noexcept{return supported_;}
     const std::string& reason() const noexcept{return reason_;}

@@ -1,0 +1,9 @@
+# 0.3.2 verification
+
+The exact player ZIP contains 43 files and 42 verified manifest entries. Both independent package assemblies are byte-identical. All 282 package source pins and all fourteen shaders were checked. The retained startup DLL is unchanged. Static PE comparison confirms only the runtime version-resource section changed from the manually accepted local build.
+
+87 selected CPU/source/import/package methods passed without skips. The final package-only correction restored the exact fog shader pin already published in 0.3.1; its new regression failed first, then all 15 packaging methods passed. This is 88 distinct selected methods across the two runs, not 102 distinct tests. No new candidate DLL, real game or GPU fixture was executed for release preparation.
+
+The selected local implementation passed user-run inventory/survivor/inventory, equipment and title/character reload checks. The local text-only report path has manual evidence. Wider scene/hardware coverage, optional screenshots and native map-coordinate interpretation still need broader testing. Occasional stutters remain; no measured gameplay FPS improvement is claimed. The attached ownership comparison uses the same controlled 6,500-entity CPU fixture and excludes live game/driver/GPU costs.
+
+Bitdefender reported zero issues and zero unscanned objects for all three DLLs, every extracted package file and the exact ZIP. VirusTotal exact-hash results: runtime 0/70 reporting engines; archive 0/65 reporting engines; bootstrap 0/71 reporting engines; voice-sdk 0/70 reporting engines. VirusTotal warns this multi-file archive exceeds its full-content inspection limit. The three DLLs have separate exact-hash reports; the retained bootstrap/SDK keep their original analysis dates. Engine failures, unsupported types and timeouts are coverage gaps. Bitdefender separately scanned all 43 extracted members. Zero detections do not guarantee safety.

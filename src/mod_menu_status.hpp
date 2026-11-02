@@ -2,6 +2,7 @@
 #include "voice_stream.hpp"
 #include "voice_input_types.hpp"
 #include "avatar_service_types.hpp"
+#include "debug_report_types.hpp"
 namespace evrm {
 enum class ModMouthSupport:std::uint8_t {Ready,Partial,NoAvatar,NoShapes,Unavailable};
 struct ModMenuStatus {
@@ -13,5 +14,7 @@ struct ModMenuStatus {
     MicrophoneState microphone=MicrophoneState::Off;
     std::shared_ptr<const MicrophoneDeviceList> microphones{};
     std::shared_ptr<const AvatarMenuSnapshot> avatar;
+    std::shared_ptr<const DebugReportStatus> report;
+    std::uint64_t report_texture=0; // Menu-owned texture, never exported.
 };
 }

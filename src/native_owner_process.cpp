@@ -6,6 +6,7 @@
 #include "sha256.hpp"
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <vector>
 
@@ -73,6 +74,10 @@ bool NativeOwnerProcess::read(std::uint64_t address,void* destination,std::size_
     SIZE_T received=0;return ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(static_cast<std::uintptr_t>(address)),destination,count,&received)!=0&&received==count;
 }
 std::uint64_t NativeOwnerProcess::milliseconds()const noexcept{return GetTickCount64();}
+std::uint64_t NativeOwnerProcess::work_milliseconds()const noexcept{
+    // Work deadlines use fine time; hand/pose consumers keep the game clock.
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 bool NativeOwnerProcess::capture(NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
     if(!supported_){candidate={};set_reason(why,reason_.empty()?"current main executable is unsupported":reason_.c_str());return false;}

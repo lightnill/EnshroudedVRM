@@ -4,6 +4,7 @@
 #include "../src/native_body_selection.hpp"
 #include "../src/native_instance_qualifiers.hpp"
 #include "../src/native_publication.hpp"
+#include "../src/native_submit_timing.hpp"
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
@@ -13,7 +14,8 @@ namespace {
 using namespace evrm;
 void need(bool value,const char* why){if(!value)throw std::runtime_error(why);}
 std::uint64_t now=1000;
-std::uint64_t test_tick(){return now;}
+bool quantized_tick=false;
+std::uint64_t test_tick(){return quantized_tick?(now/16)*16:now;}
 template<class F>void log_event_lazy(F&&){} // No admission decision depends on logging.
 struct Bundle {
     struct OwnerRefreshTrace {
@@ -45,6 +47,7 @@ NativePoseOwner fixture(){
     NativeOwnerGuard guard;guard.address=0x30000;guard.bytes={1};owner.guards=NativeOwnerGuards({guard});return value;
 }
 struct Impl {
+    NativeSubmitTiming submit_timing;
     NativePoseOwner initial=fixture();
     NativePoseOwnerState pose_owner_state;
     struct Metadata {
@@ -60,7 +63,8 @@ struct Impl {
     }memory;
     bool capture_ok=true,verify_ok=true,changed_owner=false,render_ok=true,mixed_ok=true;
     unsigned captures=0,verifies=0,selection_captures=0;
-    std::uint64_t capture_ticks=2,verify_ticks=2,census_refreshes=0;
+    std::uint64_t capture_ticks=2,verify_ticks=2,initial_verify_ticks=0,census_refreshes=0;
+    static std::uint64_t owner_clock_milliseconds()noexcept{return now;}
     std::shared_ptr<const NativeAvatarPublication> latest,world;
     bool same_owner_selection(const NativeOwnerCandidate& a,const NativeOwnerCandidate& b)const{return same_native_owner_selection(a,b);}
     auto publication_for(VkBuffer source)const{need(source==initial.source.info.buffer,"refresh looked up another view");return world;}
@@ -74,16 +78,20 @@ struct Impl {
         out=initial.candidate;if(changed_owner)++out.entity_generation;
         NativeOwnerGuard fresh;fresh.address=0x30000;fresh.bytes={2};out.guards=NativeOwnerGuards({fresh});return true;
     }
-    bool revalidate_owner(NativeOwnerCandidate& out,std::string& reason,NativeOwnerObservationStats* stats,std::uint64_t=40){
+    bool revalidate_owner(NativeOwnerCandidate& out,std::string& reason,NativeOwnerObservationStats* stats,std::uint64_t limit=40){
         ++verifies;
         if(out.guards.empty()||out.guards[0].bytes[0]==1){
+            now+=initial_verify_ticks;
             if(stats){stats->phase=NativeOwnerObservationPhase::submission_verify;stats->failure_location=NativeOwnerFailureLocation::compare;
                 stats->guard_capture_phase=NativeOwnerObservationPhase::census;}
             out={};reason="test census changed";return false;
         }
-        now+=verify_ticks;if(!verify_ok){out={};reason="test verification failed";return false;}return true;
+        now+=verify_ticks;
+        if(verify_ticks>=limit){out={};reason="test verification deadline";return false;}
+        if(!verify_ok){out={};reason="test verification failed";return false;}return true;
     }
     bool revalidate_menu_owner(NativeMenuOwnerCandidate&,std::string&){throw std::runtime_error("world test entered menu path");}
+    bool verify_character_subject(Bundle&,std::string&){throw std::runtime_error("world test entered preview subject path");}
     // Both generated includes are sliced from the current production source.
 #define GetTickCount64 test_tick
 #include "native_owner_refresh.inc"
@@ -137,6 +145,10 @@ int main(int argc,char** argv){try{
     else if(mode=="deadline")impl.capture_ticks=40;
     else if(mode=="deadline-after-verify")impl.verify_ticks=40;
     else if(mode=="clock-regressed")impl.capture_ticks=std::uint64_t(-5);
+    else if(mode=="clock-quantization"||mode=="clock-true-deadline"){
+        quantized_tick=true;now=1007;impl.initial_verify_ticks=1;
+        impl.capture_ticks=mode=="clock-quantization"?19:25;impl.verify_ticks=mode=="clock-quantization"?14:16;
+    }
     else need(mode=="fresh-success","unknown scenario");
     const bool render_failure=mode=="expired-pose"||mode=="render-source"||mode=="mixed-source"||mode=="excluded-source"||mode=="mask"||mode=="qualifier";
     const auto original_stamp=b.pose->published_milliseconds;
@@ -148,7 +160,7 @@ int main(int argc,char** argv){try{
         need(ready==(mode=="latest-null"||mode=="latest-other-view"),"refresh used mutable global latest instead of this source's publication");
     }else{
         ready=impl.submit_owner(b,reason);
-        need(ready==(mode=="fresh-success"),"refresh admitted a changed/expired owner, pose, mask or allocation");
+        need(ready==(mode=="fresh-success"||mode=="clock-quantization"),"refresh admitted changed/expired data or falsely rejected work within its deadline");
         auto proposed=impl.sample();
         if(render_failure){
             need(proposed&&proposed->candidate.guards[0].bytes[0]==2,"render-only decline discarded the freshly verified ownership observation");
@@ -161,5 +173,7 @@ int main(int argc,char** argv){try{
     need(b.pose->published_milliseconds==original_stamp,"ownership refresh renewed the original pose time");
     if(mode=="expired-pose")need(!hold_native_publication(b.pose,9,now,6),"expired pose can still be held after ownership recovery");
     if(mode=="fresh-success")need(b.cpu_owner.guards[0].bytes[0]==2&&impl.census_refreshes==1,"successful refresh did not use newly verified guards");
+    if(mode=="clock-quantization")need(now==1041&&test_tick()==1040&&impl.captures==1&&impl.verifies==2&&impl.census_refreshes==1,"coarse-clock case skipped a full ownership phase");
+    if(mode=="clock-true-deadline")need(!ready&&now==1049,"actual42ms deadline was relaxed");
     std::cout<<"PASS actual owner refresh "<<mode<<" ready="<<ready<<" reason="<<reason<<'\n';return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}

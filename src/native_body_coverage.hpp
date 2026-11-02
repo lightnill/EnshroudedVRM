@@ -1,5 +1,6 @@
 #pragma once
 #include "native_clip_shader.hpp"
+#include "debug_report_types.hpp"
 #include <array>
 #include <cstdint>
 
@@ -27,4 +28,6 @@ struct NativeBodyCoverage {
 // Every present stage needs a complete nonzero fingerprint. Brick and chunklet
 // contracts pin all stage hashes; other contracts pin the vertex stage.
 NativeBodyCoverage classify_native_body_coverage(const NativeBodyShaderIdentity&) noexcept;
+// Report classification only. Never changes body coverage or ownership.
+DebugReportSceneFamily classify_debug_report_scene(const NativeBodyShaderIdentity&) noexcept;
 }

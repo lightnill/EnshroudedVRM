@@ -1,4 +1,5 @@
 #include "../src/avatar_service.hpp"
+#include "../src/native_preview_subject.hpp"
 #include <map>
 #include <mutex>
 #include <iostream>
@@ -53,8 +54,10 @@ int main(){try{
     require(state.revoked==1,"activation did not reset model preparation/history");
     require(state.tool_slots.disables==1&&!state.tool_slots.clears&&!state.tool_slots.authorized,"model change must revoke old tool pose without restoring/repatching the native hook");
     const auto cached_assets=state.assets;state.latest=std::make_shared<int>(1);state.view_publications=state.latest;
+    evrm::native_preview_subjects().configure({{1,2,3,4,5,6,7,8,9,10},reinterpret_cast<std::uintptr_t>(&state),11,12,13,14,0});
     backend.set_replacement_enabled(false);
     require(!state.replacement_enabled&&!state.latest&&!state.view_publications&&state.revoked==2,"disable retained replacement publication or preparation");
+    require(!evrm::native_preview_subjects().active(),"no replacement retained active preview task/source authority");
     require(state.assets==cached_assets&&state.completed_views.size()==2&&state.commands.size()==1&&!first_resources.expired()&&!later_resources.expired(),"disable released assets still referenced by recorded commands");
     require(state.tool_slots.disables==2&&!state.tool_slots.clears,"disable restored/repatched tool hook instead of revoking pose");
     backend.set_replacement_enabled(false);require(state.revoked==2&&state.tool_slots.disables==2,"idle disabled path repeats revocation work");

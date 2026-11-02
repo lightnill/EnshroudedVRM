@@ -83,12 +83,14 @@ const char* mod_voice_status(const ModSettings& settings,const ModMenuStatus& st
         case VoiceActivity::UnsupportedSource:return "Voice to viseme unavailable";
         default:return settings.voice_source==VoiceInputSource::Microphone?"Waiting for microphone":"Waiting for game voice";}
 }
-bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expanded,bool& close,ModMenuPlacement& placement,ModMenuLayout* layout,AvatarMenuAction* action){
+bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expanded,bool& close,ModMenuPlacement& placement,ModMenuLayout* layout,AvatarMenuAction* action,DebugReportAction* report_action){
     if(action)*action={};
+    if(report_action)*report_action={};
     const auto& io=ImGui::GetIO();const float width=std::max(96.f,std::min(504.f,io.DisplaySize.x-24));
     if(ImGui::IsMouseClicked(0))placement.dragging=false;
     const float wanted_height=(expanded?(settings.voice_source==VoiceInputSource::Microphone?812.f:716.f):372.f)+
-        (status.avatar?(placement.appearance_expanded?550.f:240.f)+(!status.avatar->replacement_enabled?60.f:0.f):0.f);
+        (status.avatar?(placement.appearance_expanded?550.f:240.f)+(!status.avatar->replacement_enabled?60.f:0.f):0.f)+
+        (status.report&&status.report->phase==DebugReportPhase::Preview?510.f:174.f);
     const float height=std::max(80.f,std::min(wanted_height,io.DisplaySize.y-24));
     if(!placement.initialized){placement.x=(io.DisplaySize.x-width)*.5f;placement.y=(io.DisplaySize.y-height)*.5f;placement.initialized=true;}
     if(placement.dragging){if(io.MouseDown[0]&&ImGui::IsMousePosValid(&io.MousePos)){placement.x=io.MousePos.x-placement.grab_x;placement.y=io.MousePos.y-placement.grab_y;}
@@ -111,6 +113,39 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
     const auto cross=color(ImGui::IsItemHovered()?ImGuiCol_Text:ImGuiCol_TextDisabled);
     draw->AddLine({a.x+10,a.y+10},{b.x-10,b.y-10},cross,1.6f);draw->AddLine({a.x+10,b.y-10},{b.x-10,a.y+10},cross,1.6f);
     ImGui::SetCursorPos({origin.x,origin.y+46});ImGui::Separator();ImGui::Dummy({0,4});
+    ImGui::TextUnformatted("Debug report");
+    const DebugReportStatus empty_report;const auto& report=status.report?*status.report:empty_report;const auto phase=report.phase;
+    const auto emit_report=[&](DebugReportActionKind kind){if(report_action){report_action->kind=kind;report_action->job=report.job;report_action->image_id=report.image_id;}};
+    const bool idle=phase==DebugReportPhase::Idle||phase==DebugReportPhase::Complete||phase==DebugReportPhase::Partial||phase==DebugReportPhase::Failed||phase==DebugReportPhase::Cancelled;
+    if(idle){
+        if(ImGui::Button("Create debug report",{inner,32})){emit_report(DebugReportActionKind::Begin);if(report_action)report_action->include_image=placement.report_include_image;placement.report_include_image=false;}
+        if(layout)layout->report_create=last_rect();
+        ImGui::Checkbox("Screenshot (preview before including)",&placement.report_include_image);
+        if(layout)layout->report_image=last_rect();
+    }else if(phase==DebugReportPhase::Preview){
+        ImGui::TextWrapped("Check this image for names, chat or other private details.");
+        if(status.report_texture&&report.preview&&report.preview->width&&report.preview->height){
+            const auto scale=std::min(inner/float(report.preview->width),240.f/float(report.preview->height));
+            ImGui::Image(ImTextureID(status.report_texture),{report.preview->width*scale,report.preview->height*scale});
+            if(layout)layout->report_preview_visible=ImGui::IsItemVisible();
+        }else ImGui::TextUnformatted("Preparing image preview...");
+        ImGui::BeginDisabled(!report.preview_presented||!status.report_texture);
+        if(ImGui::Button("Include this screenshot",{inner,30}))emit_report(DebugReportActionKind::IncludePreview);
+        if(layout)layout->report_include=last_rect();
+        ImGui::EndDisabled();
+        if(ImGui::Button("Save without screenshot",{inner,30}))emit_report(DebugReportActionKind::SaveTextOnly);
+        if(layout)layout->report_text=last_rect();
+    }else ImGui::TextUnformatted(phase==DebugReportPhase::Writing||phase==DebugReportPhase::Finalizing?"Saving report...":"Collecting report details...");
+    if(!idle&&phase!=DebugReportPhase::Finalizing){if(ImGui::Button("Cancel report"))emit_report(DebugReportActionKind::Cancel);if(layout)layout->report_cancel=last_rect();}
+    if(phase==DebugReportPhase::Complete||phase==DebugReportPhase::Partial){
+        ImGui::TextWrapped("%s",phase==DebugReportPhase::Partial?"Saved; some details were unavailable.":"Report saved locally.");
+        if(!report.filename.empty())ImGui::TextWrapped("%s",report.filename.c_str());
+        if(ImGui::Button("Open reports folder"))emit_report(DebugReportActionKind::OpenFolder);
+        if(layout)layout->report_folder=last_rect();
+    }else if(phase==DebugReportPhase::Failed)ImGui::TextWrapped("Report could not be saved. Check free space and folder permissions, then retry.");
+    else if(phase==DebugReportPhase::Cancelled)ImGui::TextUnformatted("Report cancelled.");
+    ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Saves safe diagnostics and in-game map coordinates. No automatic upload. Screenshots may contain private information.");ImGui::SetWindowFontScale(1);
+    ImGui::Separator();ImGui::Dummy({0,4});
     if(ImGui::InvisibleButton("voice-to-viseme",{inner,72},ImGuiButtonFlags_EnableNav)){settings.voice_enabled=!settings.voice_enabled;changed=true;}
     if(layout)layout->voice=last_rect();
     a=ImGui::GetItemRectMin();b=ImGui::GetItemRectMax();

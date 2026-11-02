@@ -4,6 +4,19 @@
 #include <cstdio>
 #include <cstdlib>
 void need(bool value,const char* reason){if(!value){std::fprintf(stderr,"FAIL %s\n",reason);std::exit(1);}}
+// Keep the old diagnostic path runnable to demonstrate a behavioral RED.
+template<class T>auto record_detail(T& value,const evrm::FallbackCaptureMetadata& facts,const char* detail,int)
+    ->decltype(value.record(facts,"view-pose","No catalog-compatible player parts in capture",detail),void()){
+    value.record(facts,"view-pose","No catalog-compatible player parts in capture",detail);
+}
+template<class T>void record_detail(T& value,const evrm::FallbackCaptureMetadata& facts,const char*,long){value.record(facts,"view-pose","No catalog-compatible player parts in capture");}
+template<class T>auto detail_of(const T& value,int)->decltype(value.detail.data()){return value.detail.data();}
+template<class T>const char* detail_of(const T&,long){return "";}
+template<class T>auto capture_failure(T& value,std::uint64_t now,const char* detail,unsigned view,int)
+    ->decltype(value.failure(now,1,"No catalog-compatible player parts in capture",detail,view)){
+    return value.failure(now,1,"No catalog-compatible player parts in capture",detail,view);
+}
+template<class T>evrm::FallbackEvent capture_failure(T& value,std::uint64_t now,const char*,unsigned,long){return value.failure(now,1,"No catalog-compatible player parts in capture");}
 int main(){
     evrm::FallbackEpisodes rare;
     for(unsigned n=0;n<7;++n){const auto start=1000+n*1500;const auto failed=rare.failure(start);
@@ -47,6 +60,32 @@ int main(){
     evrm::FallbackDecision short_circuit;unsigned extra_checks=0;
     const bool declined=short_circuit.check(false,evrm::FallbackGate::Eligible)&&short_circuit.check(++extra_checks!=0,evrm::FallbackGate::Owner);
     need(!declined&&!extra_checks&&short_circuit.failed==std::uint64_t(evrm::FallbackGate::Eligible),"diagnostic checks changed short-circuit admission");
+    evrm::FallbackPoseDiagnostics capture_details;
+    std::string detail="owner-filter=1\nowner-models=2";
+    record_detail(capture_details,facts,detail.c_str(),0);detail.assign(4000,'x');
+    need(std::string(detail_of(capture_details.failures[0],0))=="owner-filter=1 owner-models=2","failure detail was lost, aliased, or not sanitized");
+    record_detail(capture_details,facts,detail.c_str(),0);
+    need(std::string(detail_of(capture_details.failures[1],0))==std::string(383,'x'),"failure detail is not bounded/terminated");
+    capture_details.record(facts,"view-admission","missing instances");
+    need(std::string(detail_of(capture_details.failures[2],0)).empty(),"an unrelated failed view inherited stale diagnostic detail");
+    need(std::string(capture_details.failures[0].reason.data())=="No catalog-compatible player parts in capture","detail replaced the stable failure reason");
+    record_detail(capture_details,facts,nullptr,0);record_detail(capture_details,facts,"overflow",0);
+    need(capture_details.count==4&&std::string(detail_of(capture_details.failures[3],0)).empty(),"detail overflow changed the view budget or null detail");
+    evrm::FallbackEpisodes capture_episodes;
+    need(capture_failure(capture_episodes,5000,"selected-records=0",0,0).emit,"capture detail bypassed first failure");
+    need(!capture_failure(capture_episodes,5010,"catalog-misses=3",1,0).emit,"second view bypassed the shared rate limit");
+    capture_failure(capture_episodes,5011,"catalog-misses=4",1,0);
+    auto capture_recovered=capture_episodes.recovery(5020);
+    auto capture_summary=evrm::fallback_event_summary(capture_recovered);
+    need(capture_recovered.emit&&capture_summary.find("view=0 selected-records=0")!=std::string::npos&&
+        capture_summary.find("view=1 catalog-misses=4")!=std::string::npos&&capture_summary.find("catalog-misses=3")==std::string::npos,
+        "recovery lost rate-suppressed/multiple-view counts or failed to keep the latest per view");
+    need(!capture_failure(capture_episodes,5030,"submitted-records=7",2,0).emit,"brief follow-up gap bypassed pacing");
+    need(!capture_episodes.recovery(5040).emit,"brief follow-up recovery bypassed pacing");
+    const auto next_capture=capture_failure(capture_episodes,6100,"selected-records=1",0,0);
+    capture_summary=evrm::fallback_event_summary(next_capture);
+    need(next_capture.emit&&capture_summary.find("view=2 submitted-records=7")!=std::string::npos&&capture_summary.find("catalog-misses=4")==std::string::npos,
+        "suppressed episode detail was lost or a logged recovery failed to clear old detail");
     evrm::FallbackEpisodes submissions;
     for(unsigned n=0;n<7;++n){evrm::FallbackDecision decision;
         bool ready=decision.check(true,evrm::FallbackGate::Shape);if(ready)ready=decision.check(false,evrm::FallbackGate::CompetingOwnership);

@@ -1,15 +1,15 @@
-[b]EnshroudedVRM 0.3.1 — play as your VRM avatar[/b]
+[b]EnshroudedVRM 0.3.2 â€” play as your VRM avatar[/b]
 
 Install the game-local mod, launch Enshrouded normally through Steam, and press F8 to configure it. This standalone package needs no launcher EXE, batch file, PowerShell startup command or separate mod loader.
 
 [b]Included[/b]
-• F8 model switching and a persistent No model replacement option for the original game character.
-• Audio lip sync from game voice, or an opt-in local microphone for offline use. Windows default and a device picker are supported.
-• Strength/sensitivity/smoothing controls, whole-model Game lighting/Matte presets and saved per-material overrides.
-• Lightnill's optional unchanged VRoid sample, never selected automatically. The model keeps its embedded permissions.
+â€¢ F8 model switching and a persistent No model replacement option for the original game character.
+â€¢ Audio lip sync from game voice, or an opt-in local microphone for offline use. Windows default and a device picker are supported.
+â€¢ Strength/sensitivity/smoothing controls, whole-model Game lighting/Matte presets and saved per-material overrides.
+â€¢ Lightnill's optional unchanged VRoid sample, never selected automatically. The model keeps its embedded permissions.
 
-[b]0.3.1 changes[/b]
-Higher-fog compatibility through a packed, budget-checked lighting-volume snapshot; local-player-owned part selection and corrected ownership recovery; transient GPU/menu/readback lifetime fixes; bounded local fallback and sampled performance diagnostics. Includes the 16-bit PNG importer compatibility from 0.3.0.
+[b]0.3.2 changes[/b]
+Explicit local-player ownership and faster direct lookup; correct VRM inventory previews and native survivor previews; ownership/driver-lookup and allocation optimizations; equipment timing corrections; private one-click F8 debug reports with hardware/settings/rendering context and qualified in-game map coordinates. Screenshot inclusion is optional and requires preview plus approval. Nothing uploads automatically. Higher-fog compatibility and 16-bit PNG import are retained.
 
 [b]Manual installation and updates[/b]
 1. Close Enshrouded. In Steam choose Manage > Browse local files.
@@ -22,12 +22,15 @@ The old 0.2.0 script launcher is not used by this package. Preferences live in %
 [b]Coverage and known limitations[/b]
 This preview targets the checked Steam build 26082781/resource 1273043 and Windows x64 with Windows installed in C:\Windows. Desktop evidence covers Windows 10 build 19045 and Vulkan loader 1.4.350. Other Windows layouts, Windows 11, other loaders and combined-loader operation remain unverified. Game/package checks intentionally decline unsupported files; do not bypass them or disable antivirus.
 
-Some camera/scene/menu fallbacks and survivor-preview subject identification remain under investigation. Stutters can occur at voxel-built bases; a full VRM-off comparison reduced but did not eliminate them. The new timings help investigate the added overhead; no measured gameplay FPS improvement is claimed. Large avatars can reduce performance. Full MToon/native armor fitting and multiplayer avatar synchronization are not implemented. Replacement remains local to your client.
+The selected local implementation passed inventory/survivor/inventory, equipment and character reload checks. Wider scene and hardware coverage is still needed. Stutters can occur at voxel-built bases; a full VRM-off comparison reduced but did not eliminate them. The new timings help investigate the added overhead; no measured gameplay FPS improvement is claimed. Large avatars can reduce performance. Full MToon/native armor fitting and multiplayer avatar synchronization are not implemented. Replacement remains local to your client.
 
 Game voice requires a session with voice chat active. Local microphone works offline and is independent of game mute/PTT. Microphone audio is not recorded or uploaded. F8 No model replacement stops replacement work while leaving the mod loaded. Settings/logs stay local; no automatic updater or global loader installation is used.
 
 [b]Source and release evidence[/b]
 https://github.com/lightnill/EnshroudedVRM
-https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.1
+https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.2
 
 Exact-hash scan/test records accompany the release. Zero detections does not prove safety; see the coverage and unsupported-engine details. Original mod code is MIT; the Oculus LipSync runtime, sample avatar and included dependencies have separate terms. This unofficial mod is not endorsed by Keen Games.
+
+[b]Reporting an issue[/b]
+Use F8 > Create debug report, then Open reports folder. Review the local ZIP before sharing. Reports reconstruct approved fields instead of attaching raw logs/settings. They omit personal paths, account/server IDs, endpoint IDs, audio, models, saves and memory dumps. In-game XYZ coordinates are included only when fresh and verified; no real-world location or actual voxel blocks are collected. Screenshots start off and require exact-image preview and explicit inclusion; visible names/chat remain in an approved image. Missing fields are marked unavailable.

@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <utility>
 namespace evrm {
-inline void fallback_copy_reason(std::array<char,160>& out,const char* text)noexcept {
+template<std::size_t Size>inline void fallback_copy_reason(std::array<char,Size>& out,const char* text)noexcept {
     out.fill(0);if(!text)return;
     for(unsigned n=0;n+1<out.size()&&text[n];++n)out[n]=static_cast<unsigned char>(text[n])<32?' ':text[n];
 }
@@ -20,19 +20,31 @@ struct FallbackReasonSamples {
         if(count<values.size())values[count++]=bounded;else overflow=true;
     }
 };
+struct FallbackCaptureDetails {
+    struct View {unsigned index=0;std::array<char,384> text{};};
+    std::array<View,4> values{};
+    unsigned count=0;bool overflow=false;
+    void add(unsigned view,const char* text)noexcept {
+        if(!text||!*text)return;
+        for(unsigned n=0;n<count;++n)if(values[n].index==view){fallback_copy_reason(values[n].text,text);return;}
+        if(count==values.size()){overflow=true;return;}
+        auto& item=values[count++];item.index=view;fallback_copy_reason(item.text,text);
+    }
+};
 struct FallbackEvent {
     bool emit=false;
     std::uint64_t episode=0,failures=0,elapsed_ms=0,suppressed_episodes=0;
     std::uint64_t total_failures=0,suppressed_failures=0,reason_mask=0;
     FallbackReasonSamples details;
+    FallbackCaptureDetails capture_details;
 };
 // The caller already owns its renderer/capture lock. At most one failure line
 // per second plus its single recovery; rapid alternating episodes are counted.
 class FallbackEpisodes {
 public:
-    FallbackEvent failure(std::uint64_t now,std::uint64_t reason_mask=0,const char* reason=nullptr)noexcept {
+    FallbackEvent failure(std::uint64_t now,std::uint64_t reason_mask=0,const char* reason=nullptr,const char* detail=nullptr,unsigned view=0)noexcept {
         if(!active_){active_=true;logged_=false;first_=now;failures_=0;++episodes_;}
-        ++failures_;++total_failures_;reasons_|=reason_mask;details_.add(reason);
+        ++failures_;++total_failures_;reasons_|=reason_mask;details_.add(reason);capture_details_.add(view,detail);
         const bool emit=!emitted_||now<last_emit_||now-last_emit_>=1000;
         if(emit){emitted_=logged_=true;last_emit_=now;}
         else{++suppressed_failures_;if(failures_==1)++suppressed_;}
@@ -41,7 +53,7 @@ public:
     FallbackEvent recovery(std::uint64_t now)noexcept {
         if(!active_)return {};
         active_=false;auto result=event(logged_,now);
-        if(logged_){reasons_=0;details_={};}
+        if(logged_){reasons_=0;details_={};capture_details_={};}
         return result;
     }
     std::uint64_t episodes()const noexcept{return episodes_;}
@@ -50,15 +62,23 @@ private:
     std::uint64_t first_=0,last_emit_=0,episodes_=0,failures_=0,suppressed_=0;
     std::uint64_t total_failures_=0,suppressed_failures_=0,reasons_=0;
     FallbackReasonSamples details_;
+    FallbackCaptureDetails capture_details_;
     FallbackEvent event(bool emit,std::uint64_t now)const noexcept {
-        return {emit,episodes_,failures_,now>=first_?now-first_:0,suppressed_,total_failures_,suppressed_failures_,reasons_,details_};
+        return {emit,episodes_,failures_,now>=first_?now-first_:0,suppressed_,total_failures_,suppressed_failures_,reasons_,details_,capture_details_};
     }
 };
 inline std::string fallback_event_summary(const FallbackEvent& event){
     std::string result=" total-failures="+std::to_string(event.total_failures)+" suppressed-failures="+std::to_string(event.suppressed_failures)+
         " reason-mask="+std::to_string(event.reason_mask)+" reason-overflow="+std::to_string(event.details.overflow)+" observed-reasons={";
     for(unsigned n=0;n<event.details.count;++n){if(n)result+=';';result+=event.details.values[n].data();}
-    return result+'}';
+    result+='}';
+    if(event.capture_details.count){
+        result+=" capture-detail-overflow="+std::to_string(event.capture_details.overflow)+" capture-details={";
+        for(unsigned n=0;n<event.capture_details.count;++n){if(n)result+=';';const auto& view=event.capture_details.values[n];
+            result+="view="+std::to_string(view.index)+" "+view.text.data();}
+        result+='}';
+    }
+    return result;
 }
 enum class FallbackGate:std::uint64_t {
     Shape=1ull<<0,Eligible=1ull<<1,Untainted=1ull<<2,ValidBundle=1ull<<3,Recorded=1ull<<4,Ended=1ull<<5,
@@ -94,12 +114,12 @@ struct FallbackCaptureMetadata {
     }
 };
 struct FallbackPoseDiagnostics {
-    struct Failure {FallbackCaptureMetadata capture;const char* phase="begin";std::array<char,160> reason{};};
+    struct Failure {FallbackCaptureMetadata capture;const char* phase="begin";std::array<char,160> reason{};std::array<char,384> detail{};};
     std::array<Failure,4> failures{};unsigned count=0,retained_views=0;
     bool failed()const noexcept{return count!=0;}
-    void record(const FallbackCaptureMetadata& capture,const char* phase,const char* reason)noexcept {
+    void record(const FallbackCaptureMetadata& capture,const char* phase,const char* reason,const char* detail=nullptr)noexcept {
         if(count==failures.size())return;
-        auto& failure=failures[count++];failure.capture=capture;failure.phase=phase;fallback_copy_reason(failure.reason,reason);
+        auto& failure=failures[count++];failure.capture=capture;failure.phase=phase;fallback_copy_reason(failure.reason,reason);fallback_copy_reason(failure.detail,detail);
     }
 };
 template<class Snapshot> std::uint64_t native_view_instance_source(const Snapshot& view){

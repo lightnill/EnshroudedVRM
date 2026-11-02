@@ -24,6 +24,7 @@ inline constexpr const char* standalone_package_members[] = {
     "EnshroudedVRM/Runtime/shaders/avatar_native.pull.visibility.spv",
     "EnshroudedVRM/Runtime/shaders/avatar_native.shadow.frag.spv",
     "EnshroudedVRM/Runtime/shaders/avatar_native.shadow.vert.spv",
+    "EnshroudedVRM/Runtime/shaders/debug_report_capture.comp.spv",
     "EnshroudedVRM/Runtime/shaders/native_menu_prepare.comp.spv",
     "EnshroudedVRM/Runtime/shaders/native_prepare.comp.spv",
     "EnshroudedVRM/Runtime/shaders/native_skinning.comp.spv",

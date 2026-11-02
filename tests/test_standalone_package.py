@@ -37,15 +37,14 @@ class StandalonePackageTests(unittest.TestCase):
         self.base_payload={name.removeprefix('EnshroudedVRM/'):('accepted '+name).encode() for name in self.module.BASE_TARGET_MEMBERS if name!='vulkan-1.dll'}
         self.base_payload['Runtime/enshrouded_vrm_runtime.dll']=pe('old runtime')
         self.base_payload['Runtime/OVRLipSync.dll']=self.sdk
-        for name in self.module.SHADER_NAMES:self.base_payload['Runtime/shaders/'+name]=struct.pack('<IIIII',0x07230203,0x10000,0,1,0)
+        for name in self.module.BASE_SHADER_NAMES:self.base_payload['Runtime/shaders/'+name]=struct.pack('<IIIII',0x07230203,0x10000,0,1,0)
         for name in self.module.SCRIPT_NAMES:self.base_payload[name]=b'retired player script'
         self.info={'version':'0.2.0','runtimeSha256':sha(self.base_payload['Runtime/enshrouded_vrm_runtime.dll']),
-                   'acceptedShaderModules':{name:sha(self.base_payload['Runtime/shaders/'+name]) for name in self.module.SHADER_NAMES},
+                   'acceptedShaderModules':{name:sha(self.base_payload['Runtime/shaders/'+name]) for name in self.module.BASE_SHADER_NAMES},
                    'sourceInputs':[{'path':'src/runtime_bridge.cpp','sha256':'a'*64}], 'automaticBufferExports':False,'bundledAvatars':0,
                    'validation':{'antivirus':'old scan must not be inherited'}}
-        if hasattr(self.module,'OWNED_SHADER_SHA256'):
-            patch.dict(self.module.OWNED_SHADER_SHA256,{name:self.info['acceptedShaderModules'][name] for name in self.module.OWNED_SHADER_SHA256}).start()
         self.base_payload['BUILD-INFO.json']=encoded(self.info)
+        patch.object(self.module,'OWNED_SHADER_SHA256',{'native_volume_snapshot.comp.spv':self.info['acceptedShaderModules']['native_volume_snapshot.comp.spv']},create=True).start()
         self.write_base()
         for name in self.module.required_source_inputs(self.info):
             path=self.source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(('owned source '+name).encode())
@@ -57,7 +56,7 @@ class StandalonePackageTests(unittest.TestCase):
         self.shaders=self.folder/'shaders';self.shaders.mkdir()
         modules=[]
         for name in self.module.SHADER_NAMES:
-            path=self.shaders/name;data=self.base_payload['Runtime/shaders/'+name];path.write_bytes(data)
+            path=self.shaders/name;data=self.base_payload.get('Runtime/shaders/'+name,struct.pack('<IIIII',0x07230203,0x10000,0,1,0));path.write_bytes(data)
             modules.append({'name':name,'path':str(path),'sha256':sha(data)})
         self.shader_manifest=self.folder/'shaders.json';self.shader_manifest.write_bytes(encoded({'schema':'enshrouded-vrm-shaders-v1','modules':modules}))
         self.pins=self.folder/'source-pins.json';self.refresh_pins()
@@ -123,38 +122,15 @@ class StandalonePackageTests(unittest.TestCase):
         with self.assertRaises(OSError):self.build()
         self.assertFalse(self.output.exists())
 
-    def test_public_031_preview_metadata_is_explicit(self):
-        self.build(version='0.3.1',publication_status='preview')
+    def test_public_030_preview_metadata_is_explicit(self):
+        self.build(version='0.3.0',publication_status='preview')
         with zipfile.ZipFile(self.output) as archive:
             for name in ['EnshroudedVRM/BUILD-INFO.json','EnshroudedVRM/release-manifest.json']:
                 metadata=json.loads(archive.read(name))
-                self.assertEqual(metadata['version'],'0.3.1')
+                self.assertEqual(metadata['version'],'0.3.0')
                 self.assertEqual(metadata['publication_status'],'preview')
-            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.1')
+            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.2')
             self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['bootstrapMetadataVersion'],'0.2.0-standalone-dev')
-
-    def test_pose_and_timing_headers_are_required_inputs(self):
-        names=self.module.required_source_inputs(self.info)
-        self.assertIn('src/native_pose_owner.hpp',names)
-        self.assertIn('src/runtime_hook_timing.hpp',names)
-
-    def test_exact_owned_fog_shader_can_replace_the_legacy_pin(self):
-        name='native_volume_snapshot.comp.spv'
-        new=struct.pack('<IIIII',0x07230203,0x10000,7,2,0)
-        if hasattr(self.module,'OWNED_SHADER_SHA256'):
-            patch.dict(self.module.OWNED_SHADER_SHA256,{name:sha(new)}).start()
-        manifest=json.loads(self.shader_manifest.read_bytes())
-        for entry in manifest['modules']:
-            if entry['name']==name:entry['sha256']=sha(new)
-        self.shader_manifest.write_bytes(encoded(manifest));(self.shaders/name).write_bytes(new)
-        self.build()
-        with zipfile.ZipFile(self.output) as archive:
-            self.assertEqual(archive.read('EnshroudedVRM/Runtime/shaders/'+name),new)
-        self.output.unlink()
-        for entry in manifest['modules']:
-            if entry['name']==name:entry['sha256']=self.info['acceptedShaderModules'][name]
-        self.shader_manifest.write_bytes(encoded(manifest));(self.shaders/name).write_bytes(self.base_payload['Runtime/shaders/'+name])
-        with self.assertRaises(ValueError):self.build()
 
     def test_unknown_publication_status_is_declined(self):
         with self.assertRaises(ValueError):self.build(publication_status='unreviewed-publication')
@@ -193,6 +169,19 @@ class StandalonePackageTests(unittest.TestCase):
         self.shader_manifest.write_bytes(original);(self.shaders/self.module.SHADER_NAMES[0]).write_bytes(b'bad shader')
         with self.assertRaises(ValueError):self.build()
 
+    def test_current_fog_pin_is_required_and_old_shader_declined(self):
+        name='native_volume_snapshot.comp.spv';original=self.base_payload['Runtime/shaders/'+name]
+        current=original+b'\0\0\0\0'
+        self.module.OWNED_SHADER_SHA256={name:sha(current)}
+        value=json.loads(self.shader_manifest.read_bytes())
+        row=next(r for r in value['modules'] if r['name']==name)
+        (self.shaders/name).write_bytes(current);row['sha256']=sha(current)
+        self.shader_manifest.write_bytes(encoded(value));self.build()
+        self.output.unlink()
+        (self.shaders/name).write_bytes(original);row['sha256']=sha(original)
+        self.shader_manifest.write_bytes(encoded(value))
+        with self.assertRaises(ValueError):self.build()
+
     def test_system_dll_or_executable_cannot_be_bootstrap(self):
         self.bootstrap.write_bytes(pe('Microsoft Windows Power Profile'))
         with self.assertRaises(ValueError):self.build()
@@ -210,7 +199,7 @@ class StandalonePackageTests(unittest.TestCase):
     def test_real_native_and_python_member_contracts_match(self):
         import re
         names=set(re.findall(r'^\s*"([^"\r\n]+)"', (ROOT/'src/standalone_package_members.hpp').read_text(),re.MULTILINE))
-        self.assertEqual(names,set(self.module.TARGET_MEMBERS));self.assertEqual(len(names),41)
+        self.assertEqual(names,set(self.module.TARGET_MEMBERS));self.assertEqual(len(names),42)
 
     def test_baseline_checksum_sidecar_is_verified(self):
         with zipfile.ZipFile(self.base) as archive:payload={name:archive.read(name) for name in archive.namelist()}

@@ -272,14 +272,17 @@ struct EnshroudedBridge::Impl {
         invertible_camera(frame.camera_stable_world_to_clip);
         struct Part { SelectedPart selected; Matrix actor; }; std::map<std::uint32_t,Part> parts;
         std::set<std::pair<std::uint32_t,std::uint32_t>> visited;
+        std::uint64_t submitted_records=0,selected_records=0,catalog_misses=0;
         for (const auto& drawn : snapshot.culled_spans) {
           const auto first=static_cast<std::size_t>(drawn.first_instance)*8;
           const auto end=first+static_cast<std::size_t>(drawn.instance_count)*8;
           for (std::size_t offset=first;offset<end;offset+=8) {
             const auto mesh_id=culled.u32(offset)&1048575u,instance_id=culled.u32(offset+4);
+            ++submitted_records;
             if(owner&&!native_pose_owner_contains(*owner,instance_id))continue;
+            ++selected_records;
             if (!visited.emplace(mesh_id,instance_id).second) continue;
-            const auto matched=match(mesh,static_cast<std::size_t>(mesh_id)*mesh_stride,mesh_id,instance_id,instances); if (!matched.found) continue;
+            const auto matched=match(mesh,static_cast<std::size_t>(mesh_id)*mesh_stride,mesh_id,instance_id,instances); if (!matched.found) {++catalog_misses;continue;}
             const auto instance_offset=static_cast<std::size_t>(instance_id)*instance_stride; instances.span(instance_offset,instance_stride);
             auto found=parts.find(instance_id);
             if (found!=parts.end()) {
@@ -293,7 +296,10 @@ struct EnshroudedBridge::Impl {
             part.actor=actor_matrix(instances,instance_offset,frame.camera_packed_origin); parts.emplace(instance_id,std::move(part));
           }
         }
-        require(!parts.empty(),"No catalog-compatible player parts in capture");
+        if(parts.empty())throw PoseRejection("No catalog-compatible player parts in capture",
+            "owner-filter="+std::to_string(owner!=nullptr)+" owner-models="+std::to_string(owner?owner->candidate.models.size():0)+
+            " submitted-records="+std::to_string(submitted_records)+" selected-records="+std::to_string(selected_records)+
+            " unique-selected="+std::to_string(visited.size())+" catalog-misses="+std::to_string(catalog_misses));
         struct Group { std::vector<SelectedPart> parts; std::map<std::uint32_t,Matrix> globals; }; std::map<Matrix,Group> groups;
         for (const auto& item : parts) {
             const auto& part=item.second; auto& group=groups[part.actor];
@@ -334,7 +340,11 @@ struct EnshroudedBridge::Impl {
             const auto found=group.globals.find(semantic.second); if (found==group.globals.end()) continue;
             frame.source_pose.rest.emplace(semantic.first,rest[semantic.second]); frame.source_pose.current.emplace(semantic.first,found->second);
         }
-        frame.actor_world=selected.first; frame.parts=group.parts; frame.observed_joint_count=group.globals.size(); return frame;
+        frame.actor_world=selected.first; frame.parts=group.parts; frame.observed_joint_count=group.globals.size();
+        if(owner){const auto at=std::size_t(frame.parts.front().instance_id)*instance_stride;
+            for(unsigned axis=0;axis<3;++axis)frame.map_position[axis]=static_cast<double>(instances.u32(at+axis*4))/packed_position_scale;
+            frame.map_position_known=true;}
+        return frame;
     }
 };
 EnshroudedBridge::EnshroudedBridge(const std::filesystem::path& profile_path,const std::filesystem::path& catalog_path,const std::string& verified_exe_sha256) {

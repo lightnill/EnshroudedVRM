@@ -4,6 +4,7 @@
 #include "tool_grip.hpp"
 #include "secondary_hand_contact.hpp"
 #include "avatar_appearance.hpp"
+#include "native_preview_subject.hpp"
 #include <memory>
 #include <array>
 
@@ -14,6 +15,7 @@ struct NativeSecondaryContactBaseline {
     std::array<ToolHandCorrection,2> hands;
 };
 struct NativeAvatarPublication {
+    NativePreviewStamp preview_subject;
     std::shared_ptr<const NativePoseOwner> pose_owner;
     std::shared_ptr<const AvatarAppearance> appearance;
     vrm::MouthWeights mouth_weights{};

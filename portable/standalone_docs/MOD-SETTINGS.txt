@@ -15,3 +15,21 @@ Preferences save automatically in your user folder. A save warning means live
 changes are usable but might not survive restart. Hover the footer for version.
 No manual vowel calibration is required. No audio is bundled. The sample avatar
 has separate embedded permissions; see Avatars/README.txt.
+DEBUG REPORT
+F8 -> Create debug report saves a local ZIP in your EnshroudedVRM user-state
+Reports folder. Open reports folder opens it only when clicked. No upload occurs.
+Reports contain approved diagnostics/settings, hardware model and memory details,
+anonymous VRM counts, observed terrain/building/depth/fog rendering context and,
+when available, fresh local-player Enshrouded XYZ coordinates (Y up, X/Z map).
+There is no real-world location lookup or voxel/save extraction.
+
+Screenshot is off for each new report. If selected, F8 is hidden for one capture
+frame. Inspect the exact preview before choosing Include this screenshot or Save
+without screenshot. The image may show private names/chat; inspect it carefully.
+Raw logs/settings, personal paths, account/server IDs, microphone IDs, audio,
+model files and memory dumps are omitted. Missing details are marked unavailable.
+Review the ZIP before sharing it yourself. Cancel abandons the unfinished report.
+
+World replacement follows the selected local player. Inventory previews need
+their exact local request/task/captured pose; survivors remain native. No
+multiplayer assignments or persistent player identifiers are added in 0.3.2.

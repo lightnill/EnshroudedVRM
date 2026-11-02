@@ -1,5 +1,6 @@
 // Included in runtime_bridge.cpp so all hooks share its validated dispatch state.
 #include "native_image_memory.hpp"
+#include "native_preview_trace.hpp"
 #define EVRM_DEVICE_HOOK_NAMES(X) \
     X(vkCreateBuffer) X(vkDestroyBuffer) \
     X(vkAllocateMemory) X(vkFreeMemory) X(vkBindBufferMemory) X(vkBindBufferMemory2) X(vkBindBufferMemory2KHR) \
@@ -43,6 +44,11 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyBuffer(VkDevice device, VkBuffer buffer, co
     {
         std::unique_lock<std::mutex> source_guard;
         if(state->native)source_guard=state->native->native_source_guard();
+        // A CPU observation already holding this lock may have re-registered
+        // the filter after probe retirement above. Retire finally under the
+        // same source lock, before invalidating metadata/physical destruction.
+        evrm::native_preview_trace_retired(reinterpret_cast<std::uintptr_t>(buffer));
+        evrm::native_preview_subjects().retire_buffer(reinterpret_cast<std::uintptr_t>(device),reinterpret_cast<std::uintptr_t>(buffer));
         observe_native(state, [&](evrm::NativeState& native) { native.buffer_destroyed(buffer); });
         if(state->native)if(auto* memory=state->native->buffer_memory())memory->buffer_destroyed(buffer);
         if(state->native)if(auto* memory=state->native->image_memory())memory->buffer_destroyed(buffer);

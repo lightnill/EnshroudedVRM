@@ -24,6 +24,7 @@ struct Memory:evrm::NativeOwnerMemory{
     std::size_t fail_at=count;
     std::uint64_t after_first=100;
     mutable bool in_order=true;
+    bool split_clock=false;
     bool read(std::uint64_t a,void* out,std::size_t n)const noexcept override{
         const auto ordinal=reads++;
         in_order=in_order&&a==0x10000+ordinal*stride&&n==width;
@@ -32,8 +33,9 @@ struct Memory:evrm::NativeOwnerMemory{
         if(!ordinal)now=after_first;
         return true;
     }
-    std::uint64_t milliseconds()const noexcept override{return now;}
-    void reset(){reads=0;now=100;after_first=100;fail_at=count;in_order=true;}
+    std::uint64_t milliseconds()const noexcept override{return split_clock?1000000000+(now/16)*16:now;}
+    std::uint64_t work_milliseconds()const noexcept{return now;}
+    void reset(){reads=0;now=100;after_first=100;fail_at=count;in_order=true;split_clock=false;}
 };
 evrm::NativeOwnerCandidate fixture(){
     evrm::NativeOwnerCandidate c;c.image.base=0x140000000ULL;c.image.size=evrm::native_owner_profile::image_size;
@@ -68,6 +70,10 @@ int main(){
         CHECK(!evrm::revalidate_native_owner(memory,copy,why,limits,&s));
         CHECK(copy.guards.empty()&&memory.reads==1&&s.failure_location==evrm::NativeOwnerFailureLocation::postcheck&&s.clock_regressed==(time==99));
     }
+    memory.reset();memory.split_clock=true;memory.now=1007;memory.after_first=1041;copy=retained;
+    CHECK(evrm::revalidate_native_owner(memory,copy,why,limits,&s));CHECK(s.elapsed_milliseconds==34&&memory.reads==count);
+    memory.reset();memory.split_clock=true;memory.now=1007;memory.after_first=1049;copy=retained;
+    CHECK(!evrm::revalidate_native_owner(memory,copy,why,limits,&s));CHECK(s.elapsed_milliseconds==42&&s.failure_location==evrm::NativeOwnerFailureLocation::postcheck);
     memory.reset();copy=retained;retained={}; // Last consumer keeps bytes after publisher clears.
     CHECK(evrm::revalidate_native_owner(memory,copy,why,limits,&s));CHECK(memory.in_order&&memory.reads==count);
     std::puts("immutable owner snapshots: bounded copy, independent metadata, complete fresh reads and fail-closed limits passed");return 0;

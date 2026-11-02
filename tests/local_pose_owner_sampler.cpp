@@ -107,6 +107,7 @@ int main(int argc,char** argv){try{
         else if(mode=="allocation")++source.generation;
         else if(mode=="submission-epoch")++epoch;
         else if(mode=="owner-root")++current.root;
+        else if(mode=="owner-service")++current.local_player_data;
         else if(mode=="census"){evrm::NativeOwnerGuard guard;guard.address=0x40000;guard.bytes={2};current.guards=evrm::NativeOwnerGuards({guard});}
         else if(mode=="submission-descriptor"){source.set_version=888;source.set_generation=999;}
         else need(mode=="same","unknown identity scenario");

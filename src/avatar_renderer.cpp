@@ -1,5 +1,6 @@
 #define VK_NO_PROTOTYPES
 #include "runtime_log.hpp"
+#include "debug_report_sources.hpp"
 #include "avatar_renderer.hpp"
 #include "graphics_state.hpp"
 #include "gpu_probe.hpp"
@@ -248,14 +249,16 @@ struct AvatarCpuModel {
     std::shared_ptr<NativeAvatarPublication> build_native_view(const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation,
         EnshroudedBridge& bridge,const MouthSnapshot& current_mouth,float mouth_strength,float debug_offset,
         std::array<double,5>& timings,PlayerTrace* trace=nullptr,bool* source_valid=nullptr,
-        const std::shared_ptr<const NativePoseOwner>& pose_owner={}) {
+        const std::shared_ptr<const NativePoseOwner>& pose_owner={},std::string* failure_detail=nullptr) {
         if(source_valid)*source_valid=false;
+        if(failure_detail)failure_detail->clear();
         const auto started=std::chrono::steady_clock::now();
         const auto instances_source=snapshot.buffers.find("instances");
         const auto selection=pose_owner&&instances_source!=snapshot.buffers.end()&&
             instances_source->second.binding.buffer==pose_owner->source.info.buffer?pose_owner:nullptr;
         const auto frame=bridge.read_player_frame(snapshot,selection.get());if(!frame){
-            if(trace&&pose_ambiguity_diagnostics<8&&!frame.diagnostic.empty()){
+            if(failure_detail)*failure_detail=frame.diagnostic;
+            if(trace&&pose_ambiguity_diagnostics<8&&!frame.diagnostic.empty()&&frame.error!="No catalog-compatible player parts in capture"){
                 // Diagnostic-only deduplication: repeated loading rejects must
                 // not consume all eight samples before gameplay begins.
                 std::uint64_t key=14695981039346656037ull;
@@ -273,6 +276,7 @@ struct AvatarCpuModel {
             }
             throw std::runtime_error(frame.error);
         }
+        if(debug_report_sources_pending())debug_report_observe_player(frame,snapshot.captured_milliseconds);
         const auto identified=std::chrono::steady_clock::now();
         vrm::RetargetOptions options;options.align_rest_directions=true;
         if(avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
@@ -288,6 +292,7 @@ struct AvatarCpuModel {
         if(const auto menu=avatar_runtime_snapshot();menu&&menu->fingerprint==prepared->fingerprint)publication->appearance=menu->appearance;
         publication->serial=serial;publication->presentation_serial=presentation;publication->published_milliseconds=snapshot.captured_milliseconds;
         publication->source_buffer_epoch=snapshot.source_epoch;
+        publication->preview_subject=snapshot.preview_subject;
         publication->height_scale=options.source_rest_height/options.avatar_rest_height;
         publication->basis_xz=avatar.version==vrm::VrmVersion::V0?-1.f:1.f;publication->diagnostic_x=debug_offset;
         publication->tool_hands=make_tool_hand_corrections(avatar,frame.source_pose,pose,publication->height_scale,publication->basis_xz);
@@ -740,7 +745,7 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
                 });
             };
             if(pose_diagnostics.failed())for(unsigned n=0;n<pose_diagnostics.count;++n){const auto& failure=pose_diagnostics.failures[n];
-                emit(impl->pose_gaps.failure(now,1ull<<failure.capture.view_index,failure.reason.data()),failure.capture,failure.phase,failure.reason.data());}
+                emit(impl->pose_gaps.failure(now,1ull<<failure.capture.view_index,failure.reason.data(),failure.detail.data(),failure.capture.view_index),failure.capture,failure.phase,failure.reason.data());}
             else emit(impl->pose_gaps.recovery(now),capture_facts,phase,"none");
         });
         try {
@@ -809,6 +814,7 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
             unsigned view_index=0;
             for(auto& view:views){
                 bool candidate_source_valid=false;
+                std::string failure_detail;
                 if(!view.asynchronous)view.source_epoch=source_buffer_epoch;
                 if(!view.captured_milliseconds)view.captured_milliseconds=views.front().captured_milliseconds;
                 capture_facts.observe(view,view_index++);
@@ -819,9 +825,9 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
                     if(view.source_epoch!=source_buffer_epoch)throw std::runtime_error("Native view source epoch changed");
                     outcome.phase="view-pose";
                     if(impl->model){auto publication=impl->model->build_native_view(view,++impl->frame_count,capture_sequence,
-                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace,nullptr,pose_owner);
+                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace,nullptr,pose_owner,&failure_detail);
                         if(!root)root=std::move(publication);else root->additional_views.push_back(std::move(publication));}
-                }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what());impl->report("View pose: "+std::string(error.what()));}
+                }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what(),failure_detail.c_str());impl->report("View pose: "+std::string(error.what()));}
                 if(impl->staged_gpu_ready&&impl->staged_model&&view.source_epoch==source_buffer_epoch){
                     try{const auto source=native_view_instance_source(view);(void)source;
                         auto candidate=impl->staged_model->build_native_view(view,++impl->frame_count,capture_sequence,
@@ -847,6 +853,7 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
         }
         if(!impl->model)return false;
         const auto frame=impl->bridge->read_player_frame(snapshot);if(!frame){impl->report(frame.error);return false;}
+        if(debug_report_sources_pending())debug_report_observe_player(frame,snapshot.captured_milliseconds);
         const auto identified=std::chrono::steady_clock::now();
         if(!impl->native_mode) {
             if(!impl->initialized)impl->initialize(queue,snapshot.queue_family,depth,swapchain);

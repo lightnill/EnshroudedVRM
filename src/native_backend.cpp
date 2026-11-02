@@ -4,12 +4,14 @@
 #include "native_draw.hpp"
 #include "native_prepare_contract.hpp"
 #include "native_submit.hpp"
+#include "native_submit_timing.hpp"
 #include "native_clip_pipelines.hpp"
 #include "native_buffer_memory.hpp"
 #include "native_image_memory.hpp"
 #include "native_body_coverage.hpp"
 #include "native_body_selection.hpp"
 #include "native_owner_process.hpp"
+#include "native_preview_trace.hpp"
 #include "native_tool_slots.hpp"
 #include "native_instance_qualifiers.hpp"
 #include "native_pose_owner.hpp"
@@ -21,6 +23,7 @@
 #include "native_volume_snapshot.hpp"
 #include "native_oit_draw.hpp"
 #include "runtime_log.hpp"
+#include "debug_report_sources.hpp"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -35,6 +38,23 @@
 namespace evrm {
 namespace {
 void checked(VkResult r,const char* action){if(r!=VK_SUCCESS)throw std::runtime_error(std::string(action)+" "+std::to_string(r));}
+void log_submit_timing(const NativeSubmitReport& report)noexcept {
+    if(!report.samples)return;
+    try{
+        const auto& worst=report.worst;
+        std::string text="native-submit-stages scopes=inclusive samples="+std::to_string(report.samples)+
+            " mean-ms="+std::to_string(report.total_ms/report.samples)+" worst-ms="+std::to_string(worst.total_ms)+
+            " worst-tick="+std::to_string(worst.tick)+" legacy="+std::to_string(worst.legacy)+
+            " commands="+std::to_string(worst.commands)+" bundles="+std::to_string(worst.bundles)+
+            " menus="+std::to_string(worst.menus)+" refreshes="+std::to_string(worst.refreshes);
+        for(unsigned n=0;n<native_submit_stage_count;++n){
+            text+=" "+std::string(native_submit_stage_name(static_cast<NativeSubmitStage>(n)))+
+                "={mean:"+std::to_string(report.phase_ms[n]/report.samples)+",worst:"+std::to_string(worst.phase_ms[n])+"}";
+        }
+        if(text.size()>2048)text.resize(2048);
+        log_event(text);
+    }catch(...){} // Observing a completed submission cannot change its result.
+}
 std::string digest_text(const std::array<std::uint8_t,32>& digest){
     constexpr char digits[]="0123456789abcdef";std::string result;result.reserve(64);
     for(const auto byte:digest){result.push_back(digits[byte>>4]);result.push_back(digits[byte&15]);}return result;
@@ -136,6 +156,7 @@ struct Bundle {
     VkImage snapshot_decline_image{};
     std::array<std::uint32_t,3> snapshot_dispatch{};VkExtent3D snapshot_extent{};
     NativeOwnerCandidate cpu_owner;NativeMenuOwnerCandidate menu_owner;bool menu_preview=false,menu_cutout=false;NativeBodyMask body_mask;
+    NativePreviewStamp preview_subject;
     // Aliases immutable admitted hint storage; no second guard-vector copy.
     // This is comparison provenance only, never submission authority.
     std::shared_ptr<const NativeOwnerCandidate> prepared_owner_hint;
@@ -200,6 +221,8 @@ bool same_geometry_layout(const NativeAvatarPose& a,const NativeAvatarPose& b) {
 bool same_selection(const SubmittedHistory& previous,const Bundle& current){
     if(previous.menu_preview!=current.menu_preview)return false;
     if(!current.menu_preview)return same_owner_selection(previous.owner,current.cpu_owner);
+    if(current.menu_owner.kind==NativeMenuOwnerKind::character&&(!previous.pose||!current.pose||
+        !same_native_preview_local(previous.pose->preview_subject,current.pose->preview_subject)))return false;
     return previous.pose&&current.pose&&previous.pose->parts==current.pose->parts&&
         same_native_menu_owner(previous.menu_owner,current.menu_owner);
 }
@@ -348,6 +371,7 @@ struct NativeBackend::Impl {
     bool replacement=false,mesh_enabled=false,replacement_enabled=true;
     std::uint64_t coverage_models=0,coverage_independent=0,coverage_uncovered=0,coverage_sources=0,coverage_accepted=0,coverage_declined=0;
     VkPhysicalDeviceLimits limits{};std::mutex mutex;
+    NativeSubmitTiming submit_timing;
     std::map<VkCommandBuffer,Recording> commands;
     std::map<VkCommandBuffer,std::vector<Recording>> completed_views;
     template<class F>void each_view(VkCommandBuffer command,F&& visit){
@@ -605,11 +629,52 @@ struct NativeBackend::Impl {
         NativeOwnerLimits budget;budget.max_milliseconds=40;
         return owner_process&&owner_process->revalidate_menu(candidate,reason,budget);
     }
+    bool prepare_character_subject(Bundle& b,bool actor_captured,std::string& reason){
+        if(!b.menu_preview||b.menu_owner.kind!=NativeMenuOwnerKind::character)return true;
+        const auto actor=native_preview_actor(b.cpu_owner);
+        if(!actor_captured||b.cpu_owner.guards.empty()||!actor.valid()||b.menu_owner.image.base!=actor.image||
+            b.menu_owner.client!=actor.client||b.menu_owner.controller!=actor.controller||b.menu_owner.preview.main!=actor.main||
+            b.menu_owner.preview.native_buffer!=reinterpret_cast<std::uintptr_t>(b.instances.info.buffer)){
+            native_preview_subjects().retire_owner(reinterpret_cast<std::uintptr_t>(this));reason="Character local actor proposal unavailable";return false;
+        }
+        native_preview_subjects().configure({actor,reinterpret_cast<std::uintptr_t>(this),reinterpret_cast<std::uintptr_t>(context.device),
+            reinterpret_cast<std::uintptr_t>(b.instances.info.buffer),b.instances.generation,b.menu_owner.renderer,0});
+        b.preview_subject=native_preview_working(reinterpret_cast<std::uintptr_t>(context.device),reinterpret_cast<std::uintptr_t>(b.instances.info.buffer));
+        if(!character_subject_current(b)){reason="Character request subject is not proved local";return false;}
+        return true;
+    }
+    bool character_subject_current(const Bundle& b)const noexcept {
+        if(!b.menu_preview||b.menu_owner.kind!=NativeMenuOwnerKind::character)return true;
+        const auto& stamp=b.preview_subject;
+        return b.pose&&same_native_preview_local(stamp,b.pose->preview_subject)&&native_preview_subjects().current(stamp)&&
+            native_preview_subjects().current(b.pose->preview_subject)&&!b.cpu_owner.guards.empty()&&stamp.source.actor==native_preview_actor(b.cpu_owner)&&
+            stamp.source.owner==reinterpret_cast<std::uintptr_t>(this)&&stamp.source.device==reinterpret_cast<std::uintptr_t>(context.device)&&
+            stamp.source.buffer==reinterpret_cast<std::uintptr_t>(b.instances.info.buffer)&&stamp.source.generation==b.instances.generation&&
+            stamp.source.renderer==b.menu_owner.renderer&&stamp.source.actor.client==b.menu_owner.client&&
+            stamp.source.actor.controller==b.menu_owner.controller&&stamp.source.actor.main==b.menu_owner.preview.main;
+    }
+    bool character_subject_draw(const Bundle& b)const noexcept {
+        if(!b.menu_preview||b.menu_owner.kind!=NativeMenuOwnerKind::character)return true;
+        return character_subject_current(b)&&same_native_preview_stamp(b.preview_subject,
+            native_preview_working(reinterpret_cast<std::uintptr_t>(context.device),reinterpret_cast<std::uintptr_t>(b.instances.info.buffer)));
+    }
+    bool verify_character_subject(Bundle& b,std::string& reason)const noexcept {
+        if(!b.menu_preview||b.menu_owner.kind!=NativeMenuOwnerKind::character)return true;
+        if(!character_subject_current(b))return false;
+        // Allocation proof alone does not establish who this Character renders.
+        return revalidate_owner(b.cpu_owner,reason)&&character_subject_current(b);
+    }
+    static std::uint64_t owner_clock_milliseconds()noexcept {
+        // Match NativeOwnerProcess work time; pose/sampler timestamps keep the
+        // game's GetTickCount64 epoch and are never compared with this clock.
+        return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
     std::uint64_t census_refreshes=0;
     bool refresh_census_owner(Bundle& bundle,std::uint64_t started,std::string& reason,NativeOwnerObservationStats& stats,bool& observation_refreshed) {
         observation_refreshed=false;bundle.owner_refresh={};
         if(!bundle.prepared_owner_hint||stats.phase!=NativeOwnerObservationPhase::submission_verify||
             stats.failure_location!=NativeOwnerFailureLocation::compare||stats.guard_capture_phase!=NativeOwnerObservationPhase::census)return false;
+        submit_timing.refresh();NativeSubmitStageScope refresh_scope(submit_timing,NativeSubmitStage::Refresh);
         const auto precise_started=std::chrono::steady_clock::now();
         auto& trace=bundle.owner_refresh;trace.attempted=true;
         const auto pose_age=[&](){const auto now=GetTickCount64();return now>=bundle.pose->published_milliseconds?now-bundle.pose->published_milliseconds:UINT64_MAX;};
@@ -620,18 +685,20 @@ struct NativeBackend::Impl {
         } timing{trace,precise_started,pose_age};
         const auto previous=bundle.prepared_owner_hint;
         revoke_preparation();
-        const auto remaining=[&]()->std::uint64_t{const auto now=GetTickCount64();return now>=started&&now-started<40?40-(now-started):0;};
+        const auto remaining=[&]()->std::uint64_t{const auto now=owner_clock_milliseconds();return now>=started&&now-started<40?40-(now-started):0;};
         auto budget=remaining();if(!budget){reason="owner census refresh deadline exceeded";return false;}
         NativeOwnerCandidate fresh;NativeOwnerObservationStats fresh_stats;
         const auto capture_started=std::chrono::steady_clock::now();
         const bool captured=capture_owner(fresh,reason,&fresh_stats,budget);
         trace.capture_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-capture_started).count();
+        submit_timing.add(NativeSubmitStage::Capture,trace.capture_ms);
         if(!captured){stats=fresh_stats;return false;}
         if(!same_owner_selection(*previous,fresh)){reason="owner census refresh changed prepared selection";return false;}
         budget=remaining();if(!budget){reason="owner census refresh deadline exceeded";return false;}
         const auto verify_started=std::chrono::steady_clock::now();
         const bool verified=revalidate_owner(fresh,reason,&fresh_stats,budget);
         trace.verify_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-verify_started).count();
+        submit_timing.add(NativeSubmitStage::RefreshVerify,trace.verify_ms);
         if(!verified){stats=fresh_stats;return false;}
         if(!remaining()){reason="owner census refresh deadline exceeded";return false;}
         trace.verified=true;
@@ -661,7 +728,7 @@ struct NativeBackend::Impl {
         if(!remaining()){reason="owner census refresh deadline exceeded";return false;}
         bundle.cpu_owner=std::move(fresh);bundle.prepared_owner_hint.reset();reason.clear();
         ++census_refreshes;
-        if(census_refreshes==1||census_refreshes%30==0)log_event_lazy([&]{return "native-replacement.owner-census-refreshed count="+std::to_string(census_refreshes)+" elapsed-ms="+std::to_string(GetTickCount64()-started)+" guards="+std::to_string(bundle.cpu_owner.guards.size());});
+        if(census_refreshes==1||census_refreshes%30==0)log_event_lazy([&]{return "native-replacement.owner-census-refreshed count="+std::to_string(census_refreshes)+" elapsed-ms="+std::to_string(owner_clock_milliseconds()-started)+" guards="+std::to_string(bundle.cpu_owner.guards.size());});
         return true;
     }
     unsigned owner_failure_notices=0;
@@ -801,6 +868,8 @@ struct NativeBackend::Impl {
     void observe_rendering(Recording& r,const VkRenderingInfo& info)noexcept {
         r.observed_oit_active=false;
         try{
+            if(debug_report_sources_pending()&&r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer){const auto depth=metadata.attachment_view(r.pass.depth);
+                debug_report_observe_view(r.pass.extent.width,r.pass.extent.height,depth.format,depth.samples);}
             if(r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer){
                 r.observed_gbuffer_depth=metadata.attachment_view(r.pass.depth);r.observed_gbuffer_extent=r.pass.extent;
             }
@@ -969,10 +1038,10 @@ struct NativeBackend::Impl {
                     bundle->menu_preview=true;
                     if(bundle->menu_owner.kind==NativeMenuOwnerKind::frontend)tool_slots.disable();
                     initialize_menu_prepare();
-                    selected=make_native_menu_body_mask(bundle->menu_owner,latest->parts,latest->instance_qualifiers,
+                    selected=prepare_character_subject(*bundle,owner_captured,reason)&&make_native_menu_body_mask(bundle->menu_owner,latest->parts,latest->instance_qualifiers,
                         bundle->instances,bundle->body_mask,bundle->qualified_parts,reason);
                     if(selected)notice(bundle->menu_owner.kind==NativeMenuOwnerKind::character?
-                        "Character renderer allocation selected; no gameplay equipment writes":
+                        "local Character preview subject selected; no gameplay equipment writes":
                         "frontend menu preview selected; no gameplay equipment writes","menu-preview-ready");
                 }
             }
@@ -984,6 +1053,11 @@ struct NativeBackend::Impl {
             bundle->publication_source=latest_source;
             if(!metadata.live(bundle->publication_source)||bundle->publication_source.info.buffer!=bundle->instances.info.buffer||
                 bundle->publication_source.generation!=bundle->instances.generation) {report("replacement publication source generation changed");return{};}
+            if(bundle->menu_preview&&bundle->menu_owner.kind==NativeMenuOwnerKind::character){
+                native_preview_trace_source(bundle->menu_owner.image,bundle->menu_owner.preview.native_buffer,bundle->menu_owner.preview.main);
+                native_preview_handoff_history().configure(bundle->menu_owner.client,bundle->menu_owner.preview.main,
+                    bundle->menu_owner.renderer,bundle->menu_owner.preview.native_buffer,reinterpret_cast<std::uintptr_t>(this));
+            }
             bundle->sources.push_back(bundle->publication_source);
             notice("replacement-owner-linked models="+std::to_string(bundle->body_mask.selected)+" capture-ms="+
                 std::to_string(bundle->cpu_owner.elapsed_milliseconds)+" reads="+std::to_string(bundle->cpu_owner.read_calls),"replacement-owner-cost");
@@ -1183,6 +1257,7 @@ struct NativeBackend::Impl {
         const bool character_preview=b.menu_preview&&b.menu_owner.kind==NativeMenuOwnerKind::character;
         const auto latest=publication_for(b.instances.info.buffer);
         if(b.submitted)return;
+        submit_timing.bundle(b.menu_preview);NativeSubmitStageScope gates(submit_timing,NativeSubmitStage::Gates);
         b.submitted=true;b.awaiting_submit_result=true;b.submitted_queue=submitted_queue;
         FallbackDecision decision;using Gate=FallbackGate;
         bool ready=decision.check(shape,Gate::Shape)&&decision.check(replacement_enabled&&recording.eligible,Gate::Eligible)&&
@@ -1213,12 +1288,14 @@ struct NativeBackend::Impl {
                     other.ownership_presentation==b.pose->presentation_serial))&&!independent_view(other,b)){ready=false;decision.check(false,Gate::CompetingOwnership);}});
             for(const auto& source:b.excluded_transforms)ready=ready&&decision.check(metadata.live(source)&&
                 memory.disjoint(b.instances.info.buffer,0,b.instances.size,source.info.buffer,source.info.offset,source.info.range),Gate::ExcludedTransforms);
+            gates.finish();
             auto& reason=decision_reason;
             NativeOwnerObservationStats owner_stats;bool owner_failed=false;
             if(ready){
                 bool observation_refreshed=false;
-                if(b.menu_preview){ready=revalidate_menu_owner(b.menu_owner,reason);}
-                else{const auto owner_started=GetTickCount64();ready=revalidate_owner(b.cpu_owner,reason,&owner_stats);
+                if(b.menu_preview){NativeSubmitStageScope owner_scope(submit_timing,NativeSubmitStage::OwnerVerify);ready=revalidate_menu_owner(b.menu_owner,reason)&&verify_character_subject(b,reason);}
+                else{const auto owner_started=owner_clock_milliseconds();
+                    {NativeSubmitStageScope owner_scope(submit_timing,NativeSubmitStage::OwnerVerify);ready=revalidate_owner(b.cpu_owner,reason,&owner_stats);}
                     if(!ready)ready=refresh_census_owner(b,owner_started,reason,owner_stats,observation_refreshed);}
                 owner_failed=!ready;
                 if(owner_failed){
@@ -1227,6 +1304,7 @@ struct NativeBackend::Impl {
                 }
                 decision.check(ready,Gate::OwnerFreshness);
             }
+            NativeSubmitStageScope final_checks(submit_timing,NativeSubmitStage::FinalChecks);
             if(ready&&b.pose->pose_owner){
                 ready=!b.menu_preview&&native_pose_owner_matches_candidate(*b.pose->pose_owner,b.cpu_owner,b.instances,metadata.buffer_epoch());
                 if(!ready)reason="local pose owner identity changed";
@@ -1244,6 +1322,7 @@ struct NativeBackend::Impl {
                 if(owner_failed)owner_diagnostic("submission",owner_stats);
             }
         }
+        gates.finish();NativeSubmitStageScope finalize_scope(submit_timing,NativeSubmitStage::Finalize);
         b.data.offsets[1]=static_cast<uint32_t>(b.gbuf_camera.info.offset);b.data.offsets[2]=static_cast<uint32_t>(b.owner.info.offset);b.data.permit[0]=ready?1:0;
         if(replacement){
             if(b.menu_preview){if(!character_preview)tool_slots.disable();}
@@ -1304,6 +1383,9 @@ struct NativeBackend::Impl {
     }
 
     ~Impl() {
+        native_preview_subjects().retire_owner(reinterpret_cast<std::uintptr_t>(this));
+        const auto retired_preview=native_preview_handoff_history().retire_owner(reinterpret_cast<std::uintptr_t>(this));
+        if(retired_preview)native_preview_trace_history().invalidate(retired_preview);
         coverage_report();
         tool_slots.clear();
         const auto idle=context.device?F(vkDeviceWaitIdle)(context.device):VK_SUCCESS;
@@ -1359,6 +1441,7 @@ struct NativeBackend::Impl {
     }
     void caster_shadow_draw(Recording& r,VkCommandBuffer command){
         if(!r.pass_active||!r.shadow_pass||!r.bundle||r.native_restore||context.uncertain)return;
+        if(!character_subject_draw(*r.bundle))return;
         auto& b=*r.bundle;if((!artifact_probe_file.empty()&&b.probe_mode!=5.f)||b.invalid||!b.clip_set||!b.body_bits||!clips)return;
         const auto state=metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);
         if(!state.valid||state.pipeline.graphics_stage_count!=1)return;
@@ -1412,6 +1495,7 @@ struct NativeBackend::Impl {
         ++b.shadow_probe_draws;++shadow_caster_draws;
     }
     void diagnostic_shadow_draw(Recording& r,VkCommandBuffer command) {
+        if(r.bundle&&!character_subject_draw(*r.bundle))return;
         if(artifact_probe_file.empty()||!r.pass_active||!r.shadow_pass||!r.bundle||r.native_restore||context.uncertain)return;
         auto& b=*r.bundle;
         if(b.probe_mode!=4.f||b.invalid||!b.clip_set||!b.body_bits||!clips||b.shadow_probe_draws>=128||b.sources.size()>2046)return;
@@ -1462,6 +1546,7 @@ struct NativeBackend::Impl {
         if(source.info.buffer!=b.instances.info.buffer) {
             decline("replacement Instance128 draw uses another source buffer");return;
         }
+        if(!character_subject_draw(b)){decline("Character draw subject differs from local batch");return;}
         const bool gbuffer=coverage.clip_kind==NativeClipKind::gbuffer||coverage.clip_kind==NativeClipKind::billboard_gbuffer;
         if(gbuffer!=(r.pass.kind==NativePipelineKind::gbuffer)||source.generation!=b.instances.generation||source.size!=b.instances.size||
             source.info.offset||source.info.range!=b.instances.info.range||!memory.valid(source.info.buffer,0,source.size)) {
@@ -1559,7 +1644,7 @@ void NativeBackend::set_replacement_enabled(bool enabled)noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
         if(impl->replacement_enabled==enabled)return;
         impl->replacement_enabled=enabled;
-        if(!enabled){impl->latest.reset();impl->view_publications.reset();impl->revoke_preparation();impl->tool_slots.disable();}
+        if(!enabled){native_preview_subjects().retire_owner(reinterpret_cast<std::uintptr_t>(impl.get()));impl->latest.reset();impl->view_publications.reset();impl->revoke_preparation();impl->tool_slots.disable();}
         // Recorded/submitted bundles retain their leases until normal retirement.
         // The common submit permit disables both replacement and native clipping.
     }catch(...){}
@@ -1714,6 +1799,7 @@ void NativeBackend::draw(VkCommandBuffer command,VkBuffer buffer,VkDeviceSize of
 }
 void NativeBackend::render_current(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;if(!r.bundle||!r.pass_active||r.tainted)return;auto& b=*r.bundle;if(b.invalid)return;
+        if(!impl->character_subject_draw(b)){b.invalid=true;return;}
         const auto bound=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);if(!bound.valid||bound.pipeline.kind!=r.pass.kind)return;
         if(r.pass.kind==NativePipelineKind::visibility) {
             const auto camera=impl->metadata.buffer_binding(bound,1,4);
@@ -1752,6 +1838,11 @@ bool NativeBackend::pose_capture_boundary(VkCommandBuffer command)noexcept {
 }
 void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uint32_t x,std::uint32_t y,std::uint32_t z)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;r.compute_producer=true;
+        if(debug_report_sources_pending())try{const auto bound=impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);
+            if(bound.valid&&native_volume_producer(bound.pipeline.compute_bytes,bound.pipeline.compute_digest)==NativeVolumeProducer::populate){
+                const auto sampled=impl->metadata.observed_sampled_image_binding(bound,2,3);const auto storage=impl->metadata.observed_storage_image_binding(bound,2,3);
+                if(sampled||storage){const auto& view=sampled?sampled.view:storage.view;debug_report_observe_lighting({view.extent.width,view.extent.height,view.extent.depth});}}
+        }catch(...){} // Diagnostic observations cannot change the native permit.
         if(!impl->replacement_enabled&&!r.bundle)return;
         impl->mixed_dispatch(r,command,capture_owner,x,y,z);
         impl->observe_volume(r,command,capture_owner,x,y,z);
@@ -1826,7 +1917,9 @@ void NativeBackend::uncovered_draw(VkCommandBuffer command,const char* command_n
     }catch(...){scope_unsupported(command);}
 }
 void NativeBackend::before_native_draw(VkCommandBuffer command)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);if(!impl->replacement)return;
+    try{std::lock_guard<std::mutex> lock(impl->mutex);
+        if(debug_report_sources_pending())try{const auto bound=impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);debug_report_observe_scene(bound.valid?classify_debug_report_scene(body_identity(bound.pipeline)):DebugReportSceneFamily::Unknown);}catch(...){}
+        if(!impl->replacement)return;
         const auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;
         if(!impl->replacement_enabled&&!r.bundle)return;
         impl->mixed_late(r,command);impl->observe_transparent_draw(r,command);
@@ -1848,20 +1941,31 @@ void NativeBackend::scope_unsupported(VkCommandBuffer command,const char* reason
     found->second.tainted=true;impl->unknown_ownership(found->second,"unsupported-scope");if(reason)impl->notice("tainted-command "+std::string(reason));}}catch(...){} }
 void NativeBackend::command_end(VkCommandBuffer command,VkResult result)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->each_view(command,[&](VkCommandBuffer,Recording& r){r.ownership_closed=result==VK_SUCCESS&&!r.pass_active;if(r.bundle)r.bundle->ended=result==VK_SUCCESS;impl->finish_transparency(r,result);});}catch(...){} }
 VkResult NativeBackend::before_submit(VkQueue queue,uint32_t count,const VkSubmitInfo* submits)noexcept {
+    const auto started=std::chrono::steady_clock::now();const auto tick=GetTickCount64();
     try{std::lock_guard<std::mutex> lock(impl->mutex);
-        for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBuffers[j]);if(gate!=VK_SUCCESS)return gate;}
-        for(uint32_t i=0;i<count;++i){const auto& s=submits[i];const bool shape=native_legacy_submit_supported(s)&&queue==impl->queue&&!impl->disabled&&!impl->context.uncertain;
-        for(uint32_t j=0;j<s.commandBufferCount;++j)impl->submit_command(s.pCommandBuffers[j],shape,queue);
-    }impl->finish_history_submission(queue);return VK_SUCCESS;}catch(...){impl->discard_history();return VK_ERROR_OUT_OF_HOST_MEMORY;}
+        NativeSubmitCall call(impl->submit_timing,started,tick,true);
+        {NativeSubmitStageScope retry(impl->submit_timing,NativeSubmitStage::Retry);
+            for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBuffers[j]);if(gate!=VK_SUCCESS)return gate;}}
+        {NativeSubmitStageScope views(impl->submit_timing,NativeSubmitStage::Views);
+            for(uint32_t i=0;i<count;++i){const auto& s=submits[i];const bool shape=native_legacy_submit_supported(s)&&queue==impl->queue&&!impl->disabled&&!impl->context.uncertain;
+                for(uint32_t j=0;j<s.commandBufferCount;++j){impl->submit_timing.command();impl->submit_command(s.pCommandBuffers[j],shape,queue);}}}
+        {NativeSubmitStageScope history(impl->submit_timing,NativeSubmitStage::History);impl->finish_history_submission(queue);}
+        return VK_SUCCESS;}catch(...){impl->discard_history();return VK_ERROR_OUT_OF_HOST_MEMORY;}
 }
 VkResult NativeBackend::before_submit2(VkQueue queue,uint32_t count,const VkSubmitInfo2* submits)noexcept {
+    const auto started=std::chrono::steady_clock::now();const auto tick=GetTickCount64();
     try{std::lock_guard<std::mutex> lock(impl->mutex);
-        for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBufferInfos[j].commandBuffer);if(gate!=VK_SUCCESS)return gate;}
-        for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j)impl->submit_command(submits[i].pCommandBufferInfos[j].commandBuffer,false,queue);
-        impl->finish_history_submission(queue);return VK_SUCCESS;
+        NativeSubmitCall call(impl->submit_timing,started,tick,false);
+        {NativeSubmitStageScope retry(impl->submit_timing,NativeSubmitStage::Retry);
+            for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBufferInfos[j].commandBuffer);if(gate!=VK_SUCCESS)return gate;}}
+        {NativeSubmitStageScope views(impl->submit_timing,NativeSubmitStage::Views);
+            for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j){impl->submit_timing.command();impl->submit_command(submits[i].pCommandBufferInfos[j].commandBuffer,false,queue);}}
+        {NativeSubmitStageScope history(impl->submit_timing,NativeSubmitStage::History);impl->finish_history_submission(queue);}
+        return VK_SUCCESS;
     }catch(...){return VK_ERROR_OUT_OF_HOST_MEMORY;}
 }
 void NativeBackend::submission_result(VkQueue queue,VkResult result)noexcept {
+    NativeSubmitReport timing_report;
     try{std::lock_guard<std::mutex> lock(impl->mutex);bool failed=false;
         struct Result {unsigned observed=0,candidates=0;std::shared_ptr<SubmittedHistory> emission;};
         std::map<Impl::HistoryKey,Result> views;
@@ -1881,6 +1985,8 @@ void NativeBackend::submission_result(VkQueue queue,VkResult result)noexcept {
             impl->update_history(pair.first,result==VK_SUCCESS&&view.observed==1&&view.candidates==1?std::move(view.emission):std::shared_ptr<SubmittedHistory>{});}
 
         if(failed){impl->revoke_preparation();impl->last_submit_error=result;impl->disabled=true;impl->recover_submission(queue);impl->report("native submit failed; private preparation stopped; retries quarantined until proven queue completion");}
+        timing_report=impl->submit_timing.take_if_ready();
     }catch(...){impl->discard_history();}
+    log_submit_timing(timing_report);
 }
 }

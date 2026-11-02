@@ -116,4 +116,11 @@ NativeBodyCoverage classify_native_body_coverage(const NativeBodyShaderIdentity&
     for(const auto& contract:contracts)if(identity.vertex_bytes==contract.bytes&&identity.vertex_digest==contract.digest)return contract.result;
     return {};
 }
+DebugReportSceneFamily classify_debug_report_scene(const NativeBodyShaderIdentity& identity)noexcept{
+    const auto coverage=classify_native_body_coverage(identity);
+    if(coverage.kind!=NativeBodyCoverageKind::chunklet)return DebugReportSceneFamily::Unknown;
+    if(coverage.transform_binding==3)return DebugReportSceneFamily::Terrain;
+    if(coverage.transform_binding==2)return DebugReportSceneFamily::Building;
+    return DebugReportSceneFamily::Unknown;
+}
 }

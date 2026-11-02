@@ -6,6 +6,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "debug_report_log.hpp"
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -50,13 +51,15 @@ struct RuntimeLogState {
 }
 inline void log_event(const std::string& event) noexcept {
     try {
+        const auto tick=GetTickCount64();
+        debug_report_log_event(event,tick);
         static detail::RuntimeLogState state;
         std::lock_guard<std::mutex> guard(state.mutex);
         wchar_t path[32768];
         const auto length = GetEnvironmentVariableW(L"ENSHROUDED_VRM_LOG", path, 32768);
         if(!length||length>=32768||state.lines>=10000){state.close();return;}
         if(!state.select(path,length))return;
-        const auto row=std::to_string(GetTickCount64())+" pid="+std::to_string(GetCurrentProcessId())+' '+event.substr(0,4096)+'\n';
+        const auto row=std::to_string(tick)+" pid="+std::to_string(GetCurrentProcessId())+' '+event.substr(0,4096)+'\n';
         ++state.lines; // Bound attempted rows even after a short/failed write.
         DWORD offset=0;
         while(offset<row.size()){

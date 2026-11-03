@@ -94,3 +94,5 @@ remain user-supplied.
 
 Valheim VRM repositories were reference research only. No source/tests/shaders/
 assets from them were copied into this product or these archives.
+
+MikkTSpace tangent generation is included under its zlib-style license; see vendor/mikktspace and the bundled notices/MikkTSpace.txt.

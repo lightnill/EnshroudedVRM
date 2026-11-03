@@ -38,6 +38,7 @@ struct NativeSkinAsset {
     // Dynamic publications reuse this object without deforming those vertices.
     std::shared_ptr<const NativeAvatarPose> layout;
     std::vector<NativeSkinVertex> vertices;
+    std::vector<vrm::SurfaceVertex> surface_vertices;
     std::vector<NativeSkinNode> nodes;
     std::size_t node_count=0;
     NativeMaterialPlan material_plan;

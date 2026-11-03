@@ -7,7 +7,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
-#define STBI_MAX_DIMENSIONS 8192
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 // TinyGLTF's disabled filesystem branches leave unused callback parameters.
@@ -23,6 +22,18 @@
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <tuple>
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif
+// Kept in this translation unit so importer-only test/consumer drivers retain
+// their existing single-source link contract. Canonical upstream files unedited.
+#include "../vendor/mikktspace/mikktspace.c"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 namespace vrm {
 namespace {
@@ -46,6 +57,7 @@ std::size_t field(const Json& object, const char* name, std::size_t default_valu
     return object.contains(name) ? number(object.at(name)) : default_value;
 }
 #include "import_uv.inl"
+#include "import_surface.inl"
 
 template<class T> const T& indexed(const std::vector<T>& values, int index, const char* label) {
     require(index >= 0 && static_cast<std::size_t>(index) < values.size(), std::string("Invalid ") + label);
@@ -213,7 +225,9 @@ Json preflight(const Bytes& bytes, const ImportLimits& limits) {
         reference(texture.at("source"), "images", "texture image");
         optional_reference(texture, "sampler", "samplers", "texture sampler");
     }
+    std::size_t surface_index=0;
     for (const auto& material : doc.value("materials", Json::array())) {
+        (void)parse_surface(doc,surface_index++);
         if (material.contains("pbrMetallicRoughness") && material.at("pbrMetallicRoughness").contains("baseColorTexture")) {
             const auto& texture = material.at("pbrMetallicRoughness").at("baseColorTexture");
             reference(texture.at("index"), "textures", "base texture");
@@ -489,6 +503,7 @@ void build_materials(tinygltf::Model& model, const Json& doc, Avatar& avatar) {
     }
     for (std::size_t i = 0; i < model.materials.size(); ++i) {
         const auto& source = model.materials[i]; Material material; material.name = source.name;
+        material.surface=parse_surface(doc,i);
         require(source.pbrMetallicRoughness.baseColorFactor.size() == 4, "Invalid base color shape");
         for (int c = 0; c < 4; ++c) {
             material.base_color[c] = checked_float(source.pbrMetallicRoughness.baseColorFactor[c]);
@@ -534,6 +549,7 @@ void build_materials(tinygltf::Model& model, const Json& doc, Avatar& avatar) {
     }
 }
 #include "import_normals.inl"
+#include "import_surface_geometry.inl"
 #include "import_mouth.inl"
 #include "import_meshes.inl"
 } // namespace
@@ -594,7 +610,8 @@ ImportResult load_vrm_bytes(const Bytes& bytes, const ImportLimits& limits) {
         if (used.count("VRMC_materials_mtoon") || used.count("VRM"))
             avatar.warnings.push_back("MToon parameters preserved where available; toon lighting/outlines are not implemented.");
         return {std::move(avatar), {}};
-    } catch (const std::exception& e) { return {{}, e.what()}; }
+    } catch (const std::bad_alloc&) { return {{}, "Out of memory"}; }
+    catch (const std::exception& e) { return {{}, e.what()}; }
 }
 ImportResult load_vrm(const std::filesystem::path& path, const ImportLimits& limits) {
     try {
@@ -602,12 +619,13 @@ ImportResult load_vrm(const std::filesystem::path& path, const ImportLimits& lim
         if (!file) return {{}, "Cannot open VRM file"};
         const auto length = file.tellg();
         if (length < 0 || static_cast<std::uint64_t>(length) > limits.file_bytes ||
-            static_cast<std::uint64_t>(length) > std::numeric_limits<unsigned int>::max())
+            static_cast<std::uint64_t>(length) > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
             return {{}, "VRM file exceeds size limit"};
         Bytes bytes(static_cast<std::size_t>(length)); file.seekg(0);
         if (!file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
             return {{}, "Cannot read complete VRM file"};
         return load_vrm_bytes(bytes, limits);
-    } catch (const std::exception& e) { return {{}, e.what()}; }
+    } catch (const std::bad_alloc&) { return {{}, "Out of memory"}; }
+    catch (const std::exception& e) { return {{}, e.what()}; }
 }
 } // namespace vrm

@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 namespace evrm {
-enum class AvatarShaderPreset:std::uint8_t {GameLighting,Matte};
-inline bool valid_avatar_preset(AvatarShaderPreset value)noexcept{return value==AvatarShaderPreset::GameLighting||value==AvatarShaderPreset::Matte;}
+enum class AvatarShaderPreset:std::uint8_t {GameLighting=0,Matte=1,Enhanced=2,Fast=3};
+inline bool valid_avatar_preset(AvatarShaderPreset value)noexcept{return value==AvatarShaderPreset::GameLighting||value==AvatarShaderPreset::Matte||value==AvatarShaderPreset::Enhanced||value==AvatarShaderPreset::Fast;}
 struct AvatarAppearance {
     std::string fingerprint;
     std::uint64_t generation=0;

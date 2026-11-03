@@ -11,6 +11,32 @@ int wmain(int argc,wchar_t** argv){try{
     using namespace evrm;need(argc==2,"fixture folder required");const auto file=std::filesystem::path(argv[1])/L"avatar-settings.json";
     const std::string a(64,'a'),b(64,'b');AvatarPreferences prefs;
     need(valid_avatar_preferences(prefs),"defaults invalid");need(read_avatar_preferences(file).status==AvatarSettingsStatus::Missing,"missing preferences");
+    // Rejecting a supported saved preset, flattening an override, or changing legacy
+    // Auto serialization must fail at the real file/appearance boundary.
+    const auto enhanced=AvatarShaderPreset(2),fast=AvatarShaderPreset(3);
+    const auto saved_preset=[&](const std::string& whole,const std::string& material){return
+        std::string("{\"schemaVersion\":1,\"selectedModel\":\"\",\"recentModels\":[],\"profiles\":[{\"fingerprint\":\"")+a+
+        "\",\"preset\":\""+whole+"\",\"overrides\":[{\"materialIndex\":1,\"materialName\":\"Skin\",\"preset\":\""+material+"\"}]}]}";};
+    struct PresetCase {const char* stored;const char* material_stored;AvatarShaderPreset whole,material;};
+    for(const auto& entry:{PresetCase{"enhanced","fast",enhanced,fast},PresetCase{"fast","enhanced",fast,enhanced},
+        PresetCase{"game","matte",AvatarShaderPreset::GameLighting,AvatarShaderPreset::Matte},PresetCase{"auto","matte",AvatarShaderPreset::GameLighting,AvatarShaderPreset::Matte},
+        PresetCase{"enhanced","game",enhanced,AvatarShaderPreset::GameLighting},PresetCase{"enhanced","auto",enhanced,AvatarShaderPreset::GameLighting}}){
+        write(file,saved_preset(entry.stored,entry.material_stored));
+        auto decoded=read_avatar_preferences(file);need(decoded.status==AvatarSettingsStatus::Loaded,"supported Auto/Enhanced/Fast preference rejected");
+        auto resolved=resolve_avatar_appearance(decoded.preferences,a,{"Skin","Skin",""},41);
+        need(resolved.whole==entry.whole&&resolved.materials[0]==entry.whole&&resolved.materials[1]==entry.material&&resolved.materials[2]==entry.whole,"saved preset or per-index inheritance decoded incorrectly");
+        need(avatar_material_shader_mode(&resolved,0)==0.f&&avatar_material_shader_mode(&resolved,1)==(entry.material==AvatarShaderPreset::Matte?2.f:0.f),"preset leaked into legacy shader diagnostic float");
+        need(write_avatar_preferences(file,decoded.preferences),"new preset roundtrip write rejected");
+        decoded=read_avatar_preferences(file);need(decoded.status==AvatarSettingsStatus::Loaded&&decoded.preferences.profiles[0].whole==entry.whole&&decoded.preferences.profiles[0].overrides[0].preset==entry.material,"new preset roundtrip changed appearance");
+        std::ifstream serialized(file);const std::string bytes((std::istreambuf_iterator<char>(serialized)),{});
+        need(bytes.find(std::string("\"preset\": \"")+(entry.whole==enhanced?"enhanced":entry.whole==fast?"fast":"game")+"\"")!=std::string::npos,"Auto legacy storage spelling or new preset spelling changed");
+        need(set_avatar_preset(decoded.preferences,a,enhanced)&&set_avatar_material(decoded.preferences,a,1,"Skin",fast),"supported preset edit rejected");
+        need(set_avatar_material(decoded.preferences,a,1,"Skin",std::nullopt),"new preset inherit rejected");
+        resolved=resolve_avatar_appearance(decoded.preferences,a,{"Skin","Skin"},42);need(resolved.materials[1]==enhanced,"inherit did not restore Enhanced model preset");
+        need(set_avatar_material(decoded.preferences,a,1,"Skin",fast)&&reset_avatar_materials(decoded.preferences,a),"new preset reset rejected");
+        resolved=resolve_avatar_appearance(decoded.preferences,a,{"Skin","Skin"},43);need(resolved.materials[1]==enhanced&&decoded.preferences.profiles[0].overrides.empty(),"reset did not clear Fast material override");
+    }
+    write(file,saved_preset("unknown","matte"));need(read_avatar_preferences(file).status==AvatarSettingsStatus::Invalid,"unknown saved preset accepted");
     const std::vector<std::string> labels{"Skin","Skin",""};
     auto look=resolve_avatar_appearance(prefs,a,labels,1);need(look.whole==AvatarShaderPreset::GameLighting&&look.materials.size()==3,"default game appearance");
     need(set_avatar_preset(prefs,a,AvatarShaderPreset::Matte),"whole preset edit");
@@ -39,6 +65,8 @@ int wmain(int argc,wchar_t** argv){try{
         write(file,bad);loaded=read_avatar_preferences(file);need(loaded.status==AvatarSettingsStatus::Invalid&&loaded.preferences.profiles.empty(),"malformed schema activated a profile");}
     auto future=empty;future.replace(future.find(":1"),2,":3");write(file,future);need(read_avatar_preferences(file).status==AvatarSettingsStatus::UnsupportedVersion,"future version accepted");
     write(file,empty);need(read_avatar_preferences(file).status==AvatarSettingsStatus::Loaded&&read_avatar_preferences(file).preferences.replacement_enabled,"legacy preference changed replacement behavior");
+    const auto decoded_default=resolve_avatar_appearance(read_avatar_preferences(file).preferences,a,labels,44);
+    need(decoded_default.whole==AvatarShaderPreset::GameLighting&&decoded_default.materials==std::vector<AvatarShaderPreset>(3,AvatarShaderPreset::GameLighting),"decoded profile-free preferences did not default all materials to Auto");
     const std::string disabled=R"({"schemaVersion":2,"replacementEnabled":false,"selectedModel":"C:\\avatars\\remembered.vrm","recentModels":["C:\\avatars\\remembered.vrm"],"profiles":[]})";
     write(file,disabled);loaded=read_avatar_preferences(file);
     need(loaded.status==AvatarSettingsStatus::Loaded&&loaded.preferences.selected_path=="C:\\avatars\\remembered.vrm","saved original-character choice rejected or selected model erased");

@@ -46,7 +46,7 @@ int wmain(int argc,wchar_t** argv){try{
     (void)&observed_get;require(argc==2,"fixture folder");std::cerr<<"checkpoint context\n";Context c;std::cerr<<"checkpoint context ready\n";asset_real_get=c.get;const auto folder=std::filesystem::path(argv[1]);
     require((GetErrorMode()&SEM_NOGPFAULTERRORBOX)!=0,"test process may leave unattended crash dialogs");
     auto skinning=std::make_shared<evrm::NativeSkinningGpu>(c.device,asset_get,c.memory,c.limits,folder,&c.uncertain);std::cerr<<"checkpoint skin pipelines ready\n";
-    evrm::NativeAvatarAssetStager stage(c.device,asset_get,nullptr,c.memory,skinning,&c.uncertain);std::cerr<<"checkpoint stager ready\n";const auto red=source({255,0,0,255}),green=source({0,255,0,255});std::cerr<<"checkpoint sources ready\n";
+    evrm::NativeAvatarAssetStager stage(c.device,asset_get,nullptr,c.memory,c.limits.maxImageDimension2D,skinning,&c.uncertain);std::cerr<<"checkpoint stager ready\n";const auto red=source({255,0,0,255}),green=source({0,255,0,255});std::cerr<<"checkpoint sources ready\n";
     std::cerr<<"checkpoint begin red\n";hide_completion=true;require(stage.update(c.queue,c.family,1,red.avatar,red.skin)==evrm::NativeAvatarUploadState::Pending,"upload did not stage");
     require(!stage.ready(1,red.avatar),"uncompleted upload published");const auto destroyed=destroyed_images;stage.cancel();require(destroyed_images==destroyed,"cancel freed unproven pending images");
     require(stage.update(c.queue,c.family,2,green.avatar,green.skin)==evrm::NativeAvatarUploadState::Pending&&!stage.ready(1,red.avatar),"superseded upload activated");

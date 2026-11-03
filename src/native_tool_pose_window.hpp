@@ -18,7 +18,10 @@ struct NativeToolPoseWindow {
    std::isfinite(p.diagnostic_x)&&(p.tool_hands[0].valid||p.tool_hands[1].valid);
  }
  static bool same_contract(const NativeAvatarPublication&a,const NativeAvatarPublication&b)noexcept{
-  return a.asset==b.asset&&a.source_instances==b.source_instances&&a.source_instance_offset==b.source_instance_offset&&
+  return a.subject==b.subject&&a.player_identity.account==b.player_identity.account&&
+   a.player_identity.entity_id==b.player_identity.entity_id&&a.player_identity.connection==b.player_identity.connection&&
+   a.player_identity.local==b.player_identity.local&&a.assignment_generation==b.assignment_generation&&
+   a.asset==b.asset&&a.source_instances==b.source_instances&&a.source_instance_offset==b.source_instance_offset&&
    a.source_instance_range==b.source_instance_range&&a.source_buffer_epoch==b.source_buffer_epoch&&
    a.parts==b.parts&&a.instance_qualifiers==b.instance_qualifiers&&a.height_scale==b.height_scale&&
    a.basis_xz==b.basis_xz&&a.diagnostic_x==b.diagnostic_x;

@@ -2,6 +2,7 @@
 #include "native_state.hpp"
 #include "native_publication.hpp"
 #include "avatar_service.hpp"
+#include "native_player_pose_owner.hpp"
 #include "native_avatar_assets.hpp"
 #include <vulkan/vk_layer.h>
 #include <filesystem>
@@ -22,6 +23,23 @@ struct NativeBackendTestOwner {
     virtual ~NativeBackendTestOwner()=default;
     virtual bool capture(NativeOwnerCandidate&,std::string&,NativeOwnerObservationStats* stats=nullptr) const noexcept=0;
     virtual bool revalidate(NativeOwnerCandidate&,std::string&,NativeOwnerObservationStats* stats=nullptr) const noexcept=0;
+    virtual bool capture_players(const std::vector<NativePlayerIdentity>& ids,std::vector<NativeOwnerCandidate>& out,std::string& why,const NativeOwnerLimits&,NativeOwnerObservationStats* stats=nullptr)const noexcept {
+        out.clear();if(ids.size()!=1||!ids[0].local)return false;NativeOwnerCandidate c;if(!capture(c,why,stats))return false;out.push_back(std::move(c));return true;
+    }
+    virtual NativePlayerOwnerBatch capture_available_players(const std::vector<NativePlayerIdentity>& ids,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats=nullptr)const noexcept {
+        try{std::vector<NativeOwnerCandidate> owners;
+            if(ids.empty()||ids.size()>16||!capture_players(ids,owners,why,limits,stats)||owners.size()!=ids.size()||owners.front().guards.empty())return {};
+            NativePlayerOwnerBatch batch;batch.proof=owners.front().guards;
+            for(std::size_t i=0;i<ids.size();++i){const auto& c=owners[i];
+                if(c.account!=ids[i].account||c.entity_id!=ids[i].entity_id||c.connection!=ids[i].connection||c.models.empty()||&c.guards.view()!=&batch.proof.view())return {};
+                batch.players.push_back({ids[i],NativePlayerOwnerStatus::Ready,std::move(owners[i])});
+            }
+            batch.valid=true;return batch;
+        }catch(...){return {};}
+    }
+    virtual bool revalidate_players(std::vector<NativeOwnerCandidate>& out,std::string& why,const NativeOwnerLimits&,NativeOwnerObservationStats* stats=nullptr)const noexcept {
+        return out.size()==1&&revalidate(out[0],why,stats);
+    }
     virtual bool capture_menu(NativeMenuOwnerCandidate& out,std::string& why)const noexcept{out={};why.clear();return false;}
     virtual bool revalidate_menu(NativeMenuOwnerCandidate& out,std::string& why)const noexcept{out={};why.clear();return false;}
 };
@@ -38,6 +56,11 @@ public:
     NativeImageMemory* image_memory() noexcept;
     bool mouth_gpu_unavailable()const noexcept;
     std::shared_ptr<const NativePoseOwner> pose_owner(std::uint64_t source_epoch)noexcept;
+    std::vector<NativePlayerPoseOwner> player_pose_owners(std::uint64_t,const std::vector<AvatarSubjectSelection>&) noexcept;
+    NativeAvatarUploadState prepare_player_model(VkQueue,std::uint32_t,const AvatarCandidatePtr&) noexcept;
+    bool player_model_ready(const AvatarCandidate&)const noexcept;
+    bool activate_player_model(const AvatarCandidate&,bool(*)(void*,std::uint64_t)noexcept,void*) noexcept;
+    void retain_player_models(const std::vector<AvatarSubjectSelection>&) noexcept;
     // Host source construction and native destroy/free use the same mutex.
     // try_only is for nonblocking coordination; the ordinary hook waits.
     std::unique_lock<std::mutex> native_source_guard(bool try_only=false);

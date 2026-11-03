@@ -1,3 +1,8 @@
+#include <windows.h>
+#include <csignal>
+#include <exception>
+#include <cstdlib>
+inline void fixture_guard(){SetErrorMode(0x8003);std::set_terminate([]{std::_Exit(98);});std::signal(SIGABRT,[](int){std::_Exit(99);});SetUnhandledExceptionFilter([](EXCEPTION_POINTERS*)->LONG{std::_Exit(97);});}
 #include "../src/avatar_service.hpp"
 #include "../src/native_preview_subject.hpp"
 #include <map>
@@ -10,19 +15,22 @@ enum class NativeAvatarUploadState {Idle,Ready,Failed};
 struct TestAssets {};
 struct TestBundle {std::shared_ptr<TestAssets> assets;std::shared_ptr<int> descriptors=std::make_shared<int>(1);};
 struct TestStager {std::shared_ptr<TestAssets> next=std::make_shared<TestAssets>();bool complete=true;
-    bool cancelled=false;
+    bool cancelled=false;void cancel()noexcept{cancelled=true;}
     NativeAvatarUploadState update(VkQueue,std::uint32_t,std::uint64_t,const std::shared_ptr<const vrm::Avatar>& model,const std::shared_ptr<const NativeSkinAsset>& ={}){cancelled=!model;return NativeAvatarUploadState::Idle;}
     auto ready(std::uint64_t,const std::shared_ptr<const vrm::Avatar>&){return complete?next:nullptr;}
     auto take_ready(std::uint64_t,const std::shared_ptr<const vrm::Avatar>&){auto result=next;next.reset();return result;}};
 struct NativeBackend {struct Impl {
-    std::mutex mutex;struct {bool uncertain=false;}context;bool disabled=false,replacement_enabled=true;std::uint64_t hot_generation=2;VkQueue queue=0;std::uint32_t family=0;
+    std::mutex mutex;struct {bool uncertain=false;}context;bool disabled=false,replacement_enabled=true,players_managed=false;std::uint64_t hot_generation=2;VkQueue queue=0;std::uint32_t family=0;
     std::unique_ptr<TestStager> asset_stager=std::make_unique<TestStager>();std::shared_ptr<TestAssets> assets=std::make_shared<TestAssets>();
+    std::unique_ptr<TestStager> surface_stager=std::make_unique<TestStager>();std::shared_ptr<int> surface_upload;std::map<std::string,std::shared_ptr<int>> surface_failures;
     struct {std::uint64_t buffer_epoch(){return 3;}}metadata;
     struct {unsigned clears=0,disables=0;bool authorized=true;void clear(){++clears;authorized=false;}void disable(){++disables;authorized=false;}}tool_slots;
     std::map<unsigned,std::shared_ptr<TestBundle>> commands,completed_views;std::shared_ptr<int> latest,view_publications;
     unsigned revoked=0;void revoke_preparation(){++revoked;}
     void initialize(){}void ensure_asset_stager(){}void report(const std::string&){}
 };std::unique_ptr<Impl> impl=std::make_unique<Impl>();
+NativeAvatarUploadState prepare_player_model(VkQueue,std::uint32_t,const AvatarCandidatePtr&)noexcept{return NativeAvatarUploadState::Failed;}
+bool activate_player_model(const AvatarCandidate&,bool(*)(void*,std::uint64_t)noexcept,void*)noexcept{return false;}
 NativeAvatarUploadState prepare_model(VkQueue,std::uint32_t,const AvatarCandidatePtr&)noexcept;
 bool activate_model(const AvatarCandidate&,bool(*)(void*,std::uint64_t)noexcept,void*)noexcept;
 void set_replacement_enabled(bool)noexcept;};
@@ -31,7 +39,7 @@ void set_replacement_enabled(bool)noexcept;};
 void require(bool value,const char* why){if(!value)throw std::runtime_error(why);}
 struct Commit {bool accept=true;unsigned calls=0;};
 bool commit(void* raw,std::uint64_t epoch)noexcept{auto& c=*static_cast<Commit*>(raw);++c.calls;return c.accept&&epoch==3;}
-int main(){try{
+int main(){fixture_guard();try{
     evrm::NativeBackend startup;startup.impl->assets.reset();startup.impl->hot_generation=0;
     require(startup.prepare_model(1,0,{})==evrm::NativeAvatarUploadState::Idle&&!startup.impl->asset_stager->cancelled,"enabled empty candidate cancelled initial upload on a new device");
     startup.impl->replacement_enabled=false;startup.prepare_model(1,0,{});
@@ -55,7 +63,9 @@ int main(){try{
     require(state.tool_slots.disables==1&&!state.tool_slots.clears&&!state.tool_slots.authorized,"model change must revoke old tool pose without restoring/repatching the native hook");
     const auto cached_assets=state.assets;state.latest=std::make_shared<int>(1);state.view_publications=state.latest;
     evrm::native_preview_subjects().configure({{1,2,3,4,5,6,7,8,9,10},reinterpret_cast<std::uintptr_t>(&state),11,12,13,14,0});
+    state.surface_upload=std::make_shared<int>(7);state.surface_failures["actor"]=state.surface_upload;
     backend.set_replacement_enabled(false);
+    require(state.surface_stager->cancelled&&!state.surface_upload&&state.surface_failures.empty(),"disable did not withdraw optional stager/request/failures");
     require(!state.replacement_enabled&&!state.latest&&!state.view_publications&&state.revoked==2,"disable retained replacement publication or preparation");
     require(!evrm::native_preview_subjects().active(),"no replacement retained active preview task/source authority");
     require(state.assets==cached_assets&&state.completed_views.size()==2&&state.commands.size()==1&&!first_resources.expired()&&!later_resources.expired(),"disable released assets still referenced by recorded commands");

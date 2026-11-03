@@ -3,6 +3,7 @@
 #include <vulkan/vk_layer.h>
 #include <memory>
 #include "native_publication.hpp"
+#include "native_player_pose_owner.hpp"
 #include "mod_menu_status.hpp"
 #include "avatar_service.hpp"
 
@@ -27,6 +28,12 @@ public:
     bool before_present(VkQueue, const VkPresentInfoKHR&, GpuProbe&, GraphicsState&,
                         bool& consumed_waits,uint64_t source_buffer_epoch=0,
                         std::shared_ptr<const NativePoseOwner> pose_owner={}) noexcept;
+    std::shared_ptr<const PreparedAvatar> prepared_player_model(const std::string& subject)const noexcept;
+    bool stage_player_candidate(const AvatarCandidatePtr&,bool gpu_ready,std::string& error)noexcept;
+    bool commit_player_candidate(const AvatarCandidate&,std::uint64_t source_epoch)noexcept;
+    void retain_player_models(const std::vector<AvatarSubjectSelection>&)noexcept;
+    bool before_present_players(VkQueue,const VkPresentInfoKHR&,GpuProbe&,GraphicsState&,
+        bool& consumed_waits,std::uint64_t source_buffer_epoch,const std::vector<NativePlayerPoseOwner>&)noexcept;
     // Called after metadata retirement and before native resource destruction.
     // Waits for this renderer's synchronous use and releases dependent views.
     void native_image_destroyed(VkImage) noexcept;

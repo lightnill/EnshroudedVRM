@@ -20,7 +20,12 @@ public:
     const NativeOwnerImage& image() const noexcept{return image_;}
     bool supported() const noexcept{return supported_;}
     const std::string& reason() const noexcept{return reason_;}
+    bool players(NativePlayerRoster&,std::string&,const NativeOwnerLimits& = {}) const noexcept;
+    bool capture_players(const std::vector<NativePlayerIdentity>&,std::vector<NativeOwnerCandidate>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
+    NativePlayerOwnerBatch capture_available_players(const std::vector<NativePlayerIdentity>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
+    bool capture_player(const NativePlayerIdentity&,NativeOwnerCandidate&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     bool capture(NativeOwnerCandidate&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
+    bool revalidate_players(std::vector<NativeOwnerCandidate>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     bool revalidate(NativeOwnerCandidate&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     bool capture_menu(NativeMenuOwnerCandidate&,std::string&,const NativeOwnerLimits& = {}) const noexcept;
     bool revalidate_menu(NativeMenuOwnerCandidate&,std::string&,const NativeOwnerLimits& = {}) const noexcept;

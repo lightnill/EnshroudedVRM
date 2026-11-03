@@ -1,206 +1,33 @@
-# Building EnshroudedVRM
+# Building EnshroudedVRM 0.4.0
 
-Original code is MIT, Copyright (c) 2026 lightnill. Retain LICENSE and the
-third-party notices. Run the following commands from the repository root.
+Players download EnshroudedVRM-0.4.0.zip, copy its two installation items beside enshrouded.exe, launch through Steam and configure F8. These instructions are for developers.
 
-## CMD/PowerShell launcher
+## Inputs and toolchain
 
-The current launcher is readable source in `portable/script`: the CMD wrapper,
-PowerShell entry point and `launcher_core.psm1`. No custom launcher EXE is built
-or distributed. Windows PowerShell uses its installed .NET tooling to compile
-a small read-only filesystem helper locally. Existing script policies are respected.
+The runtime is built with Windows x64 GCC 16.2.0 (w64devkit), Vulkan-Headers, DXC and PowerShell 7. The retained bootstrap is Microsoft-built and independently versioned 0.2.0-standalone-dev, SHA256 d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef. Do not relabel its resource or substitute an operating-system DLL. Python runs packaging/CPU checks. Use exact tool/source pins from SOURCE-BUILD-INFO.json and validation/0.4.0.
 
-These files belong at the portable package root beside Runtime, Compatibility
-and release-manifest files. A source checkout alone is not a playable package.
-After a successful configured launch the player-local Play-EnshroudedVRM.cmd is
-generated beside them. It runs the same entry point with -Play and reads only
-saved settings. Do not include generated Play or private State in release inputs.
+Acquire the official Oculus LipSync runtime separately under vendor/oculus-lipsync/PROVENANCE.json and its terms. Its DLL is excluded from public source and distributed unchanged in the player ZIP. See tests/fixtures/README.md to download the hash-pinned public speech fixture separately; audio is deliberately omitted from GitHub source.
 
-## Developer checks
+The standalone baseline remains EnshroudedVRM-0.2.0-docs1.zip from release v0.2.0, SHA256 6905577b1e5afeb48659de6b7875ec6b449a625175184cd887aebc3b61483a26. The package builder preserves captured rig/catalog provenance, updates only the supported-image fields, and uses explicit source/native/shader pins. No dependencies are downloaded automatically.
 
-Build the developer-only synthetic child fixture with a Windows x64 GCC compiler:
+## Build
 
-```powershell
-./tests/build_script_fixture.ps1 -Compiler C:/Tools/w64devkit/bin/g++.exe `
-  -OutputDirectory ./build/script-tests
-python ./tests/test_script_launcher.py ./build/script-tests/portable_child.exe
-python ./tests/test_portable_package.py
-python ./tests/test_script_release.py
-python ./tests/test_script_fixture_build.py
-```
+Run build.ps1 with Target Bridge, CompilerDirectory, VulkanIncludeDirectory, ShaderCompiler, OutputDirectory and PortableRelease. Use explicit absolute tool/output paths. portable/runtime.rc carries runtime version 0.4.0. Then use portable/package_standalone_release.py with explicit baseline, runtime, retained-bootstrap, source-pin and shader-manifest inputs, version 0.4.0 and publication-status release. The output directory/file must be fresh. Check all package members against release-manifest.json and the supplemental Portuguese guide against BUILD-INFO.json.
 
-The child fixture is test-only and is never included in player downloads. Tests
-use synthetic data and do not start Enshrouded. Python and a compiler are developer
-tools, not player requirements.
-The launcher suite runs generated CMD files against that child, including saved
-settings, relocation, metacharacters, validation failures and output collisions.
-Adjacent stand-in loader files check preservation only; live EML/ShroudForge
-compatibility requires separate gameplay testing.
-Startup-history tests scale only the private observer's time window, use the
-unchanged synthetic child, and exercise bounded tails, early/nonzero exits,
-retention, stale logs and linked-folder protection without launching Enshrouded.
+There are 21 custom SPIR-V modules. The release keeps the exact user-tested shader algorithms and native implementation; compare rebuilt PE sections against the accepted runtime so only .rsrc differs. Runtime and shader build receipts, game-version proofs, tests and scans are separate evidence. Do not inherit an old binary's scan result for new bytes.
 
-## Native VRM runtime and shaders
+## CPU and shader verification
 
-The game requires a native Vulkan layer DLL. Use your own Windows x64 GCC toolchain
-(tested with w64devkit/GCC 16.2.0), Vulkan-Headers and Microsoft DXC. No tools are
-downloaded automatically.
+Supply EVRM_TEST_COMPILER, EVRM_FIXTURE_COMPILER, EVRM_VULKAN_INCLUDE_DIRECTORY, EVRM_SHADER_COMPILER and EVRM_SPIRV_VALIDATOR. Existing tests use generated VRMs, owned memory and fake Vulkan callbacks; ordinary discovery is not a GPU benchmark. Real GPU fixtures are opt-in, gated by exact reviewed/scanned inputs. Suppress Windows fault dialogs in owned intentional-crash tests with SetErrorMode(0x8003).
 
-```powershell
-./build.ps1 -Target Bridge -PortableRelease `
-  -CompilerDirectory C:/Tools/w64devkit/bin `
-  -VulkanIncludeDirectory C:/Tools/Vulkan-Headers/include `
-  -ShaderCompiler C:/Tools/dxc/bin/x64/dxc.exe `
-  -OutputDirectory ./build/Runtime
-```
+Relevant groups include enhanced material import/UV/tangent generation, 16-bit textures and image allocation cleanup, player assignments/identity/availability/backend/commit, local-preview request/task lifetime, debug-report privacy, background shader preparation, source/pose/tool publication, game-update guards and native scene tuples. Existing passing feature/game-compatibility checks are retained only when their source inputs match. Release packaging and documentation checks run against the final source and exact archive. CPU/shader checks do not establish game FPS or full raster/OIT fidelity.
 
-The 0.1.1 runtime rebuild applies the standard VRoid FaceBrow compatibility rule.
-The existing shaders are unchanged. Run the material import regression with:
+## Contracts and limitations
 
-```powershell
-$env:EVRM_TEST_COMPILER = 'C:/Tools/w64devkit/bin/g++.exe'
-python ./tests/test_material_compatibility.py
-```
-The synthetic spring collision regression uses the same compiler setting:
+Only Steam build 26404966, executable SHA256 ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618, is supported. The ownership, request/copy/task, equipment, voice and scene fingerprints were re-derived; previous/mixed images decline. The 40 ms ownership work and 250 ms pose limits are unchanged.
 
-```powershell
-python ./tests/test_spring_collision.py
-python ./tests/test_spring_shape.py
-python ./tests/test_spring_arm_release.py
-python ./tests/test_spring_airflow.py
-python ./tests/test_spring_inertial.py
-python ./tests/test_spring_cohesion.py
-```
+Auto/Enhanced support normal maps and selected VRM0/VRM1 matcap/rim textures and masks, with generated tangents. The optional vertex stream is 32 bytes; optional material block 112 bytes, raw skin 64 bytes, native geometry 44 bytes and prepare frame 224 bytes. MikkTSpace source and notice are retained. This is an approximation in native lighting, not full Unity/MToon/custom-shader support.
 
-It checks sphere/capsule and overlapping contacts along a complete bone segment,
-fixed bone length, attachment boundaries, moving colliders between physics ticks,
-and duplicate-frame/origin-rebase stability without private avatars or the game.
-Hair release cases also check authored arm-tip contacts, helper bones, stable
-collision orientation through actor turns, and correction-free contact velocity.
-The shape suite checks the actual skin palette of a weighted strip, posed-curve
-retention, ordinary lag, collision priority, authored-mode isolation and repeated
-render samples across pose changes and floating-origin shifts.
-Arm-release cases cover both arms and helper colliders at 25/60/120 FPS. Relaxed
-hair permits arm overlap to avoid catching; torso/head contact, Authored hair and
-body-spring arm contacts remain enabled without modifying avatar metadata.
-The Airflow test profile uses loose r2-style restoring/damping and full-strand
-arm contacts. Smoothed horizontal actor travel creates a bounded opposing force,
-stronger toward hair tips. Actor history follows camera-origin rebasing; resets,
-duplicate timestamps and animated hips/head motion do not create artificial wind.
-Its synthetic suite checks steady travel, speed/direction, settling, FPS, origin
-handling, virtual tips and arm-on/arm-off/torso controls. The comparison runtime
-selected Airflow in both renderer construction paths for the r6/r7 test builds.
-The r7 refinement keeps walking airflow unchanged through 2 m/s and progressively
-boosts it up to 25 percent at 5 m/s. It retains the same direction, speed cap,
-filter and tip weights. The amplitude regression checks both walking and running.
-The Inertial comparison profile uses world-space hair tails and existing spring
-inertia/damping, with no speed-driven airflow force. Body centers and original
-avatar metadata are preserved. Actor translation is sampled per fixed tick;
-render-only projections do not advance history. Tests check an independent
-world-space spring control, FPS, camera rebasing, duplicates, damping, resets,
-turns, catch-up and torso clearance. The inertia comparison renderer selects
-Inertial in both spring construction paths.
-The r9 refinement carries both hair history points equally with part of each
-horizontal actor translation: zero through 2 m/s, 45 percent at 5 m/s and capped
-at 50 percent from 6 m/s. Effective travel remains increasing with speed. This
-reduces running trail without changing spring damping/stiffness or adding force.
-Vertical travel, walking and local head motion retain their full response.
-Each travel sample contributes its own weighted carry until the next physics
-tick; later slow/idle samples cannot reweight earlier running. Render-only
-residual carry does not alter physics history, and participates in cache validity.
-The 22 inertial scenarios include these controls and independent following-center
-references for steady travel and speed changes between ticks.
-The r10 retune increases horizontal carry to 57 percent at 5 m/s and caps it at
-60 percent from approximately 5.43 m/s, still zero through 2 m/s. Effective travel
-is `0.05 * speed + 1.9` across the ramp and `0.4 * speed` after the cap, so faster
-travel continues to increase lag. The spring coefficients, pending carry and
-collision policy are unchanged. The amplitude regression tightens the allowed
-running trail while preserving walking and the independent reference controls.
-The r11 refinement adds a small shared-rotation preference for neighbouring
-Inertial hair sections during running. A bounded, symmetric bind-pose graph
-matches separate parallel chains of similar length/progress, with two neighbours
-per joint. It blends deformation rotations rather than positions, retaining the
-authored spacing and common sweep. Final collisions retain priority and both
-Verlet points receive the same positional correction. Render-only projection
-transports the last physical roll onto its current tail without changing history
-or repeating the neighbour solve. The 16 cohesion cases use skinned strips and
-cover gap reduction, common motion, walking/head/profile/body isolation, contacts,
-FPS, origins, duplicates, resets, scale, virtual hierarchy and large turns.
+Player choices use installation-keyed HMAC tokens and private local paths; they are never release/report inputs. Other players default to native, assignments remain client-local, remote visemes are not implemented, and same-model shader settings are shared. Initial preparation, short fallback events, reflection/low-light issues and performance spikes remain. See KNOWN-ISSUES.txt and validation/0.4.0 for bounded manual coverage.
 
-The optimization build keeps the r11 spring solver and skinning shaders unchanged.
-Each native view owns a `vrm::Retargeter` that snapshots rig metadata without
-copying vertices or textures. It caches static validation and calibration, keyed
-by exact source-rest matrices, options and current semantic availability. Every
-current source matrix is still validated on each update. Failed updates do not
-replace a valid cache; the one-shot `retarget()` API remains available.
-
-```powershell
-python ./tests/test_retarget_cache.py
-./tests/native_skinning_gpu.ps1 `
-  -CompilerDirectory C:/Tools/w64devkit/bin `
-  -VulkanIncludeDirectory C:/Tools/Vulkan-Headers/include `
-  -ShaderCompiler C:/Tools/dxc/bin/x64/dxc.exe `
-  -OutputDirectory ./build/native-skinning-tests
-```
-
-The retarget fixture compares changing node/palette matrices and failures against
-the one-shot API, including cache invalidation, constraints, immutable metadata,
-affine frames and allocations. A source-boundary fixture compiles the renderer's
-actual view-admission methods and checks that rejected poses preserve all four
-accepted motion histories, while successful new views retain bounded eviction.
-The GPU driver compiles and runs 20 synthetic
-production-shader cases plus seven deterministic resource-lifetime/fault groups.
-It requires a Vulkan-capable device but does not start the game. `-Fixture GPU`
-or `-Fixture Reuse` selects one group.
-
-GPU frames reuse exact-size buffer leases and descriptor packs only after all
-frame/history owners release them. Mapped storage is cleared and every descriptor
-is rewritten. Caches are bounded, count against the existing aggregate budget,
-and evict idle resources only. Quarantine preserves the original device-lifetime
-rules. Isolated measurements showed reduced CPU calibration and Vulkan resource
-allocation costs; these are not measured in-game FPS gains.
-Other development targets may depend on omitted research fixtures; only the
-documented targets and selected synthetic tests are claimed to be self-contained.
-
-## Assemble a release
-
-Use a locally supplied, verified current package as the source for the supported
-Runtime and Compatibility data. Supply its published SHA-256 explicitly:
-
-```powershell
-python ./portable/package_script_release.py `
-  --base-package C:/Releases/accepted.zip `
-  --base-sha256 PUBLISHED_64_CHARACTER_SHA256 `
-  --output ./dist/EnshroudedVRM-0.1.0-preview-script.zip
-```
-
-The builder uses an explicit member map, carries the 17 runtime/compatibility
-files unchanged, and regenerates package metadata, manifest and hashes. It does
-not walk the workspace, include avatars/State, or download anything. Newly built
-bytes need their own scan record; old reports do not validate a rebuilt archive.
-
-Keep the compatibility data's provenance flags. Never bypass game fingerprints,
-resource ownership or package hash checks. Preserve runtime license notices.
-Published source hashes state their text normalization separately from binary
-package hashes. Captures and model exports remain disabled.
-
-## Package a separately rebuilt runtime
-
-The release builder accepts an explicitly supplied DLL and digest. It does not
-compile or test that DLL. Build and verify it first, then use:
-
-```powershell
-python ./portable/package_script_release.py `
-  --base-package C:/Releases/accepted.zip `
-  --base-sha256 PUBLISHED_BASE_SHA256 `
-  --runtime-dll ./build/Runtime/enshrouded_vrm_runtime.dll `
-  --runtime-sha256 VERIFIED_REBUILT_DLL_SHA256 `
-  --version 0.1.2-preview `
-  --output ./dist/EnshroudedVRM-0.1.2-preview.zip
-```
-
-The 16 other runtime/shader/compatibility members remain hash-verified against
-the base package. Runtime source pins are refreshed from the supplied source
-checkout. The source files must match the verified build; the builder's source
-hashes are not by themselves proof that a DLL was built from those sources.
-Private State, saves, avatars, captures and test executables are excluded.
+Never publish personal models, raw logs/reports/screenshots, State, installation keys, account IDs, game executables/assets, developer fixture EXEs or speech audio. The sole authorized sample is explicitly hash-pinned. Release assets contain the player ZIP and public-only checksums/provenance/scan summaries, not private acceptance reports.

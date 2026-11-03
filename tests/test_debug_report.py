@@ -70,7 +70,7 @@ class DebugReportTests(unittest.TestCase):
             binary=Path(directory)/'report-sources.exe'
             build=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+headers,
                 str(root/'tests/debug_report_sources.cpp'),str(root/'src/debug_report_sources.cpp'),str(root/'src/debug_report_policy.cpp'),
-                str(root/'src/native_body_coverage.cpp'),'-ladvapi32','-o',str(binary)],capture_output=True,text=True,timeout=180)
+                str(root/'src/native_body_coverage.cpp'),str(root/'src/debug_report_archive.cpp'),'-ladvapi32','-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(build.returncode,0,build.stdout+build.stderr)
             result=subprocess.run([str(binary)],capture_output=True,text=True,timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr);print(result.stdout.strip())
@@ -93,6 +93,7 @@ class DebugReportTests(unittest.TestCase):
                 self.assertEqual(set(archive.namelist()),{'report.json','system.json','settings.json','model.json','scene.json','diagnostics.log','README.txt'})
                 self.assertIsNone(archive.testzip())
                 payload=b'\n'.join(archive.read(name) for name in archive.namelist())
+                self.assertIn('avatar-fallback.player-preparation subjects=2 local-prepared=1 remote-prepared=0', archive.read('diagnostics.log').decode('utf-8'))
                 for canary in (b'SECRET_CANARY',b'76561198012345678',b'alice@example.com',b'203.0.113.77',b'C:\\Users\\Alice'):
                     self.assertNotIn(canary,payload)
                 scene=json.loads(archive.read('scene.json'))

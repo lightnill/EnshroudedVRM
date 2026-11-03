@@ -68,8 +68,8 @@ void debug_report_observe_gpu(const DebugReportGpuInfo& gpu)noexcept{observe([&]
 void debug_report_observe_settings(const ModSettings& settings,const AvatarMenuSnapshot* avatar)noexcept{
     observe([&](DebugReportData& data){auto& out=data.settings;out.available=true;out.avatar_available=avatar&&avatar->preferences_loaded;out.appearance_available=out.avatar_available&&bool(avatar->profile);out.voice_enabled=settings.voice_enabled;out.voice_source=settings.voice_source==VoiceInputSource::Microphone?1:0;
         out.strength=settings.strength;out.sensitivity=settings.sensitivity;out.smoothing_ms=settings.smoothing_ms;out.materials.clear();
-        if(avatar){out.replacement_enabled=avatar->replacement_enabled;if(avatar->profile){out.whole_preset=avatar->profile->whole==AvatarShaderPreset::Matte?1:0;
-            for(const auto& item:avatar->profile->overrides){if(out.materials.size()==1024)break;out.materials.push_back({item.index,item.preset==AvatarShaderPreset::Matte?1u:0u});}}}
+        if(avatar){out.replacement_enabled=avatar->replacement_enabled;if(avatar->profile){out.whole_preset=valid_avatar_preset(avatar->profile->whole)?static_cast<unsigned>(avatar->profile->whole):0;
+            for(const auto& item:avatar->profile->overrides){if(out.materials.size()==1024)break;if(valid_avatar_preset(item.preset))out.materials.push_back({item.index,static_cast<unsigned>(item.preset)});}}}
     });
 }
 void debug_report_observe_model(const PreparedAvatar* prepared)noexcept{

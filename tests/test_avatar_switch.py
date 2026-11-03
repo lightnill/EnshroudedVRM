@@ -27,6 +27,8 @@ class AvatarSwitchTests(unittest.TestCase):
                 backend=(root/'src/native_backend.cpp').read_text(encoding='utf-8');start=backend.index('NativeAvatarUploadState NativeBackend::prepare_model(');end=backend.index('void NativeBackend::publish(',start)
                 (Path(folder)/'avatar_backend_switch_methods.inc').write_text(backend[start:end],encoding='utf-8')
             binary=Path(folder)/(name+'.exe')
+            if 'avatar_service.cpp' in sources:
+                sources=(*sources,'player_assignments.cpp');flags=(*flags,'-lbcrypt')
             built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+folder,str(root/'tests'/(name+'.cpp')),
                 *[str(root/'src'/source) for source in sources],*flags,'-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(built.returncode,0,built.stdout+built.stderr)

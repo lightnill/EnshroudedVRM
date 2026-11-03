@@ -8,9 +8,9 @@ using U=std::uint64_t;
 void need(bool yes,const char*why){if(!yes)throw std::runtime_error(why);}
 struct Reader {
  const NativeOwnerMemory& memory;const NativeOwnerImage& image;NativeToolSlotTarget& target;U started;size_t calls=0,bytes=0;
- Reader(const NativeOwnerMemory&m,const NativeOwnerImage&i,NativeToolSlotTarget&t):memory(m),image(i),target(t),started(m.milliseconds()){}
+ Reader(const NativeOwnerMemory&m,const NativeOwnerImage&i,NativeToolSlotTarget&t):memory(m),image(i),target(t),started(m.work_milliseconds()){}
  bool inside(U a,size_t n)const{return a>=image.base&&n<=image.size&&a-image.base<=image.size-n;}
- std::vector<std::uint8_t> read(U a,size_t n,bool guard=false){const auto now=memory.milliseconds();need(now>=started&&now-started<20,"tool target lookup deadline");
+ std::vector<std::uint8_t> read(U a,size_t n,bool guard=false){const auto now=memory.work_milliseconds();need(now>=started&&now-started<20,"tool target lookup deadline");
   need(n&&n<=65536&&a>=0x10000&&a<0x800000000000ULL&&n<=0x800000000000ULL-a&&++calls<=8192&&(bytes+=n)<=4*1024*1024,"tool target read budget/range");
   std::vector<std::uint8_t>d(n);need(memory.read(a,d.data(),n),"tool target range unreadable");if(guard){need(target.guards.size()<128,"tool target guard bound");target.guards.push_back({a,d});}return d;}
  template<class T=U>T get(U a,bool guard=false){auto b=read(a,sizeof(T),guard);T value;std::memcpy(&value,b.data(),sizeof value);return value;}
@@ -20,12 +20,26 @@ struct Reader {
  void verify(){for(const auto&g:target.guards)need(read(g.address,g.bytes.size())==g.bytes,"tool target changed during lookup");}
 };
 std::uint32_t hash(const std::string&s){std::uint32_t h=2166136261u;for(unsigned char c:s)h=(h^c)*16777619u;return h;}
+template<class T>T consumed(const NativeOwnerCandidate& owner,U address){
+ for(const auto& guard:owner.guards)if(address>=guard.address&&sizeof(T)<=guard.bytes.size()&&address-guard.address<=guard.bytes.size()-sizeof(T)){
+  T value;std::memcpy(&value,guard.bytes.data()+std::size_t(address-guard.address),sizeof value);return value;}
+ need(false,"tool player association lacks consumed guard");return T{};
+}
 }
 bool resolve_native_tool_slot_target(const NativeOwnerMemory&memory,const NativeOwnerCandidate&o,NativeToolSlotTarget&out,std::string&why)noexcept {
  out={};why.clear();try{namespace p=native_owner_profile;namespace e=p::ecsReadLayout;namespace s=p::serviceLayout;
   need(o.image.base>=0x10000&&o.image.size==p::image_size&&o.image.timestamp==p::image_timestamp&&
    std::equal(o.image.sha256.begin(),o.image.sha256.end(),std::begin(p::image_sha256))&&o.entity&&o.entity_id&&o.native_buffer&&!o.guards.empty(),"tool target has no supported owner");
   NativeToolSlotTarget target;Reader m(memory,o.image,target);
+  if(o.account||o.connection||o.player_infos||o.player_record){
+   need(o.account&&o.connection&&o.player_infos&&o.entity_id<=16&&
+    o.player_record==o.player_infos+U(o.entity_id-1)*160&&(o.connection&63)==o.entity_id-1,"tool player association invalid");
+   need(consumed<std::uint32_t>(o,o.player_record)==o.entity_id&&consumed<std::uint32_t>(o,o.player_record+4)==o.connection&&
+    consumed<U>(o,o.player_record+8)==o.account,"tool player metadata disagrees with consumed association");
+   const auto association=m.read(o.player_record,16,true);std::uint32_t actor,connection;U account;
+   std::memcpy(&actor,association.data(),4);std::memcpy(&connection,association.data()+4,4);std::memcpy(&account,association.data()+8,8);
+   need(actor==o.entity_id&&connection==o.connection&&account==o.account,"tool player association changed");
+  }
   m.expected(o.root,o.image.base+p::ownerLayout::rootVtableRva);m.expected(o.root+p::ownerLayout::clientPointerOffset,o.client);
   m.expected(o.client,o.image.base+p::ownerLayout::clientVtableRva);m.expected(o.client+p::ownerLayout::controllerPointerOffset,o.controller);
   m.expected(o.controller,o.image.base+p::ownerLayout::controllerVtableRva);m.expected(o.controller+p::ownerLayout::controllerClientBackPointerOffset,o.client);

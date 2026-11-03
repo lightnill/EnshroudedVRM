@@ -35,7 +35,7 @@ void live(evrm::AvatarService& service,const std::string& key,Preset whole,std::
 void saved(const std::filesystem::path& path,const Models& models,std::optional<Preset> b_override){
     until([&]{const auto disk=evrm::read_avatar_preferences(path);
         return disk.status==evrm::AvatarSettingsStatus::Loaded&&disk.preferences.profiles.size()==2&&
-            matches(find(disk.preferences,models.a->fingerprint),Preset::Matte,Preset::GameLighting)&&
+            matches(find(disk.preferences,models.a->fingerprint),Preset::Enhanced,Preset::Fast)&&
             matches(find(disk.preferences,models.b->fingerprint),Preset::GameLighting,b_override);
     },"two independent shader profiles not saved to real settings file");
 }
@@ -51,34 +51,34 @@ int wmain(int argc,wchar_t** argv){try{
     {
         evrm::AvatarService service(options);need(service.ready(),"background service unavailable");
         until([&]{return service.snapshot()->preferences_loaded;},"initial preferences not ready");
-        need(service.set_whole_preset(models.a->fingerprint,Preset::Matte)&&service.set_material_preset(models.a->fingerprint,0,Preset::GameLighting),"model A shader edit failed");
-        live(service,models.a->fingerprint,Preset::Matte,Preset::GameLighting);
+        need(service.set_whole_preset(models.a->fingerprint,Preset::Enhanced)&&service.set_material_preset(models.a->fingerprint,0,Preset::Fast),"model A Enhanced/Fast edit failed");
+        live(service,models.a->fingerprint,Preset::Enhanced,Preset::Fast);
         choose(service,models.b->path);live(service,models.b->fingerprint,Preset::GameLighting,std::nullopt);
-        need(service.set_material_preset(models.b->fingerprint,0,Preset::Matte),"model B material edit failed");
-        live(service,models.b->fingerprint,Preset::GameLighting,Preset::Matte);
-        choose(service,models.a->path);live(service,models.a->fingerprint,Preset::Matte,Preset::GameLighting);
-        choose(service,"C:\\fixture\\same-model-renamed.vrm");live(service,models.a->fingerprint,Preset::Matte,Preset::GameLighting);
-        choose(service,models.a->path);saved(file,models,Preset::Matte);
+        need(service.set_material_preset(models.b->fingerprint,0,Preset::Enhanced),"model B material edit failed");
+        live(service,models.b->fingerprint,Preset::GameLighting,Preset::Enhanced);
+        choose(service,models.a->path);live(service,models.a->fingerprint,Preset::Enhanced,Preset::Fast);
+        choose(service,"C:\\fixture\\same-model-renamed.vrm");live(service,models.a->fingerprint,Preset::Enhanced,Preset::Fast);
+        choose(service,models.a->path);saved(file,models,Preset::Enhanced);
         until([&]{return evrm::read_avatar_preferences(file).preferences.selected_path==models.a->path;},"final selected model not saved");
     }
     {
         evrm::AvatarService service(options);until([&]{return service.snapshot()->preferences_loaded;},"restart preferences not ready");
-        live(service,models.a->fingerprint,Preset::Matte,Preset::GameLighting);
+        live(service,models.a->fingerprint,Preset::Enhanced,Preset::Fast);
         need(service.set_whole_preset(models.a->fingerprint,Preset::GameLighting),"whole preset edit failed");
-        live(service,models.a->fingerprint,Preset::GameLighting,Preset::GameLighting);
-        need(service.set_whole_preset(models.a->fingerprint,Preset::Matte),"whole preset restore failed");
-        choose(service,models.b->path);live(service,models.b->fingerprint,Preset::GameLighting,Preset::Matte);
+        live(service,models.a->fingerprint,Preset::GameLighting,Preset::Fast);
+        need(service.set_whole_preset(models.a->fingerprint,Preset::Enhanced),"whole preset restore failed");
+        choose(service,models.b->path);live(service,models.b->fingerprint,Preset::GameLighting,Preset::Enhanced);
         need(service.set_material_preset(models.b->fingerprint,0,std::nullopt),"inherit material rejected");
         live(service,models.b->fingerprint,Preset::GameLighting,std::nullopt);saved(file,models,std::nullopt);
-        need(service.set_material_preset(models.b->fingerprint,0,Preset::Matte),"override recreation failed");saved(file,models,Preset::Matte);
+        need(service.set_material_preset(models.b->fingerprint,0,Preset::Enhanced),"override recreation failed");saved(file,models,Preset::Enhanced);
         need(service.reset_materials(models.b->fingerprint),"reset overrides rejected");
         live(service,models.b->fingerprint,Preset::GameLighting,std::nullopt);saved(file,models,std::nullopt);
-        choose(service,models.a->path);live(service,models.a->fingerprint,Preset::Matte,Preset::GameLighting);
+        choose(service,models.a->path);live(service,models.a->fingerprint,Preset::Enhanced,Preset::Fast);
         until([&]{return evrm::read_avatar_preferences(file).preferences.selected_path==models.a->path;},"restart selection not saved");
     }
     {
         evrm::AvatarService service(options);until([&]{return service.snapshot()->preferences_loaded;},"second restart preferences not ready");
-        live(service,models.a->fingerprint,Preset::Matte,Preset::GameLighting);
+        live(service,models.a->fingerprint,Preset::Enhanced,Preset::Fast);
         choose(service,models.b->path);live(service,models.b->fingerprint,Preset::GameLighting,std::nullopt);
         saved(file,models,std::nullopt);
     }

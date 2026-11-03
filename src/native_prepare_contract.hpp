@@ -25,7 +25,7 @@ struct alignas(16) NativePreparedFrame {
     float previousUvRows[16]{};
     float normalRows[12]{};
     float screen[4]{};
-    std::uint32_t control[4]{}; // commit, GPU-validated previous emitted history, reserved, reserved
+    std::uint32_t control[4]{}; // commit, validated history, enhanced float-bit exposure/emissive gain
     std::uint32_t rootScale[4]{}; // packed actor root.xyz; bits of actor * loaded-model height scale
 };
 inline constexpr std::uint32_t native_oit_constants_offset=65536;

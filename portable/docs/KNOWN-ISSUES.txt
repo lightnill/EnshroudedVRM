@@ -1,105 +1,55 @@
-0.2.0: Only the local avatar is replaced. Multiplayer synchronization is not implemented.
-Game voice may be inactive in Single Player; choose Local microphone for offline lip sync.
-A short avatar fallback may still occur around focus changes or stale game pose data.
-The CMD/PowerShell bootstrap remains; F8 controls models, voice and appearance.
+EnshroudedVRM 0.4.0 — current bugs and incomplete features
 
-Preview coverage and limitations
+This implementation is still buggy and incomplete. It is not at the intended
+quality/stability level. There is no Preview suffix in the release name.
 
-The local voice/menu test candidate uses Oculus LipSync Enhanced in software.
-Its unmodified Windows library needs the installed Microsoft Visual C++ x64
-runtime. A missing, changed or unloadable library leaves voice to viseme
-unavailable; no dependency is downloaded or installed by the mod. Five authored
-VRM vowels approximate speech; dedicated consonant shapes are not supplied.
-Actual speech quality and matched in-game FPS still require gameplay validation.
+Only Steam game build 26404966 is supported, executable SHA256
+ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618.
+Keep 0.3.3 for old build 26320373. Do not mix files from different releases.
 
-Windows 10/11 x64 and the validated Steam executable only:
-Game resource version 1273043; Steam build 26082781.
-SHA256 d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882
-The launcher stops on a different executable rather than applying stale offsets.
-Extraction folders containing a semicolon (;) are rejected because Vulkan uses it
-as a search-list separator. Move the mod to a different local folder.
-Package folders containing percent (%) signs are also rejected: Windows may
-expand paired percent signs before a CMD file starts. This affects the initial
-setup CMD as well as Play, so use a package path without ; or %. Game/avatar
-paths can contain percent signs; those values are read from saved settings.
-Some Vulkan loaders cannot read non-ASCII layer-folder paths. The launcher uses an
-existing Windows short-path alias when available, after checking that it points
-to the same runtime folder. If Windows has no usable alias, move the mod into a
-writable ASCII-only path. No aliases or volume settings are created or changed.
-Saved avatar selections are absolute paths. If a model is moved or deleted,
-launch the game and use Browse... or the avatar list in F8 to choose its new
-location or another model. A missing model does not block access to F8.
-If the game installation moves, run Launch-EnshroudedVRM.cmd to detect or choose
-the new game executable. Play-EnshroudedVRM.cmd requires valid saved launcher
-settings for the game, not a saved avatar, and keeps all build/package checks.
-Missing/invalid launcher settings produce a setup error with no automatic fallback.
-Keep Play beside the rest of the launcher. If generating it fails after the game
-starts, the game remains running and the launcher reports a warning. An existing
-file with different contents or a directory/link named Play-EnshroudedVRM.cmd is
-never replaced; rename that item before running setup again.
+SHADERS / IMPORTER
+Auto/Enhanced support standard normal maps and selected VRM0/VRM1 MToon
+matcap/rim maps and masks. This improves import compatibility; it does not prove
+that any unavailable user model is fixed. Full Unity/MToon, custom shaders,
+outlines, UV animation and arbitrary gloss/roughness masks are unsupported.
+Reflections, matcaps, transparency and low-light brightness can look incorrect.
+Matte does not necessarily remove authored reflective effects. Try Fast when
+Auto/Enhanced looks wrong. Native characters also show some night underlighting.
+16-bit PNGs decode into RGBA8; high-depth shading is not preserved.
+Large avatars may exhaust RAM/VRAM, stall or fail. F8 memory figures are estimates,
+not total process/driver memory; structural/decoder/device/allocation limits remain.
+Optional shader preparation runs in the background. Previews can remain native
+temporarily; basic rendering may be used until an enhanced variant is ready.
 
-Initial single-player coexistence checks passed with EML 0.2.0 and ShroudForge
-1.7.5, each tested separately alongside VRM. The basic Hands-Free Lantern 0.11.1
-scenario was also tested with ShroudForge and VRM. These checks do not establish
-all-mod compatibility, combined EML/ShroudForge support, or multiplayer behavior.
-No direct loader integration or graphics-layer discovery changes are included.
+PLAYERS / ANIMATION
+Other players default to native models. Assignments are local and remembered per
+account on this PC. Player N labels may change. Nothing sends model files or
+preferences to another client. Remote world models work; remote previews are not
+included. Shader profiles are shared by model content, not private to a player.
+OTHER PLAYERS' VISEMES / AUDIO LIP SYNC ARE NOT IMPLEMENTED.
+Voice source and mouth settings always animate You. Game voice needs active
+in-game voice chat; local microphone works offline and ignores game mute/PTT.
+Native armor is not fitted automatically to the VRM.
 
-Startup diagnostics cover the first 30 seconds after launching the process.
-Surviving that window does not confirm game/menu/rendering readiness. An early
-exit records the actual exit code, including zero; it does not establish a cause.
-The launcher does not automatically retry or terminate the game.
+FALLBACKS / PERFORMANCE
+Brief native-avatar fallbacks and stutters remain, including a short wall-only
+visibility gap. A remote weapon may appear before its replacement body. Desktop
+two-player diagnostics recorded brief submission declines recovering in about
+31-32 ms. Laptop first-minute history includes preparation gaps, a 38 ms mod
+submission peak and a 1.72-second CPU Present interval; these do not establish
+steady-state cost or the cause of the long interval. No FPS guarantee is made.
+Two-player replacement was checked on desktop and laptop. Coverage is limited.
 
-Only five recognized session groups are retained in State/Logs. Each game-log
-tail is capped at 256 KB; completed retained native logs are trimmed to 1 MB on
-the next validated launch, while active logs retain their 10,000-line runtime
-limit. Cleanup never recurses or follows links, and leaves unknown files alone.
-Locked/unwritable files can delay cleanup; a diagnostic warning does not imply
-that an already-started game failed. Unchanged old game logs are not assigned to
-a new attempt. Failed validation and -Check do not create or clean this history.
-
-This is a local cosmetic replacement. Other players do not receive or see your
-VRM. Multiplayer synchronization and native armor/helmet fitting are not included.
-
-VRM 0.x/1.x humanoid rigs are supported within the importer's bounds. Very large
-models and textures can cost more memory and FPS. No universal FPS boost, model
-compatibility, perfect contact or release-platform approval is promised.
-
-Normal finger mappings retain precise palm calibration and finger animation.
-With missing mappings, wrist placement is approximate and does not invent finger
-bones or curls. Actual nonstandard hands such as paws/hooves remain unverified.
-
-Sword/shield, two-handed and drawn-bow grips have earlier accepted checks on
-supported rigs. The latest missing-finger fallback has synthetic secondary-contact
-coverage and live sword/shield-at-rest, wand, torch and short movement checks.
-Live blocking/drawn-bow/two-handed fallback needs broader coverage. Supporting-arm
-constraints can disable the secondary solve; the existing rejection is retained.
-
-Menu scenes may omit the world transparency/volume passes. For mixed-material
-avatars, guarded menu previews route BLEND parts through a 0.5 alpha cutoff;
-partly transparent surfaces can look harder or disappear below that threshold.
-Existing MASK cutoffs are retained. Other world BLEND materials keep full blending, even
-while the Character preview is open. The original model/materials are unchanged.
-Full blended transparency in menu previews is a later improvement.
-
-Main-menu, character-selection, Character-panel and world transitions have been
-tested. New game updates, unusual equipment/poses or different graphics paths may
-need compatibility work. Back up your own saves before testing a preview mod.
-
-The executables are unsigned. A first-download reputation prompt or antivirus
-review is possible. Do not disable protection or add exclusions as a workaround.
-See SECURITY.md and the build's recorded validation results.
-
-Standard unfaded MToon materials containing the VRoid `_FaceBrow_` name token
-use alpha cutout at 0.5 in the world as well as previews. This corrects the tested
-eyebrow color/shading mismatch without changing the source VRM. Cutout edges are
-harder than true blending. Custom material names, non-MToon materials and faded
-brows retain their authored alpha mode. Full MToon/general shaded transparency
-is not implemented. Eyes, glasses and other materials are not remapped by this rule.
-
-The inertial hair profile permits arm overlap to avoid catching while retaining
-the model's torso/head contacts. Shoulder contacts follow authored references. Models without suitable colliders can
-still clip. Mild section cohesion reduces gaps but does not merge hair meshes.
-Short head strands can still jitter under combined running/blocking. The 0.1.2
-optimization preserves the approved hair pose outputs; it does not eliminate
-these remaining model-dependent limitations. CPU/driver benchmark savings do not
-establish a fixed FPS gain for every scene or PC.
+REPORTS / STARTUP
+Reports cover bounded recent activity, not an entire session. Missing fields are
+marked unavailable; laptop graphics settings were absent in one validation report.
+Voice settings show the capture-time source, not complete audio-use history.
+Terrain context is observed rendering; actual voxel blocks/saves are not extracted.
+Coordinates are inside Enshrouded, never real-world location.
+Approved screenshots may include names/chat. Review before sharing. Do not share
+raw runtime.log, player-model-assignments.json, the installation key or local paths.
+Nothing uploads automatically.
+The retained bootstrap targets the default C:\Windows system Vulkan loader.
+Other Windows-directory layouts are unsupported. Another vulkan-1.dll conflicts;
+an already-loaded system loader may bypass the mod. Do not overwrite other mods'
+DLLs or disable antivirus/compatibility checks to force loading.

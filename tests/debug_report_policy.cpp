@@ -29,8 +29,47 @@ int main(int argc,char** argv){try{
     const auto stages=evrm::debug_report_safe_event("native-submit-stages samples=300 mean-ms=2.5 worst-ms=24.2 capture={mean:1.25,worst:23.1} owner-verify={mean:0.25,worst:0.9} endpoint=SECRET_CANARY");
     need(stages.find("capture={mean:1.25,worst:23.1}")!=std::string::npos&&stages.find("owner-verify={mean:0.25,worst:0.9}")!=std::string::npos,"per-stage submission timings were discarded");
     need(evrm::debug_report_safe_event(stages)==stages&&stages.find("SECRET")==std::string::npos,"canonical stage event changed or leaked free text");
+    const std::string compilation="native-prepare-compile key=surface-world ready=1 elapsed-ms=14493.5";
+    need(evrm::debug_report_safe_event(compilation+" result=0 path=C:\\Users\\Alice account=76561198012345678 detail=SECRET_CANARY")==compilation,
+        "background shader timing lost or private fields retained");
+    need(evrm::debug_report_safe_event(compilation)==compilation,"canonical shader timing changed");
+    need(evrm::debug_report_safe_event("native-prepare-compile key=menu ready=0 result=-1 elapsed-ms=0.25")==
+        "native-prepare-compile key=menu ready=0 elapsed-ms=0.25","failed shader timing not exported safely");
+    need(evrm::debug_report_safe_event("native-prepare-compile key=surface-menu ready=1 elapsed-ms=600000")==
+        "native-prepare-compile key=surface-menu ready=1 elapsed-ms=600000","bounded menu timing not exported");
+    for(const auto* invalid:{
+        "native-prepare-compile key=Alice ready=1 elapsed-ms=14",
+        "native-prepare-compile key=menu ready=2 elapsed-ms=14",
+        "native-prepare-compile key=menu ready=0.5 elapsed-ms=14",
+        "native-prepare-compile key=menu ready=1 elapsed-ms=-1",
+        "native-prepare-compile key=menu ready=1 elapsed-ms=nan",
+        "native-prepare-compile key=menu ready=1 elapsed-ms=600001",
+        "native-prepare-compile key=menu ready=1",
+        "native-prepare-compile ready=1 elapsed-ms=14"})
+        need(evrm::debug_report_safe_event(invalid).empty(),"invalid shader compilation diagnostic exported");
     const auto fallback=evrm::debug_report_safe_event("avatar-fallback.pose-gap episode=2 phase=view-pose reason=SECRET_CANARY reason-mask=32");
     need(fallback.find("phase=view-pose")!=std::string::npos&&fallback.find("reason-mask=32")!=std::string::npos&&fallback.find("SECRET")==std::string::npos,"fixed fallback categories were lost or private reason leaked");
+    const std::string owner_observation="avatar-fallback.player-owner-gap episode=1 failures=3 gap-ms=0 stage=1 requested=1 selected=0 local-requested=1 local-selected=0 owner-phase=5 owner-failure=1 captured-phase=0 detail-code=2 calls=1024 bytes=4096 elapsed-ms=1";
+    need(evrm::debug_report_safe_event(owner_observation+" account=76561198012345678 connection=64 entity=1 token=SECRET_CANARY path=C:\\Users\\Alice reason=SECRET_CANARY")==owner_observation,"owner failure progress lost or private payload retained");
+    need(evrm::debug_report_safe_event(owner_observation)==owner_observation,"canonical owner observation changed");
+    auto invalid_owner=owner_observation;invalid_owner.replace(invalid_owner.find("requested=1"),11,"requested=17");
+    need(evrm::debug_report_safe_event(invalid_owner).empty(),"unbounded owner roster count exported");
+    invalid_owner=owner_observation;invalid_owner.replace(invalid_owner.find("local-selected=0"),16,"local-selected=1");
+    need(evrm::debug_report_safe_event(invalid_owner).empty(),"inconsistent owner selected counts exported");
+    invalid_owner=owner_observation;invalid_owner.replace(invalid_owner.find("owner-phase=5"),13,"owner-phase=11");
+    need(evrm::debug_report_safe_event(invalid_owner).empty(),"unknown owner phase exported");
+    need(evrm::debug_report_safe_event("avatar-fallback.player-owner-gap requested=1").empty(),"incomplete owner observation exported");
+    const auto palette_context=evrm::debug_report_safe_event("avatar-fallback.pose-gap owner-filter=0 account-present=0 association-valid=0 preview-tagged=0 partial-policy=1 partial-eligible=0 account=76561198012345678 source=SECRET_CANARY");
+    for(const auto* field:{"owner-filter=0","account-present=0","association-valid=0","preview-tagged=0","partial-policy=1","partial-eligible=0"})need(palette_context.find(field)!=std::string::npos,"palette refusal prerequisite missing from safe report");
+    need(palette_context.find("765611")==std::string::npos&&palette_context.find("SECRET")==std::string::npos,"palette context leaked private values");
+    const auto bad_boolean=evrm::debug_report_safe_event("avatar-fallback.pose-gap partial-policy=2 account-present=0.5 preview-tagged=4027383809");
+    need(bad_boolean.find("partial-policy")==std::string::npos&&bad_boolean.find("account-present")==std::string::npos&&bad_boolean.find("preview-tagged")==std::string::npos,"invalid prerequisite booleans exported");
+    const std::string preparation="avatar-fallback.player-preparation subjects=2 local-prepared=1 remote-prepared=0 local-unprepared=0 remote-unprepared=1 unavailable=0 oit-near-plane=1 oit-other=0 before-oit=0";
+    need(evrm::debug_report_safe_event(preparation+" account=76561198012345678 token=SECRET_CANARY name=Alice path=C:\\Users\\Alice")==preparation,"bounded per-side preparation counts missing or private fields retained");
+    auto too_many=preparation;too_many.replace(too_many.find("subjects=2"),10,"subjects=17");need(evrm::debug_report_safe_event(too_many).empty(),"oversized player diagnostic was exported");
+    auto inconsistent=preparation;inconsistent.replace(inconsistent.find("remote-unprepared=1"),19,"remote-unprepared=0");need(evrm::debug_report_safe_event(inconsistent).empty(),"inconsistent player diagnostic was exported");
+    need(evrm::debug_report_safe_event("avatar-fallback.player-preparation subjects=2").empty(),"incomplete player diagnostic was exported");
+    input.diagnostics+='\n'+preparation;
     evrm::debug_report_log_event(raw,10000);evrm::debug_report_log_event("chat SECRET_CANARY",10001);
     need(evrm::debug_report_recent_log(10005).find("24.2")!=std::string::npos,"recent safe event unavailable");
     need(evrm::debug_report_recent_log(130006).find("24.2")==std::string::npos,"old safe event exceeded120second window");

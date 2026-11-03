@@ -7,12 +7,23 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <fstream>
+#include <csignal>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 using Bytes=std::vector<std::uint8_t>;
 using Json=nlohmann::json;
 namespace allocation_control {
 struct Entry {void* pointer=nullptr;std::size_t bytes=0;};
 Entry live[128];
-bool reject_stb_eight=false,arm_vector_failure=false,reject_vector_eight=false;
+bool reject_stb_eight=false,arm_vector_failure=false,arm_ordinary_vector_failure=false,reject_vector_eight=false;
 std::size_t active_bytes(){std::size_t n=0;for(const auto& entry:live)if(entry.pointer)n+=entry.bytes;return n;}
 void remember(void* pointer,std::size_t bytes){
     if(!pointer)return;
@@ -29,6 +40,7 @@ void* texture_fixture_malloc(std::size_t bytes){
     if(allocation_control::reject_stb_eight&&bytes==8)return nullptr;
     auto* pointer=std::malloc(bytes);allocation_control::remember(pointer,bytes);
     if(pointer&&bytes==16&&allocation_control::arm_vector_failure)allocation_control::reject_vector_eight=true;
+    if(pointer&&bytes==8&&allocation_control::arm_ordinary_vector_failure)allocation_control::reject_vector_eight=true;
     return pointer;
 }
 void* texture_fixture_realloc(void* pointer,std::size_t bytes){
@@ -101,8 +113,16 @@ void declined(const vrm::ImportResult& result,const std::string& reason){
     require(result.avatar.images.empty()&&result.avatar.nodes.empty(),"failed import leaked a partial avatar");
 }
 }
-int main(int argc,char** argv){try{
-    require(argc==2,"one owned test mode required");const std::string mode=argv[1];
+// Includes the actual callback so cumulative policy can be tested with a seeded
+// counter and tiny PNGs, without allocating hundreds of MiB of image storage.
+#include "../src/vrm_asset.cpp"
+int main(int argc,char** argv){
+#ifdef _WIN32
+    SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
+    SetUnhandledExceptionFilter([](EXCEPTION_POINTERS*)->LONG{std::_Exit(97);});
+#endif
+    std::set_terminate([]{std::_Exit(98);});std::signal(SIGABRT,[](int){std::_Exit(99);});try{
+    require(argc>=2&&argc<=3,"one owned test mode and optional generated PNG required");const std::string mode=argv[1];
     if(mode=="rgba16")check(png_rgba16,{0,128,255,18,1,127,255,255});
     else if(mode=="rgb16")check(png_rgb16,{18,128,255,255,1,171,0,255});
     else if(mode=="gray16")check(png_gray16,{18,18,18,255,254,254,254,255});
@@ -119,6 +139,41 @@ int main(int argc,char** argv){try{
         require(bool(result),"unused high-depth map should retain its placeholder: "+result.error);
         require(result.avatar.images[0].rgba==Bytes({255,255,255,255}),"unused map was decoded");
         require(result.avatar.images[0].width==1&&result.avatar.images[0].height==1,"placeholder grew");
+    }else if(mode=="default_cumulative"){
+        vrm::ImportLimits limits;Json doc={{"images",Json::array({Json::object()})}};
+        vrm::ImageBudget budget(limits,doc);budget.needed[0]=true;budget.used=300u*1024u*1024u;
+        tinygltf::Image image;std::string error,warning;
+        require(vrm::load_image(&image,0,&error,&warning,0,0,png_rgba8.data(),int(png_rgba8.size()),&budget),
+                "default importer still refuses retained textures above 256 MiB: "+error);
+        require(image.image==Bytes({1,2,3,4,239,240,241,242})&&budget.used==314572808,
+                "default cumulative decode lost pixels or retained-byte accounting");
+    }else if(mode=="cumulative_overflow"){
+        vrm::ImportLimits limits;Json doc={{"images",Json::array({Json::object()})}};
+        vrm::ImageBudget budget(limits,doc);budget.needed[0]=true;budget.used=std::numeric_limits<std::size_t>::max()-7;
+        tinygltf::Image image;std::string error,warning;
+        const bool loaded=vrm::load_image(&image,0,&error,&warning,0,0,png_rgba8.data(),int(png_rgba8.size()),&budget);
+        require(!loaded&&error.find("overflow")!=std::string::npos&&image.image.empty()&&allocation_control::active_bytes()==0,
+                "cumulative size overflow did not reject before decoding");
+    }else if(mode=="file_budget"){
+        const auto bytes=fixture(png_rgba8);vrm::ImportLimits limits;limits.file_bytes=bytes.size();
+        require(bool(vrm::load_vrm_bytes(bytes,limits)),"exact caller file-byte budget refused");
+        --limits.file_bytes;declined(vrm::load_vrm_bytes(bytes,limits),"size limit");
+    }else if(mode=="ordinary_vector_failure"){
+        const auto bytes=fixture(png_rgba8);
+        allocation_control::arm_ordinary_vector_failure=true;
+        const auto result=vrm::load_vrm_bytes(bytes);
+        allocation_control::arm_ordinary_vector_failure=false;
+        allocation_control::reject_vector_eight=false;
+        require(allocation_control::active_bytes()==0,"ordinary decoder allocation leaked when RGBA vector allocation failed");
+        require(!result&&result.error.find("memory")!=std::string::npos,"ordinary allocation failure was not a friendly memory error");
+        require(result.avatar.images.empty()&&result.avatar.nodes.empty(),"ordinary allocation failure retained a partial avatar");
+    }else if(mode=="wide_image"){
+        require(argc==3,"generated wide PNG path required");std::ifstream file(argv[2],std::ios::binary);
+        const Bytes png((std::istreambuf_iterator<char>(file)),{});
+        const auto result=vrm::load_vrm_bytes(fixture(png));
+        require(bool(result),"decoder-supported 8193x1 image refused: "+result.error);
+        require(result.avatar.images.size()==1&&result.avatar.images[0].width==8193&&result.avatar.images[0].height==1&&result.avatar.images[0].rgba.size()==32772,
+                "wide image dimensions or RGBA8 payload changed");
     }else if(mode=="working_budget"){
         vrm::ImportLimits limits;limits.decoded_image_bytes=64;
         require(bool(vrm::load_vrm_bytes(fixture(png_rgba16),limits)),"bounded high-depth decode declined");
@@ -152,7 +207,7 @@ int main(int argc,char** argv){try{
         const auto result=vrm::load_vrm_bytes(bytes);
         allocation_control::arm_vector_failure=false;
         allocation_control::reject_vector_eight=false;
-        declined(result,"bad_alloc");
+        declined(result,"memory");
         require(allocation_control::active_bytes()==0,"RGBA16 owner leaked after RGBA8 allocation failure");
     }else if(mode=="dimensions"){
         vrm::ImportLimits limits;limits.image_dimension=1;

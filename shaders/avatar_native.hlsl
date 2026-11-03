@@ -5,13 +5,20 @@
 // Inputs must be finite, with nonzero normals and valid coherent resources.
 // This implements checked opaque/mask PBR presets, not arbitrary MToon,
 // weather/highlight effects, alternate-secondary-normal mode, or transparency.
+#ifndef EVRM_NATIVE_SURFACE
+#define EVRM_NATIVE_SURFACE 0
+#endif
+#include "native_material_radiance.hlsli"
 struct NativeFrame {
     float4 currentRows[4]; float4 previousUvRows[4]; float4 normalRows[3];
     float4 screen; // inverse framebuffer size.xy, native jitter/bias UV.zw
-    uint4 control; // common immutable commit, history valid, reserved, reserved
+    uint4 control; // common commit, history valid, float bits: exposure/emissive gain
+#if EVRM_NATIVE_SURFACE
+    uint4 rootScale; // existing224-byte frame tail; scale is asfloat(w)
+#endif
 };
 struct NativeMaterial {
-    float4 base; float4 emissive;
+    float4 base; float4 emissive; // RGB real emission; w legacy diffuse policy0/1
     float4 surface; // metallic, reflectance/G, transmission, occlusion
     // instance: uint@112, uint@40, preselected output mode bits(4/32/64),
     //           draw role(0=native stand-in, 1=avatar).
@@ -42,6 +49,12 @@ struct NativeMaterial {
 [[vk::binding(4,EVRM_NATIVE_DESCRIPTOR_SET)]] ByteAddressBuffer nativeVertices;
 [[vk::binding(5,EVRM_NATIVE_DESCRIPTOR_SET)]] ByteAddressBuffer nativeIndices;
 #endif
+#if EVRM_NATIVE_SURFACE
+#define EVRM_SURFACE_DESCRIPTOR_SET EVRM_NATIVE_DESCRIPTOR_SET
+#include "native_surface.hlsli"
+#include "native_surface_camera.hlsli"
+[[vk::binding(11,EVRM_NATIVE_DESCRIPTOR_SET)]] ByteAddressBuffer surfaceVertices;
+#endif
 struct VertexIn {
     [[vk::location(0)]] float3 position : POSITION0;
     [[vk::location(1)]] float3 normal : NORMAL0;
@@ -53,6 +66,13 @@ struct VertexOut {
     [[vk::location(0)]] float3 normal : NORMAL0;
     [[vk::location(1)]] float2 uv : TEXCOORD0;
     [[vk::location(2)]] float3 previousUvW : TEXCOORD1;
+#if EVRM_NATIVE_SURFACE
+    [[vk::location(3)]] float4 tangent : TEXCOORD2;
+    [[vk::location(4)]] float2 normalUv : TEXCOORD3;
+    [[vk::location(5)]] float2 rimUv : TEXCOORD4;
+    [[vk::location(6)]] float3 view : TEXCOORD5;
+    [[vk::location(7)]] nointerpolation float3 cameraUp : TEXCOORD6;
+#endif
 };
 #if EVRM_NATIVE_VERTEX_PULL
 VertexOut vs_native(uint vertexId : SV_VertexID) {
@@ -76,6 +96,19 @@ VertexOut vs_native(VertexIn input) {
     o.position=active?raster:float4(2,2,0,1);
     o.normal=float3(dot(frame.normalRows[0].xyz,input.normal),dot(frame.normalRows[1].xyz,input.normal),dot(frame.normalRows[2].xyz,input.normal));
     o.uv=input.uv;
+#if EVRM_NATIVE_SURFACE
+    const float3x3 rotation=float3x3(frame.normalRows[0].xyz,frame.normalRows[1].xyz,frame.normalRows[2].xyz);
+    const float3 relative=float3(frame.normalRows[0].w,frame.normalRows[1].w,frame.normalRows[2].w);
+    o.view=-evrm_surface_relative_position(rotation,input.position,asfloat(frame.rootScale.w),relative);
+    o.cameraUp=evrm_surface_camera_up(rotation,frame.currentRows[1],frame.currentRows[3]);
+    o.tangent=0;o.normalUv=o.rimUv=0;
+    if((surfaceMaterial.flags.x&9u)!=0){
+        const uint surfaceAt=nativeIndices.Load(vertexId*4u)*32u;
+        o.normalUv=asfloat(surfaceVertices.Load2(surfaceAt));o.rimUv=asfloat(surfaceVertices.Load2(surfaceAt+8u));
+        const float4 tangent=asfloat(surfaceVertices.Load4(surfaceAt+16u));
+        o.tangent=float4(mul(rotation,tangent.xyz),tangent.w);
+    }
+#endif
     const float4 previous=float4(input.previousPosition,1);
     o.previousUvW=float3(dot(frame.previousUvRows[0],previous),dot(frame.previousUvRows[1],previous),dot(frame.previousUvRows[3],previous));
     if(frame.control.y==0)o.previousUvW.z=-1;
@@ -110,9 +143,22 @@ uint pack_rgb9e5(float3 value) {
 }
 struct GBufferOut {float4 base:SV_Target0;float4 normal:SV_Target1;uint4 params:SV_Target2;uint emissive:SV_Target3;float2 motion:SV_Target4;float instance:SV_Target5;};
 GBufferOut ps_gbuffer(VertexOut input,bool frontFace:SV_IsFrontFace) {
+#if EVRM_NATIVE_SURFACE
+    float4 base=sample_base(input);
+#else
     const float4 base=sample_base(input);
+#endif
     const bool backLighting=material.instance.w!=0 && material.alpha.z!=0 && !frontFace;
+#if EVRM_NATIVE_SURFACE
+    EvrmSurfaceInput surfaceInput;
+    surfaceInput.normal=input.normal;surfaceInput.tangent=input.tangent;
+    surfaceInput.normalUv=input.normalUv;surfaceInput.rimUv=input.rimUv;
+    surfaceInput.view=input.view;surfaceInput.cameraUp=input.cameraUp;
+    const EvrmSurfaceResult detailed=evrm_surface_sample(surfaceInput,backLighting);
+    base.rgb+=detailed.lit;const float3 normal=detailed.normal;
+#else
     const float3 normal=normalize(backLighting?-input.normal:input.normal);
+#endif
     const float3 folded=normal/(abs(normal.x)+abs(normal.y)+abs(normal.z));
     const bool history=input.previousUvW.z>0;
     GBufferOut o;
@@ -123,7 +169,11 @@ GBufferOut ps_gbuffer(VertexOut input,bool frontFace:SV_IsFrontFace) {
     // clearing this bit incorrectly treats a moving actor as static scenery.
     const bool objectMotion=history||material.instance.w!=0u;
     o.params=uint4(uint3(saturate(material.surface.xyz)*255.f+.5f),(material.instance.z&100u)|(objectMotion?8u:0u));
+#if EVRM_NATIVE_SURFACE
+    o.emissive=pack_rgb9e5(material.emissive.rgb+detailed.unlit*evrm_reflective_scale(asfloat(frame.control.z),asfloat(frame.control.w)));
+#else
     o.emissive=pack_rgb9e5(material.emissive.rgb);
+#endif
     o.motion=history?input.previousUvW.xy/input.previousUvW.z-(input.position.xy*frame.screen.xy+frame.screen.zw):float2(0,0);
     o.instance=(material.instance.y&255u)!=0?1.f:0.f;
     // Diagnostic only: retain all geometry/alpha/auxiliary outputs while

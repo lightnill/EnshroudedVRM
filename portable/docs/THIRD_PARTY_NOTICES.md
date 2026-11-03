@@ -86,8 +86,13 @@ Enshrouded and its trademarks/content belong to Keen Games and their licensors.
 This is an unofficial local preview; no endorsement or publisher approval is
 claimed. The binary includes minimal locally researched interface/rig compatibility
 data with original research provenance flags retained. The project MIT license
-does not grant rights to game content. No avatar, game mesh/texture or game
-executable is redistributed by this project. Users supply their own permitted VRMs.
+does not grant rights to game content. Game meshes/textures and the game
+executable are not redistributed. The creator-authorized vroid-sample.vrm is
+included unchanged under its own embedded VRM permissions, separately from
+the mod code license; see portable/standalone_assets/README.txt. Other models
+remain user-supplied.
 
 Valheim VRM repositories were reference research only. No source/tests/shaders/
 assets from them were copied into this product or these archives.
+
+MikkTSpace tangent generation is included under its zlib-style license; see vendor/mikktspace and the bundled notices/MikkTSpace.txt.

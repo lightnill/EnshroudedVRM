@@ -1,14 +1,20 @@
-# EnshroudedVRM 0.2.0
+# EnshroudedVRM 0.4.0
 
-- Audio-driven lip sync with automatic setup, mouth strength/sensitivity/smoothing controls and supported silence/neutral handling.
-- Game voice chat input, plus an offline local-microphone option with Windows default input and device selection.
-- Movable dark F8 mod settings with immediate startup: no avatar picker or typed confirmation before the game. Select/configure the avatar in F8; the original character remains until selection.
-- In-game VRM switching with validated preparation and safe GPU resource retirement.
-- Game lighting and Matte whole-model presets, individual material overrides, inheritance/reset and persistent per-model profiles.
-- Faster owner-snapshot sharing, fingerprinting and bounded diagnostics. Model switches retain the tool hook instead of restoring/reinstalling it for every avatar change. No model cache was added.
+**Still buggy and incomplete.** Shader quality and stability are below the intended standard. Other players' voice-driven visemes/lip sync are not implemented. This release is named 0.4.0 without a Preview suffix.
 
-0.2.0 is a local-avatar feature release. Multiplayer synchronization, a signed EXE launcher, full MToon and native armor fitting remain future work. The current CMD/PowerShell bootstrap still loads the mod; all ordinary avatar/voice/appearance setup is in F8.
+For Enshrouded Steam build **26404966**. Version 0.3.3 remains available for build 26320373.
 
-Game voice requires an online-capable session with active voice chat; Local microphone supports offline use. Voice is opt-in. Windows 10/11 x64, PowerShell 5.1 and Steam build 26082781/resource 1273043 remain required. No game executable, avatar or private state is included.
+## Features
 
-R9's model-switch/shader feature set was manually accepted by the maintainer. The 0.2.0 startup change is verified with isolated renderer, service and real child-process launcher tests; scan and final build validation receipts accompany the release. Component timings and reference-lifetime checks do not establish an in-game FPS gain or a whole-process memory bound.
+- F8 Player selector reuses Avatar controls for per-account, remembered local model assignments. Unassigned players default to native appearance; multiple different VRMs can render simultaneously. No model/assignment networking is added.
+- Broader importer support for standard glTF normal maps, supported VRM0/VRM1 MToon matcap/rim textures and masks, supported UV transforms and tangent generation. Existing 16-bit PNG-to-RGBA8 import remains supported. Custom Unity effects and arbitrary gloss/roughness-mask workflows are not claimed.
+- Auto/Enhanced/Fast/Matte whole-model presets and per-material overrides, persisted by model content. Same-model assignments share shader profiles.
+- Relaxed importer-only memory caps, F8 memory estimates and background optional shader preparation. Decoder, structural, device and allocation safeguards remain; large-model loading can still stall or fail.
+- One-click privacy-conscious local reports with recent diagnostics, settings, hardware/rendering context and in-game map position. Screenshots require review and explicit inclusion; reports never upload automatically.
+- Updated exact-game ownership, correct local inventory versus survivor previews, multiplayer join/leave handling, equipment and fog/building compatibility. Repeated ownership reads and driver lookup work were reduced.
+
+## Known limitations
+
+Reflective surfaces, matcaps, transparency and dim/night lighting still need work. Fast can be a useful fallback for incorrect enhanced shading. Brief native-model fallbacks and frame spikes remain, including a known wall/visibility edge case. Initial preparation can delay a body or preview; a remote weapon can appear first. Local microphone/game-voice lip sync animates You only; **remote visemes do not work yet**. Native armor fitting, complete Unity/MToon/custom shader effects and remote model synchronization are not implemented.
+
+Desktop/laptop two-player checks passed on the supported build, with remaining timing events documented. CPU fixtures and isolated shader checks do not prove game FPS or full visual fidelity. Exact-file verification/scans accompany the release. Preserve your VRMs/settings, update the entire package with the game closed, launch normally through Steam and configure through F8.

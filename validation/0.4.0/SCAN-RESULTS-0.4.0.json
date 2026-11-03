@@ -1,0 +1,453 @@
+{
+  "version": "0.4.0",
+  "recordedAtUtc": "2026-11-03T21:34:12.806724+00:00",
+  "maliciousOrSuspiciousDetections": 0,
+  "bitdefender": {
+    "scansPassed": 54,
+    "packageMembers": 52,
+    "issues": 0,
+    "unscanned": 0,
+    "archiveSha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+    "fileReceipts": [
+      {
+        "label": "runtime",
+        "sha256": "88c96519723be77bd6dd7964ee74a9955eeb38ee6f694e3e441f144848aa6712",
+        "finishedAtUtc": "2026-11-03T21:26:57.468071+00:00"
+      },
+      {
+        "label": "archive",
+        "sha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+        "finishedAtUtc": "2026-11-03T21:26:57.807572+00:00"
+      },
+      {
+        "label": "member-00",
+        "sha256": "92c41eeb0873af857ff6995fbb2d36acab86636fffd24f8873c4fcf94b521d09",
+        "finishedAtUtc": "2026-11-03T21:26:58.103571+00:00"
+      },
+      {
+        "label": "member-01",
+        "sha256": "da1e68ca997415de3ff55ba1a8468257c523c6d5db65d193f4110e37861bc098",
+        "finishedAtUtc": "2026-11-03T21:26:58.420571+00:00"
+      },
+      {
+        "label": "member-02",
+        "sha256": "0f3283996070008fdcb09d4101ffbb37b523a6b67fbf4aeafd0d49356d81cc98",
+        "finishedAtUtc": "2026-11-03T21:26:58.704071+00:00"
+      },
+      {
+        "label": "member-03",
+        "sha256": "7425aad9865e72ce24b43a5650579d922156cd7c80b650430aab89418f843cd9",
+        "finishedAtUtc": "2026-11-03T21:26:59.085572+00:00"
+      },
+      {
+        "label": "member-04",
+        "sha256": "3081d280275af5c2dd5ed2296305059a13421e657571b81f167fc9d443c38e73",
+        "finishedAtUtc": "2026-11-03T21:26:59.370572+00:00"
+      },
+      {
+        "label": "member-05",
+        "sha256": "af53cf2c6b1308d316ee16472869d795e3b02ed7d79e3a04b52bb65eaf920e3c",
+        "finishedAtUtc": "2026-11-03T21:26:59.654571+00:00"
+      },
+      {
+        "label": "member-06",
+        "sha256": "c8bcc4c0c6954eb01800e0569421e644c57f93376a92182bb18c62537e35bcb1",
+        "finishedAtUtc": "2026-11-03T21:26:59.938072+00:00"
+      },
+      {
+        "label": "member-07",
+        "sha256": "7442484997c6efa9987366bc24ba535bb3237f1ee94ac34fd205ca6b2fbc1d6e",
+        "finishedAtUtc": "2026-11-03T21:27:00.221080+00:00"
+      },
+      {
+        "label": "member-08",
+        "sha256": "1f2eacb301c639c5834f754d79133e087e6b2e8837c4571a5bb75562c16a723c",
+        "finishedAtUtc": "2026-11-03T21:27:00.504572+00:00"
+      },
+      {
+        "label": "member-09",
+        "sha256": "bb6abfa8be73fda5d9a1149b19895850dc0b8f6cde77544bd965aa1f67b3c344",
+        "finishedAtUtc": "2026-11-03T21:27:00.786571+00:00"
+      },
+      {
+        "label": "member-10",
+        "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+        "finishedAtUtc": "2026-11-03T21:27:01.134572+00:00"
+      },
+      {
+        "label": "member-11",
+        "sha256": "866cf4ae14d244808f52f42872c98e04338e71ae895e3ae82d0ee395e8ff04a9",
+        "finishedAtUtc": "2026-11-03T21:27:01.416573+00:00"
+      },
+      {
+        "label": "member-12",
+        "sha256": "88c96519723be77bd6dd7964ee74a9955eeb38ee6f694e3e441f144848aa6712",
+        "finishedAtUtc": "2026-11-03T21:27:01.738572+00:00"
+      },
+      {
+        "label": "member-13",
+        "sha256": "704fdc4847962217d246760ad3117263e59f5c1e5e93a98d1546a4179899c5bb",
+        "finishedAtUtc": "2026-11-03T21:27:02.020571+00:00"
+      },
+      {
+        "label": "member-14",
+        "sha256": "f35c23585ef3baf3b01dbe7bce4c73a2af844f73c198a3f4d4779994466c718a",
+        "finishedAtUtc": "2026-11-03T21:27:02.104572+00:00"
+      },
+      {
+        "label": "member-15",
+        "sha256": "1b327877445b6e17cd0a6e9838373c8bc7b22f12991c154e764abb5bef850e33",
+        "finishedAtUtc": "2026-11-03T21:27:02.388571+00:00"
+      },
+      {
+        "label": "member-16",
+        "sha256": "eacf601bb032086c95867a0f33985a4ee30a2c37ee84eed8f1786c094bd9c8a3",
+        "finishedAtUtc": "2026-11-03T21:27:02.670571+00:00"
+      },
+      {
+        "label": "member-17",
+        "sha256": "16c0709e1a3e5e1801b8e43cc0821a37d38b0d74af7b6087fb1477baba03072b",
+        "finishedAtUtc": "2026-11-03T21:27:02.953071+00:00"
+      },
+      {
+        "label": "member-18",
+        "sha256": "29338d2b9632841ba81c766172ba496e0b55785ac0ec16fed12f7f34d86900dd",
+        "finishedAtUtc": "2026-11-03T21:27:03.229581+00:00"
+      },
+      {
+        "label": "member-19",
+        "sha256": "4e66ffdd9056442ecaf63a8f26ddffdcd4f4e94313b312470295819a46898977",
+        "finishedAtUtc": "2026-11-03T21:27:03.508572+00:00"
+      },
+      {
+        "label": "member-20",
+        "sha256": "dad8cc89dd79ae76a9d4531821f80c0cda4ed2bd241e4f97c825f3c7834647a5",
+        "finishedAtUtc": "2026-11-03T21:27:03.792572+00:00"
+      },
+      {
+        "label": "member-21",
+        "sha256": "79538df59f085a40a57aabaa3a76b3387312ca497eec539ddf7c625b907c04ed",
+        "finishedAtUtc": "2026-11-03T21:27:04.075584+00:00"
+      },
+      {
+        "label": "member-22",
+        "sha256": "e1197c35714e8064ae76ed8faf3a5efae16de8f0bed05248fb1506cac97451ab",
+        "finishedAtUtc": "2026-11-03T21:27:04.360580+00:00"
+      },
+      {
+        "label": "member-23",
+        "sha256": "9c277196fba72c79ddb8103ee41a1bdac1289bddee4850b10369bbeda54aa51a",
+        "finishedAtUtc": "2026-11-03T21:27:04.642078+00:00"
+      },
+      {
+        "label": "member-24",
+        "sha256": "f0faabc4ef0682f9c1e41a6782184d848cdc6670e6320f793ef98bafc0125f00",
+        "finishedAtUtc": "2026-11-03T21:27:04.918571+00:00"
+      },
+      {
+        "label": "member-25",
+        "sha256": "91a24b1aae443d60f399240eb51d198673dd29edeb903ab837ba8d4174a9416c",
+        "finishedAtUtc": "2026-11-03T21:27:05.206571+00:00"
+      },
+      {
+        "label": "member-26",
+        "sha256": "d14fa065057dec06774d37815dd583586e76c5f6b7f69768538b609c15611f72",
+        "finishedAtUtc": "2026-11-03T21:27:05.494572+00:00"
+      },
+      {
+        "label": "member-27",
+        "sha256": "861427ee74e1773c9b3a629224bbb0ca81433ebd1e322bdd2a575e692a4b8373",
+        "finishedAtUtc": "2026-11-03T21:27:05.775573+00:00"
+      },
+      {
+        "label": "member-28",
+        "sha256": "6fe27f740d2509ffbd2536df8b1e4c7e2675de1313429d0e6c181d3cf8417356",
+        "finishedAtUtc": "2026-11-03T21:27:06.058571+00:00"
+      },
+      {
+        "label": "member-29",
+        "sha256": "27dee1041b1bc2b6d7c2fd87b5e1e77dde748b46c905b97afdf298ac4beff403",
+        "finishedAtUtc": "2026-11-03T21:27:06.340071+00:00"
+      },
+      {
+        "label": "member-30",
+        "sha256": "e038aa2e119d3e2f82fc881df50ec0102f9d0fa2fc474684e93763e22a2fa619",
+        "finishedAtUtc": "2026-11-03T21:27:06.619072+00:00"
+      },
+      {
+        "label": "member-31",
+        "sha256": "e8675edd8de96e5ae7a0594ae2bed29aa6650f5cce932bf5edfb7f9d6c7082fd",
+        "finishedAtUtc": "2026-11-03T21:27:06.898572+00:00"
+      },
+      {
+        "label": "member-32",
+        "sha256": "644f61fc7933bb51e7990e93a41e04f35f3aabf11668eaef8bbf9d0aac604c23",
+        "finishedAtUtc": "2026-11-03T21:27:07.179571+00:00"
+      },
+      {
+        "label": "member-33",
+        "sha256": "31305bfdccb504f29b719e08d06aa4557c2402bbd5da3b63b9da36bfaf938fd5",
+        "finishedAtUtc": "2026-11-03T21:27:07.460071+00:00"
+      },
+      {
+        "label": "member-34",
+        "sha256": "14fa8389499342c4c24391117106b9f807971921a0b820821b76374e5510e64f",
+        "finishedAtUtc": "2026-11-03T21:27:07.744071+00:00"
+      },
+      {
+        "label": "member-35",
+        "sha256": "76ef2ca627fa5d9357238b333d4e40eb2d625602dfa83580e818ac07ab29e6f4",
+        "finishedAtUtc": "2026-11-03T21:27:08.024071+00:00"
+      },
+      {
+        "label": "member-36",
+        "sha256": "6aaa921092f06c31d3569d2437ab4f69c67f31bd49feca55914ae379201e2957",
+        "finishedAtUtc": "2026-11-03T21:27:08.308088+00:00"
+      },
+      {
+        "label": "member-37",
+        "sha256": "90077ba306ee9d8ed966cab1b4abd69b6e728acf08777283cc50283cd9503fa6",
+        "finishedAtUtc": "2026-11-03T21:27:08.590071+00:00"
+      },
+      {
+        "label": "member-38",
+        "sha256": "81cbae84a29ce7e770bf2bc7b178e50bda0ce8de6067aba661b0bc7b05b562f8",
+        "finishedAtUtc": "2026-11-03T21:27:08.870573+00:00"
+      },
+      {
+        "label": "member-39",
+        "sha256": "090f8eb6ba63e72887c1f89b009fb1656cfda02d83b6e9805b20468520a5d77f",
+        "finishedAtUtc": "2026-11-03T21:27:09.150571+00:00"
+      },
+      {
+        "label": "member-40",
+        "sha256": "8486c3ee89b526b9a44dddb07a5c88de45ef4ad3c0a3ead593fc6e1cffb62545",
+        "finishedAtUtc": "2026-11-03T21:27:09.429571+00:00"
+      },
+      {
+        "label": "member-41",
+        "sha256": "8211dccca73dd4078d50ce7fa535b329f1c13edf6b54aa590131549f880ca0b8",
+        "finishedAtUtc": "2026-11-03T21:27:09.711572+00:00"
+      },
+      {
+        "label": "member-42",
+        "sha256": "d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8",
+        "finishedAtUtc": "2026-11-03T21:27:09.991571+00:00"
+      },
+      {
+        "label": "member-43",
+        "sha256": "860d2843070e9cf4a75b27d6efb3b3952be96fd0d3c72c840187becd95da7b03",
+        "finishedAtUtc": "2026-11-03T21:27:10.279073+00:00"
+      },
+      {
+        "label": "member-44",
+        "sha256": "6e92f324737f2638f7ca8440aaa08c45897d4c32ea07c68a853ea46d560f4a0b",
+        "finishedAtUtc": "2026-11-03T21:27:10.560071+00:00"
+      },
+      {
+        "label": "member-45",
+        "sha256": "95d94609b88df9d8d162e01b3f985c226c8d612b003ef85de74c5f45a6f5327b",
+        "finishedAtUtc": "2026-11-03T21:27:10.837572+00:00"
+      },
+      {
+        "label": "member-46",
+        "sha256": "aeaee01d2c00f0a9bef734ea415aaec662d1ed615970bf50eeb6ebeb2897b9f7",
+        "finishedAtUtc": "2026-11-03T21:27:11.114571+00:00"
+      },
+      {
+        "label": "member-47",
+        "sha256": "417d1dc998f6ee3d40db4e38ae909ee6c28259d36e733fb118ec84acba775c39",
+        "finishedAtUtc": "2026-11-03T21:27:11.414079+00:00"
+      },
+      {
+        "label": "member-48",
+        "sha256": "4be6a99e816a7e197fcad539240c09713d4c887967eb81a07e52b47ecc33f873",
+        "finishedAtUtc": "2026-11-03T21:27:11.704571+00:00"
+      },
+      {
+        "label": "member-49",
+        "sha256": "8929ab090ed2998be853d9651c1757b613af01dec29226c892e7cdbebdeba8a8",
+        "finishedAtUtc": "2026-11-03T21:27:11.985580+00:00"
+      },
+      {
+        "label": "member-50",
+        "sha256": "48314981b94a450f3d2661eb476d2db936548ad58fad4f73c203c88d08cdc5de",
+        "finishedAtUtc": "2026-11-03T21:27:12.271072+00:00"
+      },
+      {
+        "label": "member-51",
+        "sha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+        "finishedAtUtc": "2026-11-03T21:27:12.576571+00:00"
+      }
+    ]
+  },
+  "virusTotal": {
+    "runtime": {
+      "status": "found",
+      "source": "VirusTotal via VTAI",
+      "retrieved_at": "2026-11-03T21:31:10.000965+00:00",
+      "analysis_date": "2026-11-03T21:25:14Z",
+      "report_url": "https://www.virustotal.com/gui/file/88c96519723be77bd6dd7964ee74a9955eeb38ee6f694e3e441f144848aa6712",
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "failure",
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "data": {
+        "source": "VirusTotal",
+        "analysis_date": "2026-11-03T21:25:14Z",
+        "report_url": "https://www.virustotal.com/gui/file/88c96519723be77bd6dd7964ee74a9955eeb38ee6f694e3e441f144848aa6712",
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "id": "88c96519723be77bd6dd7964ee74a9955eeb38ee6f694e3e441f144848aa6712",
+        "last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 70,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 4
+        },
+        "type_description": "Win32 DLL",
+        "detections": [],
+        "ai_insights": null
+      }
+    },
+    "archive": {
+      "status": "found",
+      "source": "VirusTotal via VTAI",
+      "retrieved_at": "2026-11-03T21:35:10.993206+00:00",
+      "analysis_date": "2026-11-03T21:30:44Z",
+      "report_url": "https://www.virustotal.com/gui/file/c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "timeout",
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "data": {
+        "source": "VirusTotal",
+        "analysis_date": "2026-11-03T21:30:44Z",
+        "report_url": "https://www.virustotal.com/gui/file/c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "timeout",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "id": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+        "last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 66,
+          "harmless": 0,
+          "timeout": 3,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 6
+        },
+        "type_description": "ZIP",
+        "detections": [],
+        "ai_insights": null
+      }
+    },
+    "bootstrap": {
+      "status": "found",
+      "source": "VirusTotal via VTAI",
+      "retrieved_at": "2026-11-03T21:13:43.252603+00:00",
+      "analysis_date": "2026-11-01T00:13:47Z",
+      "report_url": "https://www.virustotal.com/gui/file/d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "data": {
+        "source": "VirusTotal",
+        "analysis_date": "2026-11-01T00:13:47Z",
+        "report_url": "https://www.virustotal.com/gui/file/d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "id": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
+        "last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 71,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 0,
+          "type-unsupported": 4
+        },
+        "type_description": "Win32 DLL",
+        "detections": [],
+        "ai_insights": null
+      }
+    },
+    "sdk": {
+      "status": "found",
+      "source": "VirusTotal via VTAI",
+      "retrieved_at": "2026-11-03T21:13:50.376609+00:00",
+      "analysis_date": "2026-09-07T19:12:50Z",
+      "report_url": "https://www.virustotal.com/gui/file/f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "failure",
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "data": {
+        "source": "VirusTotal",
+        "analysis_date": "2026-09-07T19:12:50Z",
+        "report_url": "https://www.virustotal.com/gui/file/f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+        "coverage": {
+          "engines": 75,
+          "categories": [
+            "failure",
+            "type-unsupported",
+            "undetected"
+          ]
+        },
+        "id": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+        "last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 70,
+          "harmless": 0,
+          "timeout": 0,
+          "confirmed-timeout": 0,
+          "failure": 1,
+          "type-unsupported": 4
+        },
+        "type_description": "Win32 DLL",
+        "detections": [],
+        "ai_insights": null
+      }
+    }
+  },
+  "coverage": "VirusTotal cannot fully inspect this multi-file archive: its upload page requires an archive within 3 MB containing exactly one file for complete inner-file scanning. Runtime/bootstrap/SDK have separate exact-hash reports; Bitdefender scanned every packaged member and the complete ZIP. Unchanged bootstrap and SDK reports retain their original analysis dates. Unsupported engines, failures and timeouts are coverage gaps. Zero detections do not guarantee safety."
+}

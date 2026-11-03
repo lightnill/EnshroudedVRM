@@ -8,6 +8,9 @@ struct NativeDrawPipelines::Impl {
     VkDevice device{};
     VkPipelineLayout layout{};
     VkPipeline visibility{},gbuffer{};
+    VkPipelineLayout surface_layout{};
+    VkPipeline surface_pipeline{};
+    PFN_vkCreateGraphicsPipelines create{};
     PFN_vkDestroyPipeline destroy{};
     PFN_vkCmdBindPipeline bind{};
     PFN_vkCmdBindDescriptorSets descriptors{};
@@ -16,21 +19,13 @@ struct NativeDrawPipelines::Impl {
         if(destroy) {
             if(visibility)destroy(device,visibility,nullptr);
             if(gbuffer)destroy(device,gbuffer,nullptr);
+            if(surface_pipeline)destroy(device,surface_pipeline,nullptr);
         }
     }
 };
-NativeDrawPipelines::NativeDrawPipelines(VkDevice device,PFN_vkGetDeviceProcAddr get,VkPipelineLayout layout,
-    VkShaderModule vertex_shader,VkShaderModule visibility_shader,VkShaderModule gbuffer_shader,std::uint32_t visibility_colors)
-    :impl(std::make_unique<Impl>()) {
-    if(!device||!get||!layout||!vertex_shader||!visibility_shader||!gbuffer_shader||
-       (visibility_colors!=1&&visibility_colors!=2))throw std::runtime_error("Invalid native draw pipeline inputs");
-    impl->device=device;impl->layout=layout;
-    impl->destroy=reinterpret_cast<PFN_vkDestroyPipeline>(get(device,"vkDestroyPipeline"));
-    impl->bind=reinterpret_cast<PFN_vkCmdBindPipeline>(get(device,"vkCmdBindPipeline"));
-    impl->descriptors=reinterpret_cast<PFN_vkCmdBindDescriptorSets>(get(device,"vkCmdBindDescriptorSets"));
-    impl->draw=reinterpret_cast<PFN_vkCmdDraw>(get(device,"vkCmdDraw"));
-    const auto create=reinterpret_cast<PFN_vkCreateGraphicsPipelines>(get(device,"vkCreateGraphicsPipelines"));
-    if(!create||!impl->destroy||!impl->bind||!impl->descriptors||!impl->draw)throw std::runtime_error("Missing native draw entries");
+namespace {
+VkPipeline make_draw_pipeline(VkDevice device,PFN_vkCreateGraphicsPipelines create,PFN_vkDestroyPipeline destroy,
+    VkPipelineLayout layout,VkShaderModule vertex_shader,VkShaderModule fragment_shader,bool gbuffer,std::uint32_t visibility_colors) {
     std::array<VkPipelineShaderStageCreateInfo,2> stages{};
     for(auto& stage:stages)stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[0].module=vertex_shader;stages[0].pName="vs_native";
@@ -56,27 +51,60 @@ NativeDrawPipelines::NativeDrawPipelines(VkDevice device,PFN_vkGetDeviceProcAddr
     info.stageCount=stages.size();info.pStages=stages.data();info.pVertexInputState=&vertex;info.pInputAssemblyState=&assembly;
     info.pViewportState=&viewport;info.pRasterizationState=&raster;info.pMultisampleState=&multisample;info.pDepthStencilState=&depth;
     info.pColorBlendState=&blend;info.pDynamicState=&dynamic;info.layout=layout;
-    for(unsigned pass=0;pass<2;++pass) {
-        stages[1].module=pass?gbuffer_shader:visibility_shader;stages[1].pName=pass?"ps_gbuffer":"ps_visibility";
-        depth.depthWriteEnable=pass?VK_FALSE:VK_TRUE;depth.depthCompareOp=pass?VK_COMPARE_OP_EQUAL:VK_COMPARE_OP_GREATER;
-        blend.attachmentCount=pass?6:visibility_colors;
-        // Native visibility does not write target1. Preserve every component.
-        attachments[1].colorWriteMask=pass?15u:0u;
-        rendering.colorAttachmentCount=blend.attachmentCount;rendering.pColorAttachmentFormats=pass?gformats.data():vformats.data();
-        auto& target=pass?impl->gbuffer:impl->visibility;
-        if(create(device,VK_NULL_HANDLE,1,&info,nullptr,&target)!=VK_SUCCESS)throw std::runtime_error("Native draw pipeline creation failed");
+    stages[1].module=fragment_shader;stages[1].pName=gbuffer?"ps_gbuffer":"ps_visibility";
+    depth.depthWriteEnable=gbuffer?VK_FALSE:VK_TRUE;depth.depthCompareOp=gbuffer?VK_COMPARE_OP_EQUAL:VK_COMPARE_OP_GREATER;
+    blend.attachmentCount=gbuffer?6:visibility_colors;
+    // Native visibility does not write target1. Preserve every component.
+    attachments[1].colorWriteMask=gbuffer?15u:0u;
+    rendering.colorAttachmentCount=blend.attachmentCount;rendering.pColorAttachmentFormats=gbuffer?gformats.data():vformats.data();
+    VkPipeline target{};
+    if(create(device,VK_NULL_HANDLE,1,&info,nullptr,&target)!=VK_SUCCESS||!target) {
+        if(target)destroy(device,target,nullptr);
+        throw std::runtime_error("Native draw pipeline creation failed");
     }
+    return target;
+}
+}
+NativeDrawPipelines::NativeDrawPipelines(VkDevice device,PFN_vkGetDeviceProcAddr get,VkPipelineLayout layout,
+    VkShaderModule vertex_shader,VkShaderModule visibility_shader,VkShaderModule gbuffer_shader,std::uint32_t visibility_colors)
+    :impl(std::make_unique<Impl>()) {
+    if(!device||!get||!layout||!vertex_shader||!visibility_shader||!gbuffer_shader||
+       (visibility_colors!=1&&visibility_colors!=2))throw std::runtime_error("Invalid native draw pipeline inputs");
+    impl->device=device;impl->layout=layout;
+    impl->destroy=reinterpret_cast<PFN_vkDestroyPipeline>(get(device,"vkDestroyPipeline"));
+    impl->bind=reinterpret_cast<PFN_vkCmdBindPipeline>(get(device,"vkCmdBindPipeline"));
+    impl->descriptors=reinterpret_cast<PFN_vkCmdBindDescriptorSets>(get(device,"vkCmdBindDescriptorSets"));
+    impl->draw=reinterpret_cast<PFN_vkCmdDraw>(get(device,"vkCmdDraw"));
+    impl->create=reinterpret_cast<PFN_vkCreateGraphicsPipelines>(get(device,"vkCreateGraphicsPipelines"));
+    if(!impl->create||!impl->destroy||!impl->bind||!impl->descriptors||!impl->draw)throw std::runtime_error("Missing native draw entries");
+    impl->visibility=make_draw_pipeline(device,impl->create,impl->destroy,layout,vertex_shader,visibility_shader,false,visibility_colors);
+    impl->gbuffer=make_draw_pipeline(device,impl->create,impl->destroy,layout,vertex_shader,gbuffer_shader,true,visibility_colors);
 }
 NativeDrawPipelines::~NativeDrawPipelines()=default;
+bool NativeDrawPipelines::install_surface_variant(VkPipelineLayout layout,VkShaderModule vertex,VkShaderModule fragment) noexcept {
+    if(!impl||impl->surface_pipeline||!layout||!vertex||!fragment)return false;
+    try {
+        const auto pipeline=make_draw_pipeline(impl->device,impl->create,impl->destroy,layout,vertex,fragment,true,2);
+        impl->surface_pipeline=pipeline;impl->surface_layout=layout;
+        return true;
+    }catch(...){return false;}
+}
+bool NativeDrawPipelines::surface_ready()const noexcept {return impl&&impl->surface_pipeline&&impl->surface_layout;}
 bool NativeDrawPipelines::record(VkCommandBuffer command,bool gb,const NativeDrawCall* calls,std::uint32_t count,
     VkPipeline original,VkPipelineLayout compatible,std::uint32_t set_count,const VkDescriptorSet* sets)const noexcept {
     if(!command||!impl||!calls||!count||count>4096||!original||!compatible||!sets||!set_count||set_count>32)return false;
     for(std::uint32_t i=0;i<set_count;++i)if(!sets[i])return false;
     for(std::uint32_t i=0;i<count;++i)if(!calls[i].set||!calls[i].index_count||calls[i].index_count%3||
-        calls[i].first_index>std::numeric_limits<std::uint32_t>::max()-calls[i].index_count)return false;
-    impl->bind(command,VK_PIPELINE_BIND_POINT_GRAPHICS,gb?impl->gbuffer:impl->visibility);
+        calls[i].first_index>std::numeric_limits<std::uint32_t>::max()-calls[i].index_count||
+        (gb&&calls[i].surface_set&&!surface_ready()))return false;
+    VkPipeline bound{};
     for(std::uint32_t i=0;i<count;++i) {
-        impl->descriptors(command,VK_PIPELINE_BIND_POINT_GRAPHICS,impl->layout,0,1,&calls[i].set,0,nullptr);
+        const bool enhanced=gb&&calls[i].surface_set;
+        const auto pipeline=enhanced?impl->surface_pipeline:(gb?impl->gbuffer:impl->visibility);
+        if(pipeline!=bound){impl->bind(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);bound=pipeline;}
+        const auto layout=enhanced?impl->surface_layout:impl->layout;
+        const auto set=enhanced?calls[i].surface_set:calls[i].set;
+        impl->descriptors(command,VK_PIPELINE_BIND_POINT_GRAPHICS,layout,0,1,&set,0,nullptr);
         impl->draw(command,calls[i].index_count,1,calls[i].first_index,0);
     }
     impl->bind(command,VK_PIPELINE_BIND_POINT_GRAPHICS,original);

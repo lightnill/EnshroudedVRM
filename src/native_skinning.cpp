@@ -108,11 +108,28 @@ NativeSkinAsset make_native_skin_asset(const vrm::Avatar& avatar,const vrm::Reta
         auto layout=std::make_shared<NativeAvatarPose>(make_native_avatar_pose(avatar,pose));require(bool(*layout),layout->error.c_str());
         NativeSkinAsset out;require(make_native_material_plan(avatar,*layout,out.material_plan),"Invalid skin material partition");
         out.node_count=avatar.nodes.size();out.vertices.reserve(layout->vertices.size());
+        bool surface=false;
+        for(const auto& source:avatar.nodes)if(source.active&&source.mesh>=0)
+            for(const auto& p:avatar.meshes[source.mesh].primitives)surface=surface||!p.surface_vertices.empty();
+        if(surface)out.surface_vertices.reserve(layout->vertices.size());
         for(std::size_t n=0;n<avatar.nodes.size();++n){const auto& source=avatar.nodes[n];if(!source.active||source.mesh<0)continue;
             NativeSkinNode node;node.node=static_cast<std::uint32_t>(n);node.skin=source.skin;
             for(const auto& palette:pose.palettes)if(palette.mesh_node==static_cast<int>(n))node.joints=static_cast<std::uint32_t>(palette.matrices.size());
             node.joint_blend.resize(node.joints);
             for(const auto& primitive:avatar.meshes[source.mesh].primitives){
+                require(primitive.surface_vertices.empty()||primitive.surface_vertices.size()==primitive.vertices.size(),"Skin surface stream layout mismatch");
+                if(surface){
+                    if(primitive.surface_vertices.empty())out.surface_vertices.resize(out.surface_vertices.size()+primitive.vertices.size());
+                    else {
+                        for(const auto& v:primitive.surface_vertices){
+                            for(auto x:v.normal_uv)require(std::isfinite(x),"Nonfinite skin surface normal UV");
+                            for(auto x:v.rim_uv)require(std::isfinite(x),"Nonfinite skin surface rim UV");
+                            for(auto x:v.tangent)require(std::isfinite(x),"Nonfinite skin surface tangent");
+                            require(v.tangent[3]==0||v.tangent[3]==1||v.tangent[3]==-1,"Invalid skin surface tangent sign");
+                        }
+                        out.surface_vertices.insert(out.surface_vertices.end(),primitive.surface_vertices.begin(),primitive.surface_vertices.end());
+                    }
+                }
                 const bool blend=primitive.material>=0&&avatar.materials[primitive.material].alpha==vrm::AlphaMode::Blend;
                 node.skinned|=primitive.skinned;
                 for(const auto& v:primitive.vertices){out.vertices.push_back({v,static_cast<std::uint32_t>(out.nodes.size()),primitive.skinned?1u:0u});

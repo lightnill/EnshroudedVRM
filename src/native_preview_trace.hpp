@@ -23,7 +23,7 @@ namespace evrm {
 // Diagnostic only. Neither a call path nor a matching buffer authorizes an
 // avatar replacement. This history carries no actor IDs, pointers or payloads.
 enum class NativePreviewTraceStage:std::uint8_t {Bindings=1,Inline=2,Submit=3};
-constexpr std::uint32_t native_preview_code_group_count=72886;
+constexpr std::uint32_t native_preview_code_group_count=72878;
 inline unsigned native_preview_trace_path(std::uint32_t group)noexcept {
     if((group>=27451&&group<=27455))return 1;
     if((group>=6484&&group<=6490))return 2;
@@ -120,7 +120,7 @@ inline void native_preview_trace_event(std::uint64_t buffer,NativePreviewTraceSt
     native_preview_handoff_gpu(buffer,stage!=NativePreviewTraceStage::Bindings,ticket.tick);
     const auto started=std::chrono::steady_clock::now();void* frames[48]{};const auto count=CaptureStackBackTrace(0,48,frames,nullptr);
     NativePreviewTraceSample sample;sample.stack_depth=count;
-    constexpr std::uint64_t table_rva=0x285b000,table_bytes=std::uint64_t(native_preview_code_group_count)*sizeof(RUNTIME_FUNCTION);
+    constexpr std::uint64_t table_rva=0x285a000,table_bytes=std::uint64_t(native_preview_code_group_count)*sizeof(RUNTIME_FUNCTION);
     static_assert(sizeof(RUNTIME_FUNCTION)==12,"supported Windows code-range metadata");
     for(unsigned i=0;i<count;++i){const auto pc=reinterpret_cast<std::uintptr_t>(frames[i]);if(pc<ticket.base||pc-ticket.base>=ticket.size)continue;
         DWORD64 image_base=0;const auto* entry=RtlLookupFunctionEntry(pc,&image_base,nullptr);if(!entry||image_base!=ticket.base)continue;

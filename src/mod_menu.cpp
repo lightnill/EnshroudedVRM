@@ -88,8 +88,10 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
     if(report_action)*report_action={};
     const auto& io=ImGui::GetIO();const float width=std::max(96.f,std::min(504.f,io.DisplaySize.x-24));
     if(ImGui::IsMouseClicked(0))placement.dragging=false;
+    const bool has_players=status.avatar&&status.avatar->players&&!status.avatar->players->empty();
     const float wanted_height=(expanded?(settings.voice_source==VoiceInputSource::Microphone?812.f:716.f):372.f)+
         (status.avatar?(placement.appearance_expanded?550.f:240.f)+(!status.avatar->replacement_enabled?60.f:0.f):0.f)+
+        (has_players?180.f:0.f)+
         (status.report&&status.report->phase==DebugReportPhase::Preview?510.f:174.f);
     const float height=std::max(80.f,std::min(wanted_height,io.DisplaySize.y-24));
     if(!placement.initialized){placement.x=(io.DisplaySize.x-width)*.5f;placement.y=(io.DisplaySize.y-height)*.5f;placement.initialized=true;}
@@ -202,8 +204,37 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
     }
     if(status.avatar){
         const auto& avatar=*status.avatar;
-        const auto emit=[&](AvatarActionKind kind){if(action){action->kind=kind;action->fingerprint=avatar.fingerprint;}};
-        ImGui::Dummy({0,3});ImGui::Separator();ImGui::TextUnformatted("Avatar");
+        const auto emit=[&](AvatarActionKind kind){if(action){action->kind=kind;action->fingerprint=avatar.fingerprint;action->subject=avatar.subject;}};
+        ImGui::Dummy({0,3});ImGui::Separator();
+        if(has_players){
+            ImGui::TextUnformatted("Player");
+            const char* selected_label="You";
+            for(const auto& player:*avatar.players)if(player.subject==avatar.subject){selected_label=player.label.c_str();break;}
+            ImGui::SetNextItemWidth(inner);
+            const bool players=ImGui::BeginCombo("##avatar-player",selected_label);
+            if(layout)layout->player=last_rect();
+            if(players){
+                for(std::size_t n=0;n<avatar.players->size();++n){
+                    const auto& player=(*avatar.players)[n];const bool selected=player.subject==avatar.subject;
+                    ImGui::PushID(int(n));const auto text_pos=ImGui::GetCursorScreenPos();
+                    // Labels are display-only: neither private subjects nor names enter widget IDs.
+                    if(ImGui::Selectable("##player-choice",selected,0,{0,ImGui::GetTextLineHeight()})){
+                        if(action){*action={};action->kind=AvatarActionKind::SelectPlayer;action->subject=player.subject;}
+                    }
+                    if(layout&&n==1)layout->second_player=last_rect();
+                    if(selected)ImGui::SetItemDefaultFocus();
+                    auto* player_draw=ImGui::GetWindowDrawList();player_draw->PushClipRect(ImGui::GetItemRectMin(),ImGui::GetItemRectMax(),true);
+                    ImGui::RenderText(text_pos,player.label.c_str(),nullptr,false);player_draw->PopClipRect();
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SetWindowFontScale(.75f);
+            ImGui::TextWrapped("Models are visible on this PC. Other players start with no replacement.");
+            if(!avatar.subject.empty())ImGui::TextWrapped("Voice controls always follow You.");
+            ImGui::SetWindowFontScale(1);
+        }
+        ImGui::TextUnformatted("Avatar");
         bool original=!avatar.replacement_enabled;
         ImGui::BeginDisabled(!avatar.preferences_loaded);
         if(ImGui::Checkbox("No model replacement",&original)){emit(AvatarActionKind::SetReplacementEnabled);if(action)action->replacement_enabled=!original;}
@@ -234,23 +265,36 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
         if(state)ImGui::TextWrapped("%s",state);
         if(!avatar.error.empty())ImGui::TextWrapped("%s",avatar.error.c_str());
         if(avatar.save_failed)ImGui::TextWrapped("Avatar settings could not be saved.");
+        if(avatar.retained_cpu_buffer_bytes){
+            constexpr double mib=1024.0*1024.0;
+            ImGui::Text("Decoded textures: %.1f MiB",double(avatar.decoded_texture_bytes)/mib);
+            ImGui::Text("CPU buffers (estimate): %.1f MiB",double(avatar.retained_cpu_buffer_bytes)/mib);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Includes decoded textures and retained mesh/rig buffers. Excludes text and allocator overhead, temporary decoding, GPU memory and other process memory.");
+        }
         ImGui::SetWindowFontScale(1);
         ImGui::EndDisabled();
         ImGui::BeginDisabled(original);
         if(ImGui::Button(placement.appearance_expanded?"-  Appearance presets":"+  Appearance presets",{inner,36}))placement.appearance_expanded=!placement.appearance_expanded;
         if(layout)layout->appearance=last_rect();
         if(placement.appearance_expanded){
+            if(has_players){ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Appearance presets are shared by players using this model.");ImGui::SetWindowFontScale(1);}
             if(!avatar.preferences_loaded)ImGui::TextUnformatted("Loading appearance preferences...");
             const bool valid=!avatar.fingerprint.empty()&&avatar.preferences_loaded;ImGui::BeginDisabled(!valid);
             const auto whole=avatar.profile?avatar.profile->whole:AvatarShaderPreset::GameLighting;
+            const auto preset_label=[](AvatarShaderPreset value){switch(value){
+                case AvatarShaderPreset::Enhanced:return "Enhanced";case AvatarShaderPreset::Fast:return "Fast";
+                case AvatarShaderPreset::Matte:return "Matte";default:return "Auto";}};
             ImGui::TextUnformatted("Whole model");ImGui::SetNextItemWidth(inner);
-            const bool presets=ImGui::BeginCombo("##whole-preset",whole==AvatarShaderPreset::Matte?"Matte":"Game lighting");
+            const bool presets=ImGui::BeginCombo("##whole-preset",preset_label(whole));
             if(layout)layout->whole=last_rect();
             if(presets){
-                if(ImGui::Selectable("Game lighting",whole==AvatarShaderPreset::GameLighting)){emit(AvatarActionKind::SetWholePreset);if(action)action->preset=AvatarShaderPreset::GameLighting;}
-                if(layout)layout->whole_game=last_rect();
-                if(ImGui::Selectable("Matte",whole==AvatarShaderPreset::Matte)){emit(AvatarActionKind::SetWholePreset);if(action)action->preset=AvatarShaderPreset::Matte;}
-                if(layout)layout->whole_matte=last_rect();
+                const auto choose=[&](AvatarShaderPreset preset,ModMenuRect* rect){
+                    if(ImGui::Selectable(preset_label(preset),whole==preset)){emit(AvatarActionKind::SetWholePreset);if(action)action->preset=preset;}
+                    if(rect)*rect=last_rect();};
+                choose(AvatarShaderPreset::GameLighting,layout?&layout->whole_game:nullptr);
+                choose(AvatarShaderPreset::Enhanced,layout?&layout->whole_enhanced:nullptr);
+                choose(AvatarShaderPreset::Fast,layout?&layout->whole_fast:nullptr);
+                choose(AvatarShaderPreset::Matte,layout?&layout->whole_matte:nullptr);
                 ImGui::EndCombo();
             }
             if(placement.material_model!=avatar.fingerprint){placement.material_model=avatar.fingerprint;placement.material_index=0;}
@@ -267,16 +311,18 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
                 ImGui::EndCombo();}
             std::optional<AvatarShaderPreset> selected;
             if(avatar.profile&&count)for(const auto& override:avatar.profile->overrides)if(override.index==placement.material_index&&override.name==(*avatar.materials)[override.index])selected=override.preset;
-            ImGui::SetNextItemWidth(inner);const bool overrides=ImGui::BeginCombo("##material-preset",!selected?"Use model preset":*selected==AvatarShaderPreset::Matte?"Matte":"Game lighting");
+            ImGui::SetNextItemWidth(inner);const bool overrides=ImGui::BeginCombo("##material-preset",!selected?"Use model preset":preset_label(*selected));
             if(layout)layout->material_override=last_rect();
             if(overrides){const auto choose=[&](const char* title,std::optional<AvatarShaderPreset> preset,ModMenuRect* rect){
                     if(ImGui::Selectable(title,selected==preset)){emit(AvatarActionKind::SetMaterialPreset);if(action){action->material=placement.material_index;action->preset=preset;}}if(rect)*rect=last_rect();};
-                choose("Use model preset",{},layout?&layout->inherit:nullptr);choose("Game lighting",AvatarShaderPreset::GameLighting,layout?&layout->override_game:nullptr);
+                choose("Use model preset",{},layout?&layout->inherit:nullptr);choose("Auto",AvatarShaderPreset::GameLighting,layout?&layout->override_game:nullptr);
+                choose("Enhanced",AvatarShaderPreset::Enhanced,layout?&layout->override_enhanced:nullptr);
+                choose("Fast",AvatarShaderPreset::Fast,layout?&layout->override_fast:nullptr);
                 choose("Matte",AvatarShaderPreset::Matte,layout?&layout->override_matte:nullptr);ImGui::EndCombo();}
             ImGui::EndDisabled();
             if(ImGui::Button("Reset material overrides",{inner,0}))emit(AvatarActionKind::ResetMaterials);
             if(layout)layout->reset_materials=last_rect();
-            ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Game lighting keeps the current look. Matte reduces shine. Individual overrides stay when the whole model preset changes. Changes save automatically for each model.");ImGui::SetWindowFontScale(1);ImGui::EndDisabled();
+            ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Auto uses supported material maps and effects; ordinary materials stay cheap. Enhanced enables supported effects. Fast reduces material effects. Matte reduces shine. Individual overrides stay when the model preset changes. Changes save automatically for each model.");ImGui::SetWindowFontScale(1);ImGui::EndDisabled();
         }
         ImGui::EndDisabled();
     }

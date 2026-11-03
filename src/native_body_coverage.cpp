@@ -105,7 +105,7 @@ NativeBodyCoverage classify_native_body_coverage(const NativeBodyShaderIdentity&
     if(identity.graphics_stage_count!=2||identity.tess_control_bytes||identity.tess_evaluation_bytes||
        identity.tess_control_digest!=empty||identity.tess_evaluation_digest!=empty)return {};
     if(!complete(identity.vertex_bytes,identity.vertex_digest)||!complete(identity.fragment_bytes,identity.fragment_digest))return {};
-    if(identity.vertex_bytes==8036&&identity.vertex_digest==sha("13e2ccd24b50e99c55a8001a6f77144f57931fa0f6c742dd9fe3f9dce59d06f4")&&
+    if(identity.vertex_bytes==8036&&identity.vertex_digest==sha("743159a78dbd804210bedf87e330aec87d80878874ad0c3eb73d9c252e420788")&&
        identity.fragment_bytes==5284&&identity.fragment_digest==sha("db9368b153c6ed5864ec205c3f1fd9b9c9a5dc1950481b468f8064916266d51f"))return chunklet(2);
     if(identity.vertex_bytes==35200&&identity.vertex_digest==sha("dc1b3a77be743a3bae9422d76d1f4c5f195405b851d3211eab6cdd70b7ed4dac")&&
        identity.fragment_bytes==3696&&identity.fragment_digest==sha("8f31a706d837f9c14acd2ba51d1325631e1e1a96961cab3acd4b27db0de293b0"))return chunklet(3);

@@ -200,7 +200,7 @@ void owners(Reader& m,const NativeOwnerImage& image,NativeOwnerCandidate& c){
     need(m.scalar(c.controller+o::controllerClientBackPointerOffset)==c.client,"controller backpointer mismatch");c.main=m.scalar(c.controller+o::controllerMainOwnerOffset);c.execution=m.scalar(add(c.main,e::mainExecutionOwnerOffset));
     c.registry=add(c.execution,e::executionRegistryOwnerOffset);c.entity_manager=add(c.execution,e::executionEntityManagerOffset);need(m.scalar(c.entity_manager+e::entityManagerOwnerOffset)==c.registry,"entity manager registry owner mismatch");
 }
-Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,NativeOwnerCandidate& c){
+Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,NativeOwnerCandidate& c,bool allow_absent=false,bool* absent=nullptr){
     auto selected=[&](const char* name)->const Registration&{auto it=std::find_if(registrations.begin(),registrations.end(),[&](const auto& r){return r.storage.name==name;});need(it!=registrations.end()&&it->storage.structure,"selected reflected runtime struct missing");return *it;};
     const auto& input=selected("keen::ecs::ClientPlayerInput");const auto& equipment=selected("keen::ecs::RenderEquipment");need(input.size==1536&&equipment.size==788,"selected registration size mismatch");c.input_registration=input.index;c.equipment_registration=equipment.index;
     U capacity=m.scalar(c.entity_manager+e::entityManagerCount);need(capacity&&capacity<=e::maximumEntities&&!(capacity&(capacity-1)),"invalid entity table capacity");U table=m.scalar(c.entity_manager+e::entityManagerTable),occupancy=m.scalar(c.entity_manager+e::entityManagerOccupancy),keys=m.scalar(c.entity_manager+e::entityManagerKeys);
@@ -208,16 +208,24 @@ Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,
     // The original local-player predicate3bb660 compares the entity ID with
     // LocalPlayerData+4. The service and original bindings are in the verified
     // prefix; this mutable selector belongs to every fresh capture/submission.
-    need(range(c.local_player_data,8),"local player service unavailable");c.entity_id=m.scalar<std::uint32_t>(add(c.local_player_data,4));need(c.entity_id,"local player selector absent");
+    if(!c.account){need(range(c.local_player_data,8),"local player service unavailable");c.entity_id=m.scalar<std::uint32_t>(add(c.local_player_data,4));}
+    need(c.entity_id,"local player selector absent");
     std::uint32_t hash=c.entity_id;for(unsigned i=0;i<2;++i)hash=((hash>>16)^hash)*0x45D9F3Bu;U start=(hash^(hash>>16))&(capacity-1);bool found=false;
     for(U probe=0;probe<std::min<U>(capacity,8192);++probe){const U slot=(start+probe)&(capacity-1);const auto occupied=m.scalar<std::uint8_t>(add(occupancy,slot/8));
-        need((occupied>>(slot%8))&1,"local entity outside original ID hash chain");if(m.scalar<std::uint32_t>(add(keys,slot*4))!=c.entity_id)continue;
+        if(!((occupied>>(slot%8))&1)){
+            if(allow_absent&&absent){*absent=true;return {};}
+            need(false,"local entity outside original ID hash chain");
+        }
+        if(m.scalar<std::uint32_t>(add(keys,slot*4))!=c.entity_id)continue;
         c.entity=m.scalar(add(table,slot*8));c.entity_slot=static_cast<std::uint32_t>(slot);found=true;break;}
     need(found,"local entity hash probe bound exceeded");need(range(c.entity,52),"selected entity range invalid");const auto header=m.span(add(c.entity,16),36);
     need(get<std::uint32_t>(header,0)==c.entity_id,"local entity header ID mismatch");c.entity_generation=get<std::uint32_t>(header,4);c.entity_row=get<std::uint32_t>(header,32);c.entity_layout=get<U>(header,8);c.entity_storage=get<U>(header,16);
     need(range(c.entity_layout,1)&&range(c.entity_storage,1)&&c.entity_row<=1u<<24,"invalid selected entity layout/storage/row");
     const U bit_size=((registrations.size()+63)/64)*8;need(bit_size<=e::componentOffsets&&registrations.size()*2<=e::componentStrides-e::componentOffsets,"component layout arrays overlap");
     const auto presence=m.span(c.entity_layout,bit_size);need((presence[input.index/8]>>(input.index%8))&1,"local selector entity has no ClientPlayerInput");
+    if(c.account){const auto& state=selected("keen::ecs::PlayerState");need(state.size==96&&((presence[state.index/8]>>(state.index%8))&1),"selected actor has no PlayerState");
+        const U offset=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentOffsets+state.index*2)),stride=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentStrides+state.index*2));
+        need(stride==96&&range(add(add(c.entity_storage,offset),mul(c.entity_row,stride)),stride),"selected PlayerState stride/address mismatch");}
     m.phase(Phase::equipment);
     need((presence[equipment.index/8]>>(equipment.index%8))&1,"RenderEquipment absent on local entity");
     for(const auto* entry:{&input,&equipment}){U offset=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentOffsets+entry->index*2));U stride=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentStrides+entry->index*2));need(stride==entry->size&&stride,"selected runtime component stride mismatch");U address=add(add(c.entity_storage,offset),mul(c.entity_row,stride));need(range(address,stride),"selected component address out of bounds");if(entry==&equipment)c.equipment=address;}
@@ -228,18 +236,18 @@ Bytes entity_equipment(Reader& m,const std::vector<Registration>& registrations,
     // model handles, each still validated against its allocation generation.
     return m.span(c.equipment,24u*sizeof(std::uint32_t));
 }
-void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate){
+void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate,bool players=false){
     const U registry_address=candidate.registry;
     U rows=m.scalar(add(registry_address,s::recordsPointerOffset)),count=m.scalar(add(registry_address,s::recordCountOffset));need(count&&count<=s::maximumRecords,"invalid service count");
     U bits=m.scalar(add(registry_address,s::mapBitsOffset)),capacity=m.scalar(add(registry_address,s::mapCapacityOffset)),keys=m.scalar(add(registry_address,s::mapKeysOffset)),values=m.scalar(add(registry_address,s::mapValuesOffset));auto used=m.scalar<std::uint32_t>(add(registry_address,s::mapCountOffset));need(capacity&&capacity<=s::maximumMapCapacity&&!(capacity&(capacity-1))&&used&&used<=std::min(count,capacity),"invalid service map dimensions");
     auto occupancy=m.span(bits,((capacity+63)/64)*8),keydata=m.span(keys,capacity*4),valuedata=m.span(values,capacity*2);auto bit=[&](U index){return (occupancy[index/8]>>(index%8))&1;};U population=0;for(U i=0;i<occupancy.size()*8;++i){if(i>=capacity)need(!bit(i),"service occupancy exceeds capacity");else population+=bit(i);}need(population==used,"service occupancy/count disagreement");
     std::vector<std::uint32_t> hashes;std::set<std::string> names;std::set<std::uint32_t> unique_hashes;
-    const char* required[]={"RenderScene","LocalPlayerData"};U selected[2]={},resolved[2]={};unsigned selected_count=0;
+    const char* required[]={"RenderScene","LocalPlayerData","BasicPlayerInfos"};U selected[3]={},resolved[3]={};unsigned selected_count=0;const unsigned required_count=players?3:2;
     for(U index=0;index<count;++index){U record=add(rows,mul(index,s::recordStride));auto view=m.span(record,16);std::string name=image.text(get<U>(view,0),get<U>(view,8),128,false);auto hash=m.scalar<std::uint32_t>(add(record,s::recordHashOffset));need(hash==fnv(name)&&names.insert(name).second&&unique_hashes.insert(hash).second,"duplicate service name/hash or hash mismatch");hashes.push_back(hash);
-        for(unsigned i=0;i<2;++i)if(name==required[i]){selected[i]=index;++selected_count;}}
-    need(selected_count==2,"required owner service missing or ambiguous");std::set<U> seen_indices;std::set<std::uint32_t> seen_keys;
+        for(unsigned i=0;i<required_count;++i)if(name==required[i]){selected[i]=index;++selected_count;}}
+    need(selected_count==required_count,"required owner service missing or ambiguous");std::set<U> seen_indices;std::set<std::uint32_t> seen_keys;
     for(U slot=0;slot<capacity;++slot)if(bit(slot)){U index=get<std::uint16_t>(valuedata,slot*2);auto hash=get<std::uint32_t>(keydata,slot*4);need(index<count&&seen_indices.insert(index).second&&seen_keys.insert(hash).second&&hashes[index]==hash,"service map record disagreement");}
-    for(unsigned i=0;i<2;++i){U slot=fnv(required[i])&(capacity-1);bool found=false;
+    for(unsigned i=0;i<required_count;++i){U slot=fnv(required[i])&(capacity-1);bool found=false;
         for(U probe=0;probe<capacity;++probe){need(bit(slot),"owner service outside original hash probe chain");if(get<std::uint32_t>(keydata,slot*4)==fnv(required[i])){need(get<std::uint16_t>(valuedata,slot*2)==selected[i],"owner service map selector mismatch");found=true;break;}slot=(slot+1)&(capacity-1);}need(found,"service hash probe bound exceeded");
         const U row=add(rows,mul(selected[i],s::recordStride));resolved[i]=m.scalar(add(row,s::recordNormalPointerOffset));need(range(resolved[i],i?8:0xA0)&&m.scalar(add(row,s::recordAlternatePointerOffset))==resolved[i],"owner service normal/alternate pointer mismatch");}
     const char* equipment_services[]={"BasicPlayerInfos","CharacterPresetRegistry","ColorGradientRegistry","MaterialFeedbackRegistry","g38_items::ItemRegistry","RenderScene"};
@@ -247,9 +255,9 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate){
     const char* ui_services[]={"BasicPlayerInfos","CharacterPresetRegistry","LocalPlayerData","g38_items::ItemRegistry","G38UiPlayData"};
     struct System {U descriptor,function;const char* name;const char* const* names;unsigned reads,writes,ordinal,owner;};
     const System contracts[]={
-        {0x1dff7a0,0x3891e0,"render_equipment_models_ag2",equipment_services,5,1,5,0},
-        {0x1dff0b0,0x388c20,"local_player_hide",hide_services,2,0,1,1},
-        {0x1dff300,0x388d80,"local_player_ui_render_setup",ui_services,4,1,2,1}};
+        {0x1dfe7e0,0x3891e0,"render_equipment_models_ag2",equipment_services,5,1,5,0},
+        {0x1dfe0f0,0x388c20,"local_player_hide",hide_services,2,0,1,1},
+        {0x1dfe340,0x388d80,"local_player_ui_render_setup",ui_services,4,1,2,1}};
     for(const auto& contract:contracts){const U descriptor=add(image.image.base,contract.descriptor),function=add(image.image.base,contract.function);
         need(image.inside(descriptor,0xC0)&&image.code(function),"system metadata/function outside pinned image");const auto desc=m.span(descriptor,0xC0);
         need(image.text(get<U>(desc,0),get<U>(desc,8),128,true)==contract.name&&get<U>(desc,16)==function,"original system full name/function mismatch");
@@ -264,6 +272,14 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate){
     constexpr std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};const U predicate_address=add(image.image.base,0x3bb660);need(image.code(predicate_address),"local predicate outside code");
     const auto code=m.span(predicate_address,sizeof predicate);need(std::memcmp(code.data(),predicate,sizeof predicate)==0,"original local predicate mismatch");
     candidate.render_scene=resolved[0];candidate.local_player_data=resolved[1];
+    if(players){
+        candidate.player_infos=resolved[2];need(range(candidate.player_infos,16*160),"player info service range invalid");
+        // Both original RenderEquipment and local UI systems bind this same named service at ordinal zero.
+        for(unsigned i:{0u,2u})for(U bindings:{s::systemNormalBindingsOffset,s::systemAlternateBindingsOffset})
+            need(m.scalar(add(system_rows[i],bindings))==candidate.player_infos,"original player info service binding mismatch");
+        for(const auto& pin:p::playerIdentity::code){const U at=add(image.image.base,pin.rva);need(image.code(at)&&image.inside(at,pin.size),"player identity code outside image");
+            const auto bytes=m.span(at,pin.size);need(std::memcmp(bytes.data(),pin.bytes,pin.size)==0,"original player identity code mismatch");}
+    }
 }
 void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& handles_input,NativeOwnerCandidate& c){
     U records=m.scalar(add(c.model_manager,0x1B0)),record_bytes=m.scalar(add(c.model_manager,0x1B8));U generations=m.scalar(add(c.model_manager,0x1C8)),capacity=m.scalar(add(c.model_manager,0x1D0));
@@ -276,8 +292,8 @@ void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& h
     // Current wrapper is exactly 12 bytes: pointer owner + low-flag-free index.
     auto wrapper=m.span(add(c.writer,8),12);U owner=get<U>(wrapper,0);auto index=get<std::uint32_t>(wrapper,8);need(index<=65535&&range(owner,0x290),"current writer resource wrapper invalid");
     U table=m.scalar(add(owner,0x268)),count=m.scalar(add(owner,0x270)),dims=m.scalar(add(owner,0x280)),dimension_count=m.scalar(add(owner,0x288));need(count&&count<=65535&&dimension_count==count&&index<count&&range(table,count*8)&&range(dims,count*16),"resource table dimensions/bounds mismatch");
-    U device=m.scalar(add(owner,8));need(range(device,0x280),"resource GPU device invalid");U interface=m.scalar(add(device,0x278));need(range(interface,8),"GPU backend interface invalid");U vtable=m.scalar(interface);need(image.inside(add(image.image.base,0x1dc7cf0),0x68)&&vtable==add(image.image.base,0x1dc7cf0),"GPU backend vtable mismatch");
-    U thunk=m.scalar(add(vtable,0x60));need(thunk==add(image.image.base,0xfd30d0)&&image.code(thunk),"GPU buffer constructor thunk mismatch");c.resource_object=m.scalar(add(table,U(index)*8));auto dimension=m.span(add(dims,U(index)*16),16),prefix=m.span(c.resource_object,32);U size=get<U>(prefix,8),buffer=get<U>(prefix,24);auto usage=get<std::uint32_t>(prefix,16);
+    U device=m.scalar(add(owner,8));need(range(device,0x280),"resource GPU device invalid");U interface=m.scalar(add(device,0x278));need(range(interface,8),"GPU backend interface invalid");U vtable=m.scalar(interface);need(image.inside(add(image.image.base,0x1dc6cf0),0x68)&&vtable==add(image.image.base,0x1dc6cf0),"GPU backend vtable mismatch");
+    U thunk=m.scalar(add(vtable,0x60));need(thunk==add(image.image.base,0xfd30b0)&&image.code(thunk),"GPU buffer constructor thunk mismatch");c.resource_object=m.scalar(add(table,U(index)*8));auto dimension=m.span(add(dims,U(index)*16),16),prefix=m.span(c.resource_object,32);U size=get<U>(prefix,8),buffer=get<U>(prefix,24);auto usage=get<std::uint32_t>(prefix,16);
     need(get<std::uint32_t>(prefix,0)==0x50001,"native buffer object tag mismatch");need(size==total&&size==get<U>(dimension,0)&&usage==0x13&&usage==get<std::uint32_t>(dimension,8),"native buffer size/usage mismatch");need(buffer,"native buffer is zero");c.native_buffer=buffer;c.native_buffer_bytes=size;
 }
 void models_and_buffer(Reader& m,Image& image,const Bytes& equipment,NativeOwnerCandidate& c){
@@ -408,9 +424,55 @@ bool capture_owner_after_verified_prefix(const NativeOwnerMemory& memory,const N
 bool capture_native_owner(const NativeOwnerMemory& memory,const NativeOwnerImage& identity,NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
     return capture_owner_complete(memory,identity,out,why,limits,stats,nullptr);
 }
+namespace {
+template<class T> T guarded_value(const NativeOwnerCandidate& c,U address){
+    for(const auto& g:c.guards)if(address>=g.address&&sizeof(T)<=g.bytes.size()&&address-g.address<=g.bytes.size()-sizeof(T)){
+        T value;std::memcpy(&value,g.bytes.data()+std::size_t(address-g.address),sizeof value);return value;}
+    need(false,"player owner metadata lacks consumed guard");return T{};
+}
+void player_candidate_metadata(const NativeOwnerCandidate& c){
+    need(image_identity(c.image)&&c.entity&&c.entity_id&&c.entity_id<=16&&c.account&&c.connection&&c.player_infos&&
+        c.player_record==add(c.player_infos,U(c.entity_id-1)*160)&&(c.connection&63)==c.entity_id-1&&
+        !c.models.empty()&&c.models.size()<=24&&!c.guards.empty(),"invalid player owner association");
+    need(guarded_value<std::uint32_t>(c,c.player_record)==c.entity_id&&guarded_value<std::uint32_t>(c,add(c.player_record,4))==c.connection&&
+        guarded_value<U>(c,add(c.player_record,8))==c.account,"player owner metadata disagrees with retained association");
+    need(guarded_value<std::uint32_t>(c,add(c.entity,16))==c.entity_id&&guarded_value<std::uint32_t>(c,add(c.entity,20))==c.entity_generation&&
+        guarded_value<U>(c,add(c.entity,24))==c.entity_layout&&guarded_value<U>(c,add(c.entity,32))==c.entity_storage&&
+        guarded_value<std::uint32_t>(c,add(c.entity,48))==c.entity_row,"player entity metadata disagrees with retained header");
+    const U table=guarded_value<U>(c,add(c.entity_manager,e::entityManagerTable)),keys=guarded_value<U>(c,add(c.entity_manager,e::entityManagerKeys));
+    need(guarded_value<U>(c,add(table,U(c.entity_slot)*8))==c.entity&&guarded_value<std::uint32_t>(c,add(keys,U(c.entity_slot)*4))==c.entity_id,"player entity hash slot metadata mismatch");
+    const auto registrations=guarded_value<U>(c,add(c.registry,8));
+    need(guarded_value<std::uint32_t>(c,add(registrations,U(c.input_registration)*256+32))==fnv("keen::ecs::ClientPlayerInput")&&
+        guarded_value<std::uint32_t>(c,add(registrations,U(c.equipment_registration)*256+32))==fnv("keen::ecs::RenderEquipment"),"player component registration metadata mismatch");
+    const auto offset=guarded_value<std::uint16_t>(c,add(c.entity_layout,e::componentOffsets+U(c.equipment_registration)*2));
+    const auto stride=guarded_value<std::uint16_t>(c,add(c.entity_layout,e::componentStrides+U(c.equipment_registration)*2));
+    need(stride==788&&c.equipment==add(add(c.entity_storage,offset),mul(c.entity_row,stride)),"player equipment metadata mismatch");
+    need(guarded_value<U>(c,add(c.render_scene,0x98))==c.model_manager&&guarded_value<U>(c,add(c.model_manager,0x948))==c.writer&&
+        guarded_value<U>(c,add(c.model_manager,0x1d0))==c.instance_capacity&&
+        guarded_value<std::uint32_t>(c,add(c.writer,0xc0))==c.instance_capacity&&guarded_value<std::uint32_t>(c,add(c.writer,0xc4))==c.instance_extra&&
+        c.native_buffer_bytes==(U(c.instance_capacity)+c.instance_extra)*128&&
+        guarded_value<U>(c,add(c.resource_object,24))==c.native_buffer&&guarded_value<U>(c,add(c.resource_object,8))==c.native_buffer_bytes,
+        "player native allocation metadata mismatch");
+    const U records=guarded_value<U>(c,add(c.model_manager,0x1b0)),generations=guarded_value<U>(c,add(c.model_manager,0x1c8));
+    unsigned handles=0;for(unsigned slot=0;slot<24;++slot)handles+=guarded_value<std::uint32_t>(c,add(c.equipment,U(slot)*4))!=0;
+    need(handles==c.models.size(),"player model list is incomplete");std::set<std::uint32_t> slots,indices;
+    for(const auto& model:c.models){need(model.equipment_slot<24&&model.index<c.instance_capacity&&model.generation<=255&&
+        model.handle==((model.generation<<24)|model.index)&&model.handle==guarded_value<std::uint32_t>(c,add(c.equipment,U(model.equipment_slot)*4))&&
+        model.record==add(records,mul(model.index,432))&&guarded_value<std::uint8_t>(c,add(generations,model.index))==model.generation&&
+        slots.insert(model.equipment_slot).second&&indices.insert(model.index).second,"player model metadata disagrees with consumed equipment");}
+}
+}
 bool revalidate_native_owner(const NativeOwnerMemory& memory,NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept{
     if(stats){*stats={};stats->phase=Phase::submission_verify;stats->failure_location=Location::validation;stats->guard_total=candidate.guards.size();}
-    why.clear();try{need(image_identity(candidate.image)&&candidate.native_buffer&&candidate.native_buffer_bytes&&candidate.entity&&candidate.entity_id&&!candidate.models.empty()&&candidate.models.size()<=24&&!candidate.guards.empty(),"invalid native owner candidate");Reader m(memory,limits,stats);m.verify(candidate.guards.view());return true;
+    why.clear();try{need(image_identity(candidate.image)&&candidate.native_buffer&&candidate.native_buffer_bytes&&candidate.entity&&candidate.entity_id&&!candidate.models.empty()&&candidate.models.size()<=24&&!candidate.guards.empty(),"invalid native owner candidate");
+        auto bounded=limits;
+        if(candidate.account||candidate.connection||candidate.player_infos||candidate.player_record){
+            const U started=memory.work_milliseconds();player_candidate_metadata(candidate);const U now=memory.work_milliseconds();
+            bounded.max_milliseconds=std::min<U>(bounded.max_milliseconds,40);
+            need(now>=started&&now-started<bounded.max_milliseconds,"player owner metadata deadline exceeded");
+            bounded.max_milliseconds-=now-started;
+        }
+        Reader m(memory,bounded,stats);m.verify(candidate.guards.view());return true;
     }catch(const Rejected& failure){reason_set(why,failure.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"owner revalidation allocation/internal failure");}candidate={};return false;
 }
 namespace {
@@ -481,5 +543,143 @@ bool NativeOwnerCache::capture(const NativeOwnerMemory& memory,const NativeOwner
     }
     if(reused)*reused=accepted&&hit;
     return accepted;
+}
+}
+
+namespace evrm { namespace {
+void validate_player_targets(const std::vector<NativePlayerIdentity>& targets){
+    need(!targets.empty()&&targets.size()<=16,"requested player count outside roster bound");
+    std::set<U> accounts;std::set<std::uint32_t> actors,connections;unsigned locals=0;
+    for(const auto& t:targets){
+        need(t.account&&t.entity_id&&t.entity_id<=16&&t.connection&&(t.connection&63)==t.entity_id-1&&
+            accounts.insert(t.account).second&&actors.insert(t.entity_id).second&&connections.insert(t.connection).second,
+            "invalid or duplicate requested player association");
+        locals+=t.local;need(locals<=1,"multiple requested local player associations");
+    }
+}
+enum class PlayerGroupMode { Identity, Strict, Available };
+bool capture_player_group(const NativeOwnerMemory& memory,const NativeOwnerImage& identity,NativePlayerRoster& out,
+    std::vector<NativePlayerOwnerResult>& candidates,NativeOwnerGuards& proof,PlayerGroupMode mode,std::string& why,const NativeOwnerLimits& requested,NativeOwnerObservationStats* stats,
+    NativeOwnerCandidate& saved,std::shared_ptr<const NativeOwnerCachePrefix>& decoded,const NativeOwnerMemory*& source)noexcept {
+    const auto image_identity_copy=identity;out={};candidates.clear();proof={};why.clear();if(stats)*stats={};
+    // A whole roster shares one Reader and one absolute 40ms work allowance.
+    auto limits=requested;limits.max_milliseconds=std::min<U>(limits.max_milliseconds,40);
+    try {
+        Reader m(memory,limits,stats);const bool reuse=source==&memory&&decoded&&!saved.guards.empty()&&same_owner_image(saved.image,image_identity_copy);
+        if(!reuse){saved={};decoded.reset();source=nullptr;}
+        NativeOwnerCandidate prefix;
+        if(reuse){m.phase(Phase::capture_verify);m.verify(saved.guards.view());prefix=saved;m.guards.assign(saved.guards.begin(),saved.guards.end());}
+        else {
+            prefix.image=image_identity_copy;Image image(m,prefix.image);m.phase(Phase::owners);owners(m,prefix.image,prefix);
+            m.phase(Phase::registry);auto registrations=registry(m,image,prefix.registry);m.phase(Phase::services);service_owners(m,image,prefix,true);
+            auto metadata=std::make_shared<NativeOwnerCachePrefix>();metadata->registrations=std::move(registrations);metadata->executable=std::move(image.executable);metadata->guard_count=m.guards.size();decoded=std::move(metadata);
+        }
+        Image image(m,prefix.image,*decoded);const auto prefix_count=m.guards.size();m.phase(Phase::census);
+        const auto local=m.scalar<std::uint32_t>(add(prefix.local_player_data,4));need(local&&local<=16,"explicit local actor selector absent or outside roster");
+        std::set<U> accounts;std::set<std::uint32_t> connections;NativePlayerRoster roster;unsigned local_count=0;
+        // Guard scalar prefixes only. No display-name or other player payload reads.
+        for(unsigned slot=0;slot<16;++slot){const auto bytes=m.span(add(prefix.player_infos,U(slot)*160),16);
+            const auto actor=get<std::uint32_t>(bytes,0),connection=get<std::uint32_t>(bytes,4);const auto account=get<U>(bytes,8);
+            if(!connection){need(!actor,"inactive player actor mismatch");continue;}
+            need(actor==slot+1&&(connection&63)==slot&&account,"original connection/actor/slot mapping mismatch");
+            need(accounts.insert(account).second&&connections.insert(connection).second,"ambiguous player account/connection association");
+            roster.players.push_back({account,actor,connection,actor==local});local_count+=actor==local;
+        }
+        need(local_count==1,"local selector has no unique current player association");
+        std::set<std::uint32_t> model_indices;std::set<U> entity_addresses;
+        for(const auto& player:roster.players){if(mode==PlayerGroupMode::Identity)break;auto c=prefix;c.guards={};c.models.clear();c.account=player.account;c.connection=player.connection;c.entity_id=player.entity_id;c.player_record=add(prefix.player_infos,U(player.entity_id-1)*160);
+            m.phase(Phase::census);bool absent=false;
+            const auto equipment=entity_equipment(m,decoded->registrations,c,mode==PlayerGroupMode::Available&&!player.local,&absent);
+            if(absent){candidates.push_back({player,NativePlayerOwnerStatus::EntityAbsent,{}});continue;}
+            m.phase(Phase::models);models_and_buffer(m,image,equipment,c);
+            need(entity_addresses.insert(c.entity).second,"overlapping player entities");
+            for(const auto& model:c.models)need(model_indices.insert(model.index).second,"overlapping player equipment model ownership");
+            candidates.push_back({player,NativePlayerOwnerStatus::Ready,std::move(c)});
+        }
+        m.phase(Phase::capture_verify);m.verify(m.guards);const U now=memory.work_milliseconds();m.check(Location::finalcheck);
+        NativeOwnerGuards all(std::move(m.guards));for(auto& row:candidates)if(row.status==NativePlayerOwnerStatus::Ready){auto& c=row.candidate;c.guards=all;c.read_calls=m.calls;c.read_bytes=m.bytes;c.elapsed_milliseconds=now-m.started;}
+        proof=all;
+        if(!reuse){std::vector<NativeOwnerGuard> prefix_guards(all.begin(),all.begin()+prefix_count);prefix.guards=std::move(prefix_guards);saved=std::move(prefix);source=&memory;}
+        m.check(Location::finalcheck);roster.observed_milliseconds=memory.milliseconds();out=std::move(roster);return true;
+    }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"player ownership observation unavailable");}
+    saved={};decoded.reset();source=nullptr;candidates.clear();proof={};out={};return false;
+}
+}
+bool NativeOwnerCache::players(const NativeOwnerMemory& memory,const NativeOwnerImage& image,NativePlayerRoster& out,std::string& why,const NativeOwnerLimits& limits)noexcept {
+    std::vector<NativePlayerOwnerResult> candidates;NativeOwnerGuards proof;return capture_player_group(memory,image,out,candidates,proof,PlayerGroupMode::Identity,why,limits,nullptr,player_prefix_,player_decoded_,player_source_);
+}
+bool NativeOwnerCache::capture_players(const NativeOwnerMemory& memory,const NativeOwnerImage& image,const std::vector<NativePlayerIdentity>& targets,std::vector<NativeOwnerCandidate>& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept {
+    const auto identity=image;out.clear();why.clear();if(stats)*stats={};const U started=memory.work_milliseconds();
+    try{
+        validate_player_targets(targets);
+        NativePlayerRoster roster;std::vector<NativePlayerOwnerResult> candidates;NativeOwnerGuards proof;
+        if(!capture_player_group(memory,identity,roster,candidates,proof,PlayerGroupMode::Strict,why,limits,stats,player_prefix_,player_decoded_,player_source_))return false;
+        std::vector<NativeOwnerCandidate> selected;selected.reserve(targets.size());
+        for(const auto& target:targets){bool found=false;
+            for(std::size_t i=0;i<roster.players.size();++i){const auto& p=roster.players[i];
+                if(p.account==target.account&&p.entity_id==target.entity_id&&p.connection==target.connection&&p.local==target.local){selected.push_back(std::move(candidates[i].candidate));found=true;break;}}
+            need(found,"requested player association is no longer current");
+        }
+        const U finished=memory.work_milliseconds();
+        if(stats){stats->elapsed_milliseconds=finished>=started?finished-started:0;stats->clock_regressed=stats->clock_regressed||finished<started;}
+        need(finished>=started&&finished-started<std::min<U>(limits.max_milliseconds,40),"player owner batch deadline exceeded");
+        out=std::move(selected);return true;
+    }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){reason_set(why,"player owner batch unavailable");}
+    out.clear();return false;
+}
+NativePlayerOwnerBatch NativeOwnerCache::capture_available_players(const NativeOwnerMemory& memory,const NativeOwnerImage& image,const std::vector<NativePlayerIdentity>& targets,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept {
+    const auto identity=image;why.clear();if(stats)*stats={};const U started=memory.work_milliseconds();
+    try{
+        validate_player_targets(targets);
+        NativePlayerRoster roster;std::vector<NativePlayerOwnerResult> current;NativeOwnerGuards proof;
+        if(!capture_player_group(memory,identity,roster,current,proof,PlayerGroupMode::Available,why,limits,stats,player_prefix_,player_decoded_,player_source_))return {};
+        NativePlayerOwnerBatch batch;batch.players.reserve(targets.size());
+        for(const auto& target:targets){NativePlayerOwnerResult row;row.identity=target;
+            for(auto& present:current){const auto& p=present.identity;
+                if(p.account==target.account&&p.entity_id==target.entity_id&&p.connection==target.connection&&p.local==target.local){row=std::move(present);break;}}
+            batch.players.push_back(std::move(row));
+        }
+        const U finished=memory.work_milliseconds();
+        if(stats){stats->elapsed_milliseconds=finished>=started?finished-started:0;stats->clock_regressed=stats->clock_regressed||finished<started;}
+        need(finished>=started&&finished-started<std::min<U>(limits.max_milliseconds,40),"player owner batch deadline exceeded");
+        batch.proof=std::move(proof);batch.valid=true;return batch;
+    }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){reason_set(why,"available player owner batch unavailable");}
+    return {};
+}
+bool NativeOwnerCache::capture_player(const NativeOwnerMemory& memory,const NativeOwnerImage& image,const NativePlayerIdentity& requested,NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept {
+    const auto target=requested;const auto identity=image;out={};
+    try{std::vector<NativeOwnerCandidate> candidates;
+        if(!capture_players(memory,identity,std::vector<NativePlayerIdentity>{target},candidates,why,limits,stats))return false;
+        out=std::move(candidates.front());return true;
+    }catch(...){reason_set(why,"player owner capture unavailable");return false;}
+}
+bool capture_native_players(const NativeOwnerMemory& memory,const NativeOwnerImage& image,NativePlayerRoster& out,std::string& why,const NativeOwnerLimits& limits)noexcept {
+    NativeOwnerCache cache;return cache.players(memory,image,out,why,limits);
+}
+bool capture_native_player_owner(const NativeOwnerMemory& memory,const NativeOwnerImage& image,const NativePlayerIdentity& player,NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept {
+    NativeOwnerCache cache;return cache.capture_player(memory,image,player,out,why,limits,stats);
+}
+}
+
+namespace evrm {
+bool revalidate_native_player_owners(const NativeOwnerMemory& memory,std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& requested,NativeOwnerObservationStats* stats)noexcept {
+    const U started=memory.work_milliseconds();why.clear();if(stats){*stats={};stats->phase=Phase::submission_verify;stats->failure_location=Location::validation;}
+    try{
+        need(!candidates.empty()&&candidates.size()<=16,"player owner batch size invalid");
+        const auto& first=candidates.front();need(!first.guards.empty(),"player owner batch has no guards");
+        std::set<U> accounts,entities;std::set<std::uint32_t> indices;
+        for(const auto& c:candidates){
+            need(&c.guards.view()==&first.guards.view()&&same_owner_image(c.image,first.image)&&c.player_infos==first.player_infos&&
+                c.model_manager==first.model_manager&&c.native_buffer==first.native_buffer,"heterogeneous player owner batch");
+            player_candidate_metadata(c);need(accounts.insert(c.account).second&&entities.insert(c.entity).second,"duplicate player owner batch subject");
+            for(const auto& model:c.models)need(indices.insert(model.index).second,"overlapping player owner batch model");
+        }
+        auto limits=requested;limits.max_milliseconds=std::min<U>(limits.max_milliseconds,40);const U now=memory.work_milliseconds();
+        need(now>=started&&now-started<limits.max_milliseconds,"player owner batch deadline exceeded");limits.max_milliseconds-=now-started;
+        Reader m(memory,limits,stats);m.phase(Phase::submission_verify);m.verify(first.guards.view());
+        const U finished=memory.work_milliseconds();if(stats){stats->elapsed_milliseconds=finished>=started?finished-started:0;stats->clock_regressed=stats->clock_regressed||finished<started;}
+        need(finished>=started&&finished-started<std::min<U>(requested.max_milliseconds,40),"player owner batch deadline exceeded");return true;
+    }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"player owner batch revalidation unavailable");}
+    candidates.clear();return false;
 }
 }

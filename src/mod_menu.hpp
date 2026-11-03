@@ -8,8 +8,9 @@ struct ModMenuPlacement {bool initialized=false,dragging=false;float x=0,y=0,gra
     bool appearance_expanded=false,report_include_image=false;std::uint32_t material_index=0;std::string material_model;};
 struct ModMenuLayout {float width=0,height=0,scroll_max_y=0;ModMenuRect voice,expand,strength,sensitivity,smoothing,close,title;
     ModMenuRect source_game,source_microphone,microphone_device,default_device,first_device;
-    ModMenuRect replacement_toggle,model,second_model,browse,refresh_models,cancel_model,appearance,whole,whole_game,whole_matte;
-    ModMenuRect material,second_material,material_override,inherit,override_game,override_matte,reset_materials;
+    ModMenuRect replacement_toggle,model,second_model,browse,refresh_models,cancel_model,appearance,whole,whole_game,whole_enhanced,whole_fast,whole_matte;
+    ModMenuRect player,second_player;
+    ModMenuRect material,second_material,material_override,inherit,override_game,override_enhanced,override_fast,override_matte,reset_materials;
     ModMenuRect report_create,report_image,report_include,report_text,report_cancel,report_folder;bool report_preview_visible=false;};
 void configure_mod_menu(float dpi,bool srgb);
 void feed_mod_menu_input(const ModInputBatch&,float x,float y,ModMenuPlacement&,float dpi=1);

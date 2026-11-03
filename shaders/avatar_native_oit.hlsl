@@ -1,4 +1,5 @@
-// Private continuous-alpha native-format OIT diffuse subset.
+// Private continuous-alpha native-format OIT diffuse subset, with the legacy
+// MToon base ceiling and exposure-bounded reflective additions.
 // No atmosphere, fog, water, specular or native auxiliary-mask semantics.
 #include "avatar_native.hlsl"
 #include "native_oit_limits.hlsli"
@@ -10,7 +11,11 @@ struct NativeForwardConstants { float4 words[6]; };
 [[vk::binding(9,EVRM_NATIVE_DESCRIPTOR_SET)]] Texture3D<float> directionalVisibility;
 [[vk::binding(10,EVRM_NATIVE_DESCRIPTOR_SET)]] SamplerState volumeSampler;
 struct OitOut { float4 accumulation:SV_Target0; float reveal:SV_Target4; };
-OitOut ps_oit(VertexOut input) {
+OitOut ps_oit(VertexOut input
+#if EVRM_NATIVE_SURFACE
+    ,bool frontFace:SV_IsFrontFace
+#endif
+) {
     // Control-flow guard must dominate all borrowed lighting resources in SPIR-V.
     if(frame.control.x==0 || material.instance.w==0)discard;
     OitOut o; o.accumulation=0; o.reveal=0;
@@ -37,7 +42,16 @@ OitOut ps_oit(VertexOut input) {
     if(!all(isfinite(P)) || !isfinite(visibility))discard;
     // VRM emissive is our material extension, before exposure/premultiply.
     // The native diffuse subset contains no Lambert normal/direction factor.
-    const float3 L=(base.rgb*(P+sunColor*(visibility*sunFactor/(4.f*3.14159265358979323846f)))+material.emissive.rgb)*exposure;
+#if EVRM_NATIVE_SURFACE
+    EvrmSurfaceInput surfaceInput;
+    surfaceInput.normal=input.normal;surfaceInput.tangent=input.tangent;
+    surfaceInput.normalUv=input.normalUv;surfaceInput.rimUv=input.rimUv;
+    surfaceInput.view=input.view;surfaceInput.cameraUp=input.cameraUp;
+    const EvrmSurfaceResult detailed=evrm_surface_sample(surfaceInput,material.alpha.z!=0&&!frontFace);
+    const float3 L=evrm_forward_radiance(base.rgb,P+sunColor*(visibility*sunFactor/(4.f*3.14159265358979323846f)),detailed.lit,material.emissive.rgb,detailed.unlit,exposure,material.emissive.w==1.f);
+#else
+    const float3 L=evrm_forward_radiance(base.rgb,P+sunColor*(visibility*sunFactor/(4.f*3.14159265358979323846f)),float3(0,0,0),material.emissive.rgb,float3(0,0,0),exposure,material.emissive.w==1.f);
+#endif
     // Explicit bounded private HDR scope: uniform RGB scaling preserves hue/sign
     // and ordinary finite values; alpha and the native weight stay unchanged.
     if(!all(isfinite(L)))discard;

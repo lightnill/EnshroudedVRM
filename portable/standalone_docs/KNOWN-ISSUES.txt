@@ -1,79 +1,55 @@
-EnshroudedVRM0.3.3 targets Steam build26320373; previous0.3.2 targets26082781.
+EnshroudedVRM 0.4.0 — current bugs and incomplete features
 
-EnshroudedVRM 0.3.3 preview â€” coverage and limits
+This implementation is still buggy and incomplete. It is not at the intended
+quality/stability level. There is no Preview suffix in the release name.
 
-Desktop evidence covers Windows 10 build 19045 x64, Windows in C:\Windows,
-Vulkan loader 1.4.350.0 and Steam build 26320373. Startup,
-F8, model loading and original-character persistence have manual evidence.
-The higher-fog compatibility correction was manually checked. Owner-recovery,
-menu/readback lifetime and profiling paths have CPU regression coverage.
-This exact versioned package is not a completed all-scene or laptop validation.
-Windows 11, other loaders/Windows-directory layouts and combined loaders remain
-unverified. Check the exact-hash release evidence; do not infer extra coverage.
+Only Steam game build 26404966 is supported, executable SHA256
+ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618.
+Keep 0.3.3 for old build 26320373. Do not mix files from different releases.
 
-FOG, OWNERSHIP AND PERFORMANCE
-0.3.3 replaces the old fog snapshot extent restriction with a packed snapshot
-and checked actual allocation requirements, keeping the 64 MiB budget. A driver
-format/allocation limit can still decline replacement. Do not remove the budget.
-World ownership uses the explicit local-player selector and validated entity.
-Local inventory previews carry their own request/task/captured-pose association;
-survivor or unresolved subjects retain native models. Desktop checks passed
-inventory/survivor/inventory, equipment and title/character reload. This is not
-an all-scene/all-hardware guarantee. Source and context changes can intentionally
-decline replacement until fresh valid evidence is available.
-Large models can reduce FPS. Voxel-base stutters remain; they were reduced but
-not eliminated with the entire mod disabled. Local sampled CPU hook timings
-help investigate this. Scopes overlap and cannot be added as frame time; sparse
-samples can miss events/patterns and do not measure GPU duration. No gameplay
-FPS improvement is claimed. The original 250 ms pose limit and fresh owner
-verification remain; an expired pose is not held just to hide a fallback.
+SHADERS / IMPORTER
+Auto/Enhanced support standard normal maps and selected VRM0/VRM1 MToon
+matcap/rim maps and masks. This improves import compatibility; it does not prove
+that any unavailable user model is fixed. Full Unity/MToon, custom shaders,
+outlines, UV animation and arbitrary gloss/roughness masks are unsupported.
+Reflections, matcaps, transparency and low-light brightness can look incorrect.
+Matte does not necessarily remove authored reflective effects. Try Fast when
+Auto/Enhanced looks wrong. Native characters also show some night underlighting.
+16-bit PNGs decode into RGBA8; high-depth shading is not preserved.
+Large avatars may exhaust RAM/VRAM, stall or fail. F8 memory figures are estimates,
+not total process/driver memory; structural/decoder/device/allocation limits remain.
+Optional shader preparation runs in the background. Previews can remain native
+temporarily; basic rendering may be used until an enhanced variant is ready.
 
-INSTALLATION AND STARTUP
-An existing vulkan-1.dll from another mod is a conflict. Do not overwrite,
-rename or chain it. Only update a known EnshroudedVRM installation while the
-game is closed. Never copy a Windows system DLL into the game directory.
-A previously loaded system Vulkan loader or System32-only loading can bypass
-the game-local bootstrap. Nondefault Windows directories are unsupported.
-EML/ShroudForge observations for the old script route do not validate this
-standalone route. No multiplayer avatar synchronization is implemented.
-Administrator launches or explicit Vulkan layer overrides may prevent startup;
-those settings are respected. Network/linked paths and paths containing
-semicolons are declined. Use an ordinary local installation and Steam launch.
+PLAYERS / ANIMATION
+Other players default to native models. Assignments are local and remembered per
+account on this PC. Player N labels may change. Nothing sends model files or
+preferences to another client. Remote world models work; remote previews are not
+included. Shader profiles are shared by model content, not private to a player.
+OTHER PLAYERS' VISEMES / AUDIO LIP SYNC ARE NOT IMPLEMENTED.
+Voice source and mouth settings always animate You. Game voice needs active
+in-game voice chat; local microphone works offline and ignores game mute/PTT.
+Native armor is not fitted automatically to the VRM.
 
-Exact package/game checks precede optional hooks. Game updates or changed files
-can disable replacement while retaining the original character. Do not bypass
-compatibility checks. A layer manifest is held read-only until exit; close the
-game before replacing mod files. Unrelated Runtime JSON files are not exposed.
-No runtime entry means no F8 and possibly no fresh log. Treat only the current
-session marker as current evidence. Startup history and runtime logs are bounded.
-If package validation fails after runtime entry, only a fresh private diagnostic
-is attempted; preference import/services do not start just to report that error.
+FALLBACKS / PERFORMANCE
+Brief native-avatar fallbacks and stutters remain, including a short wall-only
+visibility gap. A remote weapon may appear before its replacement body. Desktop
+two-player diagnostics recorded brief submission declines recovering in about
+31-32 ms. Laptop first-minute history includes preparation gaps, a 38 ms mod
+submission peak and a 1.72-second CPU Present interval; these do not establish
+steady-state cost or the cause of the long interval. No FPS guarantee is made.
+Two-player replacement was checked on desktop and laptop. Coverage is limited.
 
-SETTINGS, VOICE AND MODELS
-One running game instance is supported. Settings are saved atomically under
-%LOCALAPPDATA%/EnshroudedVRM/State. Unavailable storage uses safe defaults and
-reports a save warning; administrator access is not requested. Existing model,
-material and voice limitations remain. Game voice needs an online-capable
-session with voice active; Local microphone works offline independently of
-game mute/PTT. Capture is opt-in; microphone audio is not recorded or uploaded.
-Embedded 16-bit PNG textures are normalized to RGBA8; large images can still
-exceed the checked temporary decode-workspace limits. Full MToon and native
-armor fitting remain future work. Use F8 Game lighting/Matte and per-material
-presets to tune appearance.
-
-DEBUG REPORTS
-F8 creates a local allowlisted ZIP; nothing is uploaded automatically. Fresh
-qualified Enshrouded XYZ coordinates use Y up and X/Z horizontal. Real-world
-location, actual voxel data, saves, personal paths, account/server identifiers,
-raw logs/settings, endpoint IDs, audio, models and memory dumps are omitted.
-Screenshots are off per report; preview and explicit inclusion are required.
-An included game image can show visible names/chat. Review before sharing.
-The text-only path has desktop manual evidence. Optional screenshot capture,
-map-coordinate interpretation and different hardware need broader manual tests.
-
-NEW GAME PATCH COVERAGE
-Desktop startup/F8, world avatar/equipment, correct inventory/survivor previews,
-title/character reload and both voice sources passed user checks. Fresh Ultra-fog
-hotspot, persistence, optional screenshot and laptop checks are not claimed.
-Exported reports omit voice history; source selection is the capture-time setting.
-The full local log can show earlier source switches, but may contain private data.
+REPORTS / STARTUP
+Reports cover bounded recent activity, not an entire session. Missing fields are
+marked unavailable; laptop graphics settings were absent in one validation report.
+Voice settings show the capture-time source, not complete audio-use history.
+Terrain context is observed rendering; actual voxel blocks/saves are not extracted.
+Coordinates are inside Enshrouded, never real-world location.
+Approved screenshots may include names/chat. Review before sharing. Do not share
+raw runtime.log, player-model-assignments.json, the installation key or local paths.
+Nothing uploads automatically.
+The retained bootstrap targets the default C:\Windows system Vulkan loader.
+Other Windows-directory layouts are unsupported. Another vulkan-1.dll conflicts;
+an already-loaded system loader may bypass the mod. Do not overwrite other mods'
+DLLs or disable antivirus/compatibility checks to force loading.

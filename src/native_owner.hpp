@@ -1,4 +1,5 @@
 #pragma once
+#include "native_player_identity.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -80,6 +81,8 @@ struct NativeOwnerCandidate {
     NativeOwnerImage image;
     std::uint64_t root=0, client=0, controller=0, main=0, execution=0, registry=0, entity_manager=0;
     std::uint64_t local_player_data=0;
+    std::uint64_t account=0,player_infos=0,player_record=0;
+    std::uint32_t connection=0;
     std::uint64_t entity=0, entity_layout=0, entity_storage=0, equipment=0;
     std::uint32_t entity_id=0, entity_generation=0, entity_slot=0, entity_row=0;
     std::uint32_t input_registration=0, equipment_registration=0;
@@ -91,9 +94,27 @@ struct NativeOwnerCandidate {
     std::size_t read_calls=0, read_bytes=0;
     std::uint64_t elapsed_milliseconds=0;
 };
+// Availability is an observation only. Unavailable rows carry no owner candidate.
+enum class NativePlayerOwnerStatus { Ready, EntityAbsent, AssociationUnavailable };
+struct NativePlayerOwnerResult {
+    NativePlayerIdentity identity;
+    NativePlayerOwnerStatus status=NativePlayerOwnerStatus::AssociationUnavailable;
+    NativeOwnerCandidate candidate;
+};
+struct NativePlayerOwnerBatch {
+    bool valid=false;
+    std::vector<NativePlayerOwnerResult> players;
+    // Same full positive/negative bank as every Ready candidate; no permission alone.
+    NativeOwnerGuards proof;
+};
+bool capture_native_players(const NativeOwnerMemory&,const NativeOwnerImage&,NativePlayerRoster&,std::string&,const NativeOwnerLimits& = {}) noexcept;
+bool capture_native_player_owner(const NativeOwnerMemory&,const NativeOwnerImage&,const NativePlayerIdentity&,NativeOwnerCandidate&,
+                                 std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
 bool capture_native_owner(const NativeOwnerMemory&, const NativeOwnerImage&, NativeOwnerCandidate&,
                           std::string&, const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
 // Clears candidate on failure. Checks every retained owned guard; no payload reads.
+bool revalidate_native_player_owners(const NativeOwnerMemory&,std::vector<NativeOwnerCandidate>&,std::string&,
+                                     const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
 bool revalidate_native_owner(const NativeOwnerMemory&, NativeOwnerCandidate&, std::string&,
                              const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
 
@@ -102,12 +123,24 @@ bool revalidate_native_owner(const NativeOwnerMemory&, NativeOwnerCandidate&, st
 struct NativeOwnerCachePrefix;
 class NativeOwnerCache {
     NativeOwnerCandidate cached_;
+    NativeOwnerCandidate player_prefix_;
+    std::shared_ptr<const NativeOwnerCachePrefix> player_decoded_;
+    const NativeOwnerMemory* player_source_=nullptr;
     // Decoded metadata only; usable after this call verifies its whole prefix.
     std::shared_ptr<const NativeOwnerCachePrefix> prefix_;
     const NativeOwnerMemory* source_=nullptr;
 public:
     bool capture(const NativeOwnerMemory&,const NativeOwnerImage&,NativeOwnerCandidate&,std::string&,
                  const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr,bool* reused=nullptr) noexcept;
-    void clear() noexcept {cached_={};prefix_.reset();source_=nullptr;}
+    bool players(const NativeOwnerMemory&,const NativeOwnerImage&,NativePlayerRoster&,std::string&,const NativeOwnerLimits& = {}) noexcept;
+    // One capped 40ms proof for the whole set; output order follows requested identities.
+    // Any stale, duplicate or ambiguous association clears the entire output.
+    bool capture_players(const NativeOwnerMemory&,const NativeOwnerImage&,const std::vector<NativePlayerIdentity>&,
+                         std::vector<NativeOwnerCandidate>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
+    NativePlayerOwnerBatch capture_available_players(const NativeOwnerMemory&,const NativeOwnerImage&,
+                         const std::vector<NativePlayerIdentity>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
+    bool capture_player(const NativeOwnerMemory&,const NativeOwnerImage&,const NativePlayerIdentity&,NativeOwnerCandidate&,std::string&,
+                        const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) noexcept;
+    void clear() noexcept {cached_={};prefix_.reset();source_=nullptr;player_prefix_={};player_decoded_.reset();player_source_=nullptr;}
 };
 }

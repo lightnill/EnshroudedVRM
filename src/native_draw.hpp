@@ -7,8 +7,10 @@ namespace evrm {
 struct NativeDrawCall {
     VkDescriptorSet set{};
     std::uint32_t first_index=0,index_count=0;
+    VkDescriptorSet surface_set{};
 };
-// Owns only the two private pipelines. The caller retains shaders/layout,
+// Owns the private Basic pipelines and an optional Enhanced GBuffer pipeline.
+// The caller retains shaders/layout,
 // descriptors and geometry until the original command buffer is retired.
 class NativeDrawPipelines {
 public:
@@ -18,6 +20,10 @@ public:
     ~NativeDrawPipelines();
     NativeDrawPipelines(const NativeDrawPipelines&)=delete;
     NativeDrawPipelines& operator=(const NativeDrawPipelines&)=delete;
+    // Install at most one successful Enhanced variant. Invalid/failed attempts
+    // leave Basic usable and may be retried. Caller serializes install/record.
+    bool install_surface_variant(VkPipelineLayout,VkShaderModule vertex,VkShaderModule fragment) noexcept;
+    bool surface_ready() const noexcept;
     // Requires matching native viewport/scissor/stencil dynamic state. Changes
     // only graphics pipeline/descriptors, restoring the complete native sets
     // through a retained layout with identical set definitions/push ranges.

@@ -45,10 +45,10 @@ public:
                  std::uint64_t source_generation) noexcept;
     void clear() noexcept;
     void disable() noexcept; // transient gate: keep the immutable forwarding relay
+    void disable_subject(const std::string&) noexcept;
+    void retain_subjects(const std::vector<std::string>&) noexcept;
 private:
     bool enabled_=false;
-    NativeToolSlotTarget target_;
-    std::array<std::uint64_t,8> identity_{};
     unsigned advance_notices_=0;
 };
 #ifdef EVRM_NATIVE_TOOL_SLOTS_TESTING

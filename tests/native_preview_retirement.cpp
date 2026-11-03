@@ -16,7 +16,7 @@ struct Native {
     std::unique_lock<std::mutex> native_source_guard(){
         // An existing observation completes immediately before the destroyer
         // acquires its source lock. This must not undo final retirement.
-        if(late_registration){evrm::native_preview_trace_history().configure(0x140000000ULL,44302336,30,99);late_registration=false;}
+        if(late_registration){evrm::native_preview_trace_history().configure(0x140000000ULL,44298240,30,99);late_registration=false;}
         return std::unique_lock<std::mutex>(mutex);
     }
     Memory* buffer_memory(){return &memory;}Memory* image_memory(){return &memory;}
@@ -33,11 +33,11 @@ template<class F>void observe_trace(const std::shared_ptr<State>&,F&&){}
 #define EVRM_EXPORT
 #include "actual_destroy.inc"
 int main(){try{
-    auto& trace=evrm::native_preview_trace_history();trace.configure(0x140000000ULL,44302336,30,99);
+    auto& trace=evrm::native_preview_trace_history();trace.configure(0x140000000ULL,44298240,30,99);
     vkDestroyBuffer(handle<VkDevice>(1),handle<VkBuffer>(30),nullptr);
     if(forwarded!=1||metadata_retired!=1)throw std::runtime_error("original destruction/metadata forwarding changed");
     if(trace.ticket(30,evrm::NativePreviewTraceStage::Bindings,1000))throw std::runtime_error("retirement was undone by a delayed source registration; reused handle remains traceable");
-    trace.configure(0x140000000ULL,44302336,30,100);
+    trace.configure(0x140000000ULL,44298240,30,100);
     if(!trace.ticket(30,evrm::NativePreviewTraceStage::Bindings,2000))throw std::runtime_error("freshly validated replacement allocation could not be traced");
     std::puts("PASS actual destruction: delayed registration cannot rearm retired/reused trace source");return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"FAIL preview retirement: %s\n",e.what());return 1;}}

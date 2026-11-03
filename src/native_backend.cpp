@@ -1,8 +1,11 @@
 #define VK_NO_PROTOTYPES
 #include "native_backend.hpp"
+#include "native_surface_material.hpp"
+#include "avatar_runtime.hpp"
 #include "fallback_diagnostics.hpp"
 #include "native_draw.hpp"
 #include "native_prepare_contract.hpp"
+#include "native_prepare_worker.hpp"
 #include "native_submit.hpp"
 #include "native_submit_timing.hpp"
 #include "native_clip_pipelines.hpp"
@@ -22,6 +25,8 @@
 #include "mouth_publication.hpp"
 #include "native_volume_snapshot.hpp"
 #include "native_oit_draw.hpp"
+#include "native_player_commit.hpp"
+#include "native_prepare_player.hpp"
 #include "runtime_log.hpp"
 #include "debug_report_sources.hpp"
 #include <algorithm>
@@ -130,6 +135,10 @@ struct SubmittedHistory {
 struct Bundle {
     Context& context;std::shared_ptr<const NativeAvatarPublication> pose;std::shared_ptr<NativeAvatarGpuAssets> assets;
     std::unique_ptr<PrivateBuffer> control,vertices,indices,materials;
+    NativeSurfaceSelection surface;
+    std::unique_ptr<PrivateBuffer> surface_materials,surface_vertices;
+    VkDeviceSize surface_stride=0;
+    VkDescriptorPool surface_pool{};
     std::shared_ptr<NativeSkinGpuFrame> skin;
     std::shared_ptr<PrivateBuffer> frame;
     std::shared_ptr<SubmittedHistory> previous,emission;
@@ -137,7 +146,11 @@ struct Bundle {
     VkDescriptorPool pool{};VkDescriptorSet prepare{};std::vector<NativeDrawCall> calls;
     VkDescriptorSet clip_set{};
     NativeMaterialPlan material_plan;
-    std::unique_ptr<NativeVolumeSnapshot> volume_snapshot;
+    std::shared_ptr<NativeVolumeSnapshot> volume_snapshot;
+    std::vector<std::shared_ptr<Bundle>> subjects;
+    std::unique_ptr<PrivateBuffer> common_gate;
+    std::shared_ptr<NativePlayerCommitBatch> common_commit;
+    bool pass_drawn=false;std::size_t shadow_view_start=0;
     std::array<NativeStorageImageBinding,2> volume_storage;
     std::array<NativeImageAllocationBinding,2> volume_allocations;
     NativeBoundState volume_bound;
@@ -186,7 +199,7 @@ struct Bundle {
     bool completion_observed=false,history_completion_observed=false;
     VkQueue submitted_queue{};
     explicit Bundle(Context& c):context(c){}
-    ~Bundle(){if(context.uncertain){if(volume_snapshot)volume_snapshot->quarantine();return;}if(shadow_pool)F(vkDestroyDescriptorPool)(context.device,shadow_pool,nullptr);if(oit_pool)F(vkDestroyDescriptorPool)(context.device,oit_pool,nullptr);if(pool)F(vkDestroyDescriptorPool)(context.device,pool,nullptr);}
+    ~Bundle(){if(context.uncertain){if(volume_snapshot)volume_snapshot->quarantine();if(common_commit)common_commit->quarantine();return;}if(surface_pool)F(vkDestroyDescriptorPool)(context.device,surface_pool,nullptr);if(shadow_pool)F(vkDestroyDescriptorPool)(context.device,shadow_pool,nullptr);if(oit_pool)F(vkDestroyDescriptorPool)(context.device,oit_pool,nullptr);if(pool)F(vkDestroyDescriptorPool)(context.device,pool,nullptr);}
 };
 struct Recording {
     bool eligible=false,tainted=false,compute_producer=false,pass_active=false,pass_drawn=false;
@@ -272,20 +285,20 @@ struct NativeBackend::Impl {
     unsigned owner_mapping_notices=0;
     std::array<std::uint64_t,8> owner_mapping_keys{};
     void discard_owner_hint()noexcept {pose_owner_state.revoke_preparation();}
-    using HistoryKey=std::tuple<std::uint64_t,std::uint32_t,std::uint32_t>;
+    using HistoryKey=std::tuple<std::uint64_t,std::uint32_t,std::uint32_t,std::string,std::uint64_t,std::uint32_t,std::uint64_t,std::uint32_t,std::uint32_t>;
     using HistoryBank=std::map<HistoryKey,std::shared_ptr<SubmittedHistory>>;
     std::shared_ptr<const HistoryBank> submitted_histories;
-    static HistoryKey history_key(VkBuffer source,VkExtent2D extent){return {reinterpret_cast<std::uintptr_t>(source),extent.width,extent.height};}
-    std::shared_ptr<SubmittedHistory> history_for(VkBuffer source,VkExtent2D extent)const {
+    static HistoryKey history_key(VkBuffer source,VkExtent2D extent,const NativeAvatarPublication* p=nullptr){return {reinterpret_cast<std::uintptr_t>(source),extent.width,extent.height,p?p->subject:std::string{},p?p->assignment_generation:0,p&&p->pose_owner?p->pose_owner->candidate.entity_generation:0,p?p->player_identity.account:0,p?p->player_identity.entity_id:0,p?p->player_identity.connection:0};}
+    std::shared_ptr<SubmittedHistory> history_for(VkBuffer source,VkExtent2D extent,const NativeAvatarPublication* pose=nullptr)const {
         const auto bank=std::atomic_load(&submitted_histories);if(!bank)return {};
-        const auto found=bank->find(history_key(source,extent));return found==bank->end()?std::shared_ptr<SubmittedHistory>{}:found->second;
+        const auto found=bank->find(history_key(source,extent,pose));return found==bank->end()?std::shared_ptr<SubmittedHistory>{}:found->second;
     }
     void discard_history()noexcept {std::atomic_store(&submitted_histories,std::shared_ptr<const HistoryBank>{});}
     void update_history(const HistoryKey& key,std::shared_ptr<SubmittedHistory> value){
         const auto previous=std::atomic_load(&submitted_histories);
         auto bank=previous?std::make_shared<HistoryBank>(*previous):std::make_shared<HistoryBank>();
         if(value)(*bank)[key]=std::move(value);else bank->erase(key);
-        while(bank->size()>4)bank->erase(bank->begin());
+        while(bank->size()>64)bank->erase(bank->begin());
         std::atomic_store(&submitted_histories,std::shared_ptr<const HistoryBank>(std::move(bank)));
     }
     bool independent_view(const Recording& other,const Bundle& b)const {
@@ -331,7 +344,7 @@ struct NativeBackend::Impl {
     void log_owner_mapping(const Bundle& bundle)noexcept {
         // Diagnostic correlation after successful native submission only. This
         // key never grants ownership or delays a current pose-age decision.
-        if(!bundle.menu_preview&&owner_mapping_notices<owner_mapping_keys.size()){
+        if(bundle.pose&&bundle.pose->subject.empty()&&!bundle.menu_preview&&owner_mapping_notices<owner_mapping_keys.size()){
             const auto epoch=bundle.pose?bundle.pose->source_buffer_epoch:0;
             std::uint64_t key=14695981039346656037ull;
             const auto add=[&](std::uint64_t value){key=(key^value)*1099511628211ull;};
@@ -354,6 +367,7 @@ struct NativeBackend::Impl {
         }
     }
     void retain_owner_hint(const Bundle& bundle)noexcept {
+        if(bundle.pose&&!bundle.pose->subject.empty())return;
         if(bundle.menu_preview){if(bundle.menu_owner.kind==NativeMenuOwnerKind::frontend)discard_owner_hint();return;}
         try{
             const auto existing=pose_owner_state.preparation_hint();
@@ -380,7 +394,7 @@ struct NativeBackend::Impl {
     }
     template<class F>void each_recording(F&& visit){for(auto& current:commands)each_view(current.first,visit);}
     void retire_views(VkCommandBuffer command,const char* completion){
-        each_view(command,[&](VkCommandBuffer native,Recording& recording){harvest_mixed(native,recording,completion);transparency_trace.reset(recording.transparency);});
+        each_view(command,[&](VkCommandBuffer native,Recording& recording){each_subject(recording,[&](Recording& s){harvest_mixed(native,s,completion);});transparency_trace.reset(recording.transparency);});
         completed_views.erase(command);commands.erase(command);
     }
     void next_view(VkCommandBuffer command,const NativePassState& pass){
@@ -431,12 +445,20 @@ struct NativeBackend::Impl {
     NativeBufferBinding latest_source;
     VkDescriptorSetLayout draw_set{},prepare_set{};VkPipelineLayout draw_layout{},prepare_layout{};VkPipeline prepare_pipeline{};
     VkShaderModule menu_prepare_shader{};VkPipeline menu_prepare_pipeline{};
+    std::unique_ptr<NativePrepareWorker> prepare_worker;
+    bool menu_prepare_failed=false;
     std::array<VkShaderModule,4> shaders{};std::unique_ptr<NativeDrawPipelines> draw_pipelines;
     VkDescriptorSetLayout shadow_set{};VkPipelineLayout shadow_layout{};std::array<VkShaderModule,2> shadow_shaders{};
     std::unique_ptr<NativeShadowDrawPipeline> shadow_pipeline;bool shadow_attempted=false;
     std::uint64_t shadow_caster_views=0,shadow_caster_draws=0;unsigned shadow_contract_notices=0;
     VkDescriptorSetLayout oit_set{};VkPipelineLayout oit_layout{};VkShaderModule oit_shader{};VkSampler volume_sampler{};
     std::unique_ptr<NativeOitDrawPipelines> oit_pipelines;
+    VkDescriptorSetLayout surface_set{},surface_oit_set{};
+    VkPipelineLayout surface_layout{},surface_oit_layout{};
+    VkPipeline surface_prepare{},surface_menu_prepare{};
+    std::array<VkShaderModule,5> surface_shaders{};
+    bool surface_failed=false,surface_menu_failed=false,surface_oit_failed=false;
+    std::unique_ptr<NativeAvatarAssetStager> surface_stager;
     NativeVolumeSnapshotCapabilities snapshot_caps;std::vector<std::uint32_t> snapshot_words;
     bool mixed_initialized=false,mixed_failed=false;
     VkQueue queue{};uint32_t family=UINT32_MAX;bool initialized=false,disabled=false,independent_blend=false,partially_bound=false;std::string last_reason;uint64_t permits=0;
@@ -446,6 +468,31 @@ struct NativeBackend::Impl {
     unsigned submission_decline_samples=0;
     FallbackEpisodes submission_gaps;
     FallbackEpisodes completion_gaps;
+    FallbackEpisodes player_owner_gaps;
+    // Observation only. Formatting/logging failure must never reach a caller's
+    // catch that changes the owner result. No identity or free-form reason is logged.
+    void observe_player_owners(bool success,unsigned stage,std::size_t requested,bool local_requested,
+        std::size_t selected,bool local_selected,std::uint64_t now,const NativeOwnerObservationStats* stats=nullptr,const char* reason=nullptr)noexcept{
+        try{
+            const auto event=success?player_owner_gaps.recovery(now):player_owner_gaps.failure(now);
+            if(!event.emit)return;
+            unsigned detail=0;const std::string_view text=reason?reason:"";
+            if(text=="inactive player actor mismatch")detail=1;
+            else if(text=="original connection/actor/slot mapping mismatch")detail=2;
+            else if(text=="ambiguous player account/connection association")detail=3;
+            else if(text=="local selector has no unique current player association")detail=4;
+            else if(text=="requested player association is no longer current")detail=5;
+            const NativeOwnerObservationStats empty{};const auto& progress=stats?*stats:empty;
+            log_event_lazy([&]{return std::string(success?"avatar-fallback.player-owner-recovered":"avatar-fallback.player-owner-gap")+
+                " episode="+std::to_string(event.episode)+" failures="+std::to_string(event.failures)+" gap-ms="+std::to_string(event.elapsed_ms)+
+                " stage="+std::to_string(stage)+" requested="+std::to_string(requested)+" selected="+std::to_string(selected)+
+                " local-requested="+std::to_string(local_requested)+" local-selected="+std::to_string(local_selected)+
+                " owner-phase="+std::to_string(unsigned(progress.phase))+" owner-failure="+std::to_string(unsigned(progress.failure_location))+
+                " captured-phase="+std::to_string(unsigned(progress.guard_capture_phase))+" detail-code="+std::to_string(detail)+
+                " calls="+std::to_string(progress.attempted_calls)+" bytes="+std::to_string(progress.attempted_bytes)+
+                " elapsed-ms="+std::to_string(progress.elapsed_milliseconds);});
+        }catch(...){}
+    }
     std::uint64_t shadow_probe_draws=0;
     uint32_t completion_cpu=0,completion_gpu=0;
     uint32_t completion_checkpoint=0,completion_mask=0;
@@ -467,6 +514,8 @@ struct NativeBackend::Impl {
             " suppressed-episodes="+std::to_string(event.suppressed_episodes)+" pose="+std::to_string(b.pose->serial)+
             " cpu-permit="+std::to_string(b.data.permit[0])+" controls="+std::to_string(gpu[0])+","+std::to_string(gpu[1])+","+
             std::to_string(gpu[2])+","+std::to_string(gpu[3])+" completion="+completion+fallback_event_summary(event);});
+        if(event.emit&&gpu[0]!=1&&b.data.permit[0]==1&&!b.subjects.empty())
+            log_event_lazy([&]{return player_preparation_diagnostic(recording.bundle);});
         if(b.skin&&b.skin->status_after_completion()!=0)try{log_event("native-skinning.rejected status="+std::to_string(b.skin->status_after_completion())+" pose-serial="+std::to_string(b.pose->serial));}catch(...){}
         if(history_completed<=4||history_completed%300==0)try {
             std::string menu_diagnostic;
@@ -606,6 +655,12 @@ struct NativeBackend::Impl {
         return true;
     }
     bool revalidate_owner(NativeOwnerCandidate& candidate,std::string& reason,NativeOwnerObservationStats* stats=nullptr,std::uint64_t milliseconds=40)const noexcept {
+        if(verifying_player_group){
+            if(stats)*stats={};
+            if(!player_group_verified||!verified_players)return false;
+            for(const auto& current:*verified_players)if(same_owner_selection(candidate,current)){candidate=current;return true;}
+            return false;
+        }
         if(stats)*stats={};
 #ifdef EVRM_NATIVE_BACKEND_TESTING
         if(test_owner_source)return test_owner_source->revalidate(candidate,reason,stats);
@@ -943,18 +998,32 @@ struct NativeBackend::Impl {
         if(replacement&&artifact_probe_file.empty())initialize_shadow();
         initialized=true;
     }
-    void initialize_menu_prepare(){
-        if(menu_prepare_pipeline)return;
-        if(!menu_prepare_shader)menu_prepare_shader=shader("native_menu_prepare.comp.spv");
-        VkComputePipelineCreateInfo pipeline{};pipeline.sType=VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;pipeline.layout=prepare_layout;
-        pipeline.stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;pipeline.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;
-        pipeline.stage.module=menu_prepare_shader;pipeline.stage.pName="cs_prepare";
-        checked(F(vkCreateComputePipelines)(context.device,VK_NULL_HANDLE,1,&pipeline,nullptr,&menu_prepare_pipeline),"Native menu prepare pipeline");
+    bool poll_prepare(NativePrepareWorker::Key key,VkShaderModule module,VkPipeline& pipeline,bool& failed)noexcept {
+      try{
+        if(pipeline)return true;
+        if(failed)return false;
+        if(!prepare_worker)prepare_worker=std::make_unique<NativePrepareWorker>(context.device,F(vkCreateComputePipelines),F(vkDestroyPipeline));
+        prepare_worker->request(key,prepare_layout,module);
+        const auto result=prepare_worker->poll(key,prepare_layout,module);
+        if(!result.complete)return false;
+        pipeline=result.pipeline;failed=result.result!=VK_SUCCESS;
+        try{const char* name=key==NativePrepareWorker::Key::Menu?"menu":key==NativePrepareWorker::Key::SurfaceWorld?"surface-world":"surface-menu";
+            log_event("native-prepare-compile key="+std::string(name)+" result="+std::to_string(result.result)+
+                " elapsed-ms="+std::to_string(result.milliseconds)+" ready="+std::to_string(bool(pipeline)));}catch(...){}
+        return bool(pipeline);
+      }catch(...){failed=true;return false;}
+    }
+    bool initialize_menu_prepare()noexcept {
+        try{
+            if(menu_prepare_failed)return false;
+            if(!menu_prepare_shader)menu_prepare_shader=shader("native_menu_prepare.comp.spv");
+            return poll_prepare(NativePrepareWorker::Key::Menu,menu_prepare_shader,menu_prepare_pipeline,menu_prepare_failed);
+        }catch(...){menu_prepare_failed=true;return false;}
     }
     void ensure_asset_stager(){
         if(asset_stager)return;
         if(!skinning_gpu)skinning_gpu=std::make_shared<NativeSkinningGpu>(context.device,context.get,context.memory,limits,shader_directory,&context.uncertain);
-        asset_stager=std::make_unique<NativeAvatarAssetStager>(context.device,context.get,set_loader,context.memory,skinning_gpu,&context.uncertain);
+        asset_stager=std::make_unique<NativeAvatarAssetStager>(context.device,context.get,set_loader,context.memory,limits.maxImageDimension2D,skinning_gpu,&context.uncertain);
     }
     bool source_current(const NativeBufferBinding& source) const {
         return metadata.live(source)&&(!(replacement||partially_bound)||
@@ -964,13 +1033,18 @@ struct NativeBackend::Impl {
         for(const auto& source:sources)if(!source_current(source))return false;
         return true;
     }
-    std::shared_ptr<Bundle> make_bundle(Recording& recording,VkCommandBuffer command) {
+#include "native_player_backend.inl"
+#include "native_surface_backend.inl"
+    std::shared_ptr<Bundle> make_bundle(Recording& recording,VkCommandBuffer command,
+        std::shared_ptr<const NativeAvatarPublication> selected={},std::shared_ptr<NativeAvatarGpuAssets> selected_assets={}) {
         struct Preparation {
             Impl& impl;NativeBufferBinding source;bool complete=false;
             ~Preparation(){if(impl.replacement&&!complete)impl.revoke_preparation(source);}
         } preparation{*this,{}};
         const auto bundle_started=std::chrono::steady_clock::now();
-        if(replacement)latest=view_publications;
+        const auto graphics_source=metadata.buffer_binding(metadata.bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS),2,4);
+        const auto latest=selected?selected:(replacement?publication_for(graphics_source.info.buffer):this->latest);
+        const auto assets=selected_assets?selected_assets:this->assets;
         const auto extent=std::to_string(recording.pass.extent.width)+"x"+std::to_string(recording.pass.extent.height);
         if(!initialized||!latest||!assets||latest->asset!=assets->avatar()||context.uncertain||commands.size()>512){
             notice("context-lifecycle extent="+extent+" initialized="+std::to_string(initialized)+" pose="+std::to_string(static_cast<bool>(latest))+" assets="+std::to_string(static_cast<bool>(assets))+" same-asset="+std::to_string(latest&&assets&&latest->asset==assets->avatar())+" uncertain="+std::to_string(context.uncertain)+" commands="+std::to_string(commands.size()),"context-lifecycle-"+extent);return{};}
@@ -983,7 +1057,7 @@ struct NativeBackend::Impl {
         if(replacement){
             const auto source=metadata.buffer_binding(graphics,2,4);
             preparation.source=source;
-            latest=publication_for(source.info.buffer);latest_source=metadata.buffer(source.info.buffer);
+            latest_source=metadata.buffer(source.info.buffer);
             if(!latest){report("no current publication for this native view allocation");return{};}
         }
         auto bundle=std::make_shared<Bundle>(context);bundle->pose=latest;bundle->assets=assets;bundle->compute_restore=compatible(compute);bundle->first_pass=recording.pass;
@@ -1023,7 +1097,13 @@ struct NativeBackend::Impl {
             }
             std::string reason;
             NativeOwnerObservationStats owner_stats;
-            const bool owner_captured=prepare_owner(bundle->cpu_owner,bundle->prepared_owner_hint,bundle->instances,reason,&owner_stats);
+            const bool explicit_owner=latest->pose_owner&&latest->player_identity.account;
+            bool owner_captured=false;
+            if(explicit_owner){bundle->cpu_owner=latest->pose_owner->candidate;
+                bundle->prepared_owner_hint=std::shared_ptr<const NativeOwnerCandidate>(latest->pose_owner,&latest->pose_owner->candidate);
+                owner_captured=native_pose_owner_matches_candidate(*latest->pose_owner,bundle->cpu_owner,bundle->instances,metadata.buffer_epoch())&&
+                    bundle->cpu_owner.account==latest->player_identity.account&&bundle->cpu_owner.entity_id==latest->player_identity.entity_id&&bundle->cpu_owner.connection==latest->player_identity.connection;
+            }else if(latest->subject.empty())owner_captured=prepare_owner(bundle->cpu_owner,bundle->prepared_owner_hint,bundle->instances,reason,&owner_stats);
             bool selected=false;
             if(owner_captured){
                 const bool pose_owner_matches=!latest->pose_owner||native_pose_owner_matches_candidate(*latest->pose_owner,
@@ -1032,12 +1112,14 @@ struct NativeBackend::Impl {
                 selected=pose_owner_matches&&make_native_body_mask(bundle->cpu_owner,latest->parts,bundle->instances,bundle->body_mask,reason)&&
                     select_native_owner_qualifiers(bundle->cpu_owner,latest->parts,latest->instance_qualifiers,bundle->qualified_parts,reason);
             }
-            if(!selected&&!latest->pose_owner){
+            if(!selected&&latest->subject.empty()&&!latest->pose_owner){
                 std::string menu_reason;
                 if(capture_menu_owner(bundle->menu_owner,menu_reason)){
                     bundle->menu_preview=true;
+                    // A pending/failed menu job declines only this preview.
+                    // It must not revoke a simultaneous world's preparation.
+                    if(!initialize_menu_prepare()){preparation.complete=true;return{};}
                     if(bundle->menu_owner.kind==NativeMenuOwnerKind::frontend)tool_slots.disable();
-                    initialize_menu_prepare();
                     selected=prepare_character_subject(*bundle,owner_captured,reason)&&make_native_menu_body_mask(bundle->menu_owner,latest->parts,latest->instance_qualifiers,
                         bundle->instances,bundle->body_mask,bundle->qualified_parts,reason);
                     if(selected)notice(bundle->menu_owner.kind==NativeMenuOwnerKind::character?
@@ -1073,6 +1155,11 @@ struct NativeBackend::Impl {
             notice("menu transparent materials use cutout preview; world BLEND unchanged","menu-cutout-preview");
         }
         if(bundle->material_plan.mixed)initialize_mixed();
+        bundle->surface=native_surface_active_selection(*latest->asset,
+            make_native_surface_selection(*latest->asset,latest->appearance.get()),assets->surface_selection());
+        if(!artifact_probe_file.empty()||
+           (bundle->surface.any()&&!initialize_surface(bundle->menu_preview,bundle->material_plan.mixed)))
+            bundle->surface=make_native_surface_selection(*latest->asset,&fast_surface_appearance());
         const auto resources_started=std::chrono::steady_clock::now();
         bundle->control=make_buffer(context,sizeof(NativePrepareControl),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         bundle->frame=make_buffer(context,bundle->material_plan.mixed?native_oit_prepared_bytes:
@@ -1088,7 +1175,7 @@ struct NativeBackend::Impl {
         const auto material_count=assets->avatar()->materials.size()+1;bundle->materials=make_buffer(context,stride*material_count,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         const auto probe_mode=artifact_mode(GetTickCount64());
         bundle->probe_mode=probe_mode;
-        const auto previous=history_for(bundle->instances.info.buffer,recording.pass.extent);
+        const auto previous=history_for(bundle->instances.info.buffer,recording.pass.extent,bundle->pose.get());
         if(previous&&previous->pose&&previous->frame&&previous->pose->asset==latest->asset&&previous->pose->appearance==latest->appearance&&
            (latest->presentation_serial?
                 previous->pose->presentation_serial&&previous->pose->presentation_serial<UINT64_MAX&&previous->pose->presentation_serial+1==latest->presentation_serial:
@@ -1107,7 +1194,8 @@ struct NativeBackend::Impl {
                     std::copy_n(previous->pose->geometry->vertices[i].position,3,vertices[i].previous_position);
             }
         }
-        if(latest->skinning)bundle->skin=skinning_gpu->frame(assets->skin(),*latest->skinning,{bundle->frame->handle,0,bundle->frame->size},bundle->previous?bundle->previous->geometry:nullptr,latest->mouth_weights);
+        try{make_surface_uniforms(*bundle);}catch(...){bundle->surface=make_native_surface_selection(*latest->asset,&fast_surface_appearance());bundle->surface_materials.reset();bundle->surface_vertices.reset();}
+        make_skin_frame(*bundle);
         try {
             bundle->emission=std::make_shared<SubmittedHistory>();bundle->emission->frame=bundle->frame;
             if(bundle->skin)bundle->emission->geometry=bundle->skin->geometry();
@@ -1156,7 +1244,11 @@ struct NativeBackend::Impl {
             for(uint32_t j=0;j<6;++j){auto& w=draw_writes[j];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=sets[i+1];w.dstBinding=j;w.descriptorCount=1;w.descriptorType=j==0||j==3?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:j==1?VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:j==2?VK_DESCRIPTOR_TYPE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;if(j==1||j==2)w.pImageInfo=&images[j-1];else w.pBufferInfo=&buf[j?j-2:0];}
             F(vkUpdateDescriptorSets)(context.device,draw_writes.size(),draw_writes.data(),0,nullptr);
         }
-        for(const auto index:bundle->material_plan.opaque_draws){const auto& draw=latest->geometry->draws[index];const auto material=draw.material<0?count-1:static_cast<uint32_t>(draw.material);if(material>=count)return{};bundle->calls.push_back({sets[material+1],draw.first_index,draw.index_count});}
+        std::vector<VkDescriptorSet> surface_sets(count);
+        if(bundle->surface.any())try{surface_sets=make_surface_sets(*bundle,std::vector<VkDescriptorSet>(sets.begin()+1,sets.begin()+1+count),false);}
+            catch(...){bundle->surface=make_native_surface_selection(*latest->asset,&fast_surface_appearance());surface_sets.assign(count,VK_NULL_HANDLE);}
+        extend_surface_bounds(*bundle);
+        for(const auto index:bundle->material_plan.opaque_draws){const auto& draw=latest->geometry->draws[index];const auto material=draw.material<0?count-1:static_cast<uint32_t>(draw.material);if(material>=count)return{};bundle->calls.push_back({sets[material+1],draw.first_index,draw.index_count,surface_sets[material]});}
         if(artifact_probe_file.empty()||probe_mode==5.f)for(const auto& draw:latest->geometry->draws){const auto material=draw.material<0?count-1:static_cast<uint32_t>(draw.material);if(material>=count)return{};bundle->shadow_calls.push_back({sets[material+1],draw.first_index,draw.index_count});}
         const auto& qualified=replacement?bundle->qualified_parts:latest->parts;
         bundle->data.permit[1]=static_cast<uint32_t>(qualified.size());bundle->data.permit[2]=static_cast<uint32_t>(bundle->instances.info.range/128);
@@ -1172,10 +1264,10 @@ struct NativeBackend::Impl {
     void recover_submission(VkQueue submitted_queue) {
         const auto idle=F(vkQueueWaitIdle)(submitted_queue);
         if(idle!=VK_SUCCESS&&idle!=VK_ERROR_DEVICE_LOST){context.uncertain=true;if(clips)clips->quarantine();return;}
-        if(idle==VK_SUCCESS)each_recording([&](VkCommandBuffer command,Recording& item){if(item.bundle&&item.bundle->submitted_queue==submitted_queue)harvest_mixed(command,item,"queue-idle-success");});
-        each_recording([&](VkCommandBuffer,Recording& item){if(item.bundle) {
+        if(idle==VK_SUCCESS)each_subject_recording([&](VkCommandBuffer command,Recording& item){if(item.bundle&&item.bundle->submitted_queue==submitted_queue)harvest_mixed(command,item,"queue-idle-success");});
+        each_subject_recording([&](VkCommandBuffer,Recording& item){if(item.bundle) {
             auto& b=*item.bundle;
-            if(b.failed_submit&&b.submitted_queue==submitted_queue){b.data.permit[0]=0;std::memcpy(b.control->mapped,&b.data,sizeof b.data);b.retry_safe=true;}
+            if(b.failed_submit&&b.submitted_queue==submitted_queue){b.data.permit[0]=0;std::memcpy(b.control->mapped,&b.data,sizeof b.data);b.retry_safe=true;if(b.common_gate)*static_cast<std::uint32_t*>(b.common_gate->mapped)=0;}
         }});
     }
     VkResult retry_gate(VkQueue attempted_queue,VkCommandBuffer command) {
@@ -1255,7 +1347,7 @@ struct NativeBackend::Impl {
         if(!recording.bundle)return;
         auto& b=*recording.bundle;
         const bool character_preview=b.menu_preview&&b.menu_owner.kind==NativeMenuOwnerKind::character;
-        const auto latest=publication_for(b.instances.info.buffer);
+        const auto latest=current_player_publication(b);
         if(b.submitted)return;
         submit_timing.bundle(b.menu_preview);NativeSubmitStageScope gates(submit_timing,NativeSubmitStage::Gates);
         b.submitted=true;b.awaiting_submit_result=true;b.submitted_queue=submitted_queue;
@@ -1272,6 +1364,7 @@ struct NativeBackend::Impl {
             decision.check(latest&&latest->asset==b.pose->asset,Gate::Latest)&&
             decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::PoseAge);
         ready=ready&&decision.check(sources_current(b.sources),Gate::Sources)&&decision.check(source_current(b.gbuf_camera),Gate::CameraSource)&&decision.check(source_current(b.owner),Gate::OwnerSource);
+        if(players_managed)ready=ready&&player_current(*b.pose);
         for(const auto& view:b.shadow_views){const auto current=metadata.attachment_view(view.depth.view);ready=ready&&decision.check(current.current&&
             current.image==view.depth.image&&current.image_generation==view.depth.image_generation&&current.view_generation==view.depth.view_generation,Gate::Shadows);}
         if(b.material_plan.mixed)ready=ready&&decision.check(mixed_current(b)&&b.oit_window.complete(),Gate::Mixed);
@@ -1317,6 +1410,9 @@ struct NativeBackend::Impl {
                         decision.check(qualified==b.qualified_parts,Gate::QualifiedParts)&&decision.check(current.words==b.body_mask.words,Gate::BodyWords);
                 }else ready=decision.check(make_native_body_mask(b.cpu_owner,b.pose->parts,b.instances,current,reason),Gate::BodyBuild)&&decision.check(current.words==b.body_mask.words,Gate::BodyWords);
             }
+            if(ready&&!b.menu_preview&&b.pose->player_identity.account){std::vector<std::array<std::uint32_t,4>> qualified;
+                ready=decision.check(select_native_owner_qualifiers(b.cpu_owner,b.pose->parts,b.pose->instance_qualifiers,qualified,reason)&&qualified==b.qualified_parts,Gate::QualifiedParts);
+            }
             if(!ready&&!reason.empty()){
                 report("replacement submission owner declined: "+reason);
                 if(owner_failed)owner_diagnostic("submission",owner_stats);
@@ -1326,19 +1422,19 @@ struct NativeBackend::Impl {
         b.data.offsets[1]=static_cast<uint32_t>(b.gbuf_camera.info.offset);b.data.offsets[2]=static_cast<uint32_t>(b.owner.info.offset);b.data.permit[0]=ready?1:0;
         if(replacement){
             if(b.menu_preview){if(!character_preview)tool_slots.disable();}
-            else if(ready&&owner_process){const auto started=std::chrono::steady_clock::now();tool_slots.publish(*owner_process,b.cpu_owner,b.pose,b.instances.generation);resource_timing(3,started);}else if(!ready)revoke_preparation(b.instances);
+            else if(ready&&owner_process&&!verifying_player_group){const auto started=std::chrono::steady_clock::now();tool_slots.publish(*owner_process,b.cpu_owner,b.pose,b.instances.generation);resource_timing(3,started);}else if(!ready)revoke_preparation(b.instances);
             // Initial hook installation may take time. It cannot extend the
             // original pose age accepted by either CPU or tool authorization.
             ready=ready&&decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::AgeAfterTool);
             if(!ready)revoke_preparation(b.instances);
-            if(ready)retain_owner_hint(b);
+            if(ready&&!verifying_player_group)retain_owner_hint(b);
             // Optional first-seed allocation/copy is bounded in size, not time.
             // It must not carry an otherwise fresh pose across the age limit.
             ready=ready&&decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::AgeAfterSeed);
             if(!ready)revoke_preparation(b.instances);
             b.data.permit[0]=ready?1:0;
         }
-        b.data.history[0]=ready&&b.previous&&b.previous==history_for(b.instances.info.buffer,b.first_pass.extent)&&latest&&
+        b.data.history[0]=ready&&b.previous&&b.previous==history_for(b.instances.info.buffer,b.first_pass.extent,b.pose.get())&&latest&&
             latest->serial==b.pose->serial&&same_selection(*b.previous,b)?1u:0u;
         std::memcpy(b.control->mapped,&b.data,sizeof b.data);
         if(replacement){if(ready)++coverage_accepted;else ++coverage_declined;if((ready&&coverage_accepted==1)||(coverage_accepted+coverage_declined)%600==0)coverage_report();}
@@ -1367,16 +1463,16 @@ struct NativeBackend::Impl {
         }catch(...){}
     }
     void submit_command(VkCommandBuffer command,bool shape,VkQueue submitted_queue){
-        each_view(command,[&](VkCommandBuffer native,Recording& recording){submit_recording(native,recording,shape,submitted_queue);});
+        each_view(command,[&](VkCommandBuffer native,Recording& recording){submit_player_group(native,recording,shape,submitted_queue);});
     }
     void finish_history_submission(VkQueue submitted_queue) {
         std::map<HistoryKey,unsigned> candidates;
-        each_recording([&](VkCommandBuffer,const Recording& item){if(item.bundle){const auto& b=*item.bundle;
-            if(b.awaiting_submit_result&&b.submitted_queue==submitted_queue&&b.data.permit[0])++candidates[history_key(b.instances.info.buffer,b.first_pass.extent)];}});
+        each_subject_recording([&](VkCommandBuffer,const Recording& item){if(item.bundle){const auto& b=*item.bundle;
+            if(b.awaiting_submit_result&&b.submitted_queue==submitted_queue&&b.data.permit[0])++candidates[history_key(b.instances.info.buffer,b.first_pass.extent,b.pose.get())];}});
         for(const auto& pair:candidates)if(pair.second>1)update_history(pair.first,{});
-        each_recording([&](VkCommandBuffer,Recording& item){if(item.bundle){auto& b=*item.bundle;
+        each_subject_recording([&](VkCommandBuffer,Recording& item){if(item.bundle){auto& b=*item.bundle;
             if(b.awaiting_submit_result&&b.submitted_queue==submitted_queue&&b.data.history[0]&&
-                (candidates[history_key(b.instances.info.buffer,b.first_pass.extent)]>1||b.previous!=history_for(b.instances.info.buffer,b.first_pass.extent))){
+                (candidates[history_key(b.instances.info.buffer,b.first_pass.extent,b.pose.get())]>1||b.previous!=history_for(b.instances.info.buffer,b.first_pass.extent,b.pose.get()))){
                 b.data.history[0]=0;
                 std::memcpy(static_cast<unsigned char*>(b.control->mapped)+offsetof(NativePrepareControl,history),b.data.history,sizeof b.data.history);
             }}});
@@ -1389,12 +1485,17 @@ struct NativeBackend::Impl {
         coverage_report();
         tool_slots.clear();
         const auto idle=context.device?F(vkDeviceWaitIdle)(context.device):VK_SUCCESS;
-        if(context.device&&idle==VK_SUCCESS)each_recording([&](VkCommandBuffer command,Recording& item){harvest_mixed(command,item,"device-idle-success");});
+        if(context.device&&idle==VK_SUCCESS)each_subject_recording([&](VkCommandBuffer command,Recording& item){harvest_mixed(command,item,"device-idle-success");});
         if(idle!=VK_SUCCESS&&idle!=VK_ERROR_DEVICE_LOST)context.uncertain=true;else context.uncertain=false;
+        // Stop naturally before releasing any borrowed module/layout/device.
+        if(prepare_worker)prepare_worker->shutdown(context.uncertain);
         if(clips&&context.uncertain)clips->quarantine();
+        if(player_commit&&context.uncertain)player_commit->quarantine();
         if(asset_stager&&!context.uncertain)asset_stager->device_idle_complete();
         asset_stager.reset();
-        discard_history();completed_views.clear();commands.clear();latest.reset();assets.reset();layouts.clear();
+        if(surface_stager&&!context.uncertain)surface_stager->device_idle_complete();
+        surface_stager.reset();
+        discard_history();completed_views.clear();commands.clear();latest.reset();assets.reset();player_models.clear();player_upload.reset();player_commit.reset();layouts.clear();
         clips.reset();
         if(context.uncertain){draw_pipelines.release();oit_pipelines.release();shadow_pipeline.release();return;}
         shadow_pipeline.reset();for(auto s:shadow_shaders)if(s)F(vkDestroyShaderModule)(context.device,s,nullptr);
@@ -1402,6 +1503,13 @@ struct NativeBackend::Impl {
         if(shadow_set)F(vkDestroyDescriptorSetLayout)(context.device,shadow_set,nullptr);
         oit_pipelines.reset();if(volume_sampler)F(vkDestroySampler)(context.device,volume_sampler,nullptr);if(oit_shader)F(vkDestroyShaderModule)(context.device,oit_shader,nullptr);if(oit_layout)F(vkDestroyPipelineLayout)(context.device,oit_layout,nullptr);if(oit_set)F(vkDestroyDescriptorSetLayout)(context.device,oit_set,nullptr);
         draw_pipelines.reset();if(prepare_pipeline)F(vkDestroyPipeline)(context.device,prepare_pipeline,nullptr);
+        if(surface_prepare)F(vkDestroyPipeline)(context.device,surface_prepare,nullptr);
+        if(surface_menu_prepare)F(vkDestroyPipeline)(context.device,surface_menu_prepare,nullptr);
+        for(auto s:surface_shaders)if(s)F(vkDestroyShaderModule)(context.device,s,nullptr);
+        if(surface_layout)F(vkDestroyPipelineLayout)(context.device,surface_layout,nullptr);
+        if(surface_oit_layout)F(vkDestroyPipelineLayout)(context.device,surface_oit_layout,nullptr);
+        if(surface_set)F(vkDestroyDescriptorSetLayout)(context.device,surface_set,nullptr);
+        if(surface_oit_set)F(vkDestroyDescriptorSetLayout)(context.device,surface_oit_set,nullptr);
         if(menu_prepare_pipeline)F(vkDestroyPipeline)(context.device,menu_prepare_pipeline,nullptr);
         if(menu_prepare_shader)F(vkDestroyShaderModule)(context.device,menu_prepare_shader,nullptr);
         for(auto shader:shaders)if(shader)F(vkDestroyShaderModule)(context.device,shader,nullptr);
@@ -1439,7 +1547,7 @@ struct NativeBackend::Impl {
             s.offset.x>=0&&s.offset.y>=0&&s.extent.width&&s.extent.height&&
             std::uint64_t(s.offset.x)+s.extent.width<=d.extent.width&&std::uint64_t(s.offset.y)+s.extent.height<=d.extent.height;
     }
-    void caster_shadow_draw(Recording& r,VkCommandBuffer command){
+    void caster_shadow_draw(Recording& r,VkCommandBuffer command,bool clip_native=true){
         if(!r.pass_active||!r.shadow_pass||!r.bundle||r.native_restore||context.uncertain)return;
         if(!character_subject_draw(*r.bundle))return;
         auto& b=*r.bundle;if((!artifact_probe_file.empty()&&b.probe_mode!=5.f)||b.invalid||!b.clip_set||!b.body_bits||!clips)return;
@@ -1489,7 +1597,7 @@ struct NativeBackend::Impl {
         }
         // Geometry deduplication never discards a native descriptor certificate:
         // another set may name the same bytes and retire before submission.
-        b.sources.push_back(source);b.sources.push_back(instances);b.sources.push_back(culled);b.clip_leases.push_back(pipeline);r.native_restore=state.pipeline.pipeline;
+        b.sources.push_back(source);b.sources.push_back(instances);b.sources.push_back(culled);b.clip_leases.push_back(pipeline);if(!clip_native)return;r.native_restore=state.pipeline.pipeline;
         function<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline->handle);
         function<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline->layout,5,1,&b.clip_set,0,nullptr);
         ++b.shadow_probe_draws;++shadow_caster_draws;
@@ -1598,7 +1706,9 @@ NativeBufferMemory* NativeBackend::buffer_memory()noexcept{return impl->replacem
 NativeImageMemory* NativeBackend::image_memory()noexcept{return impl->image_memory.get();}
 bool NativeBackend::mouth_gpu_unavailable()const noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
-        return impl->assets&&impl->assets->avatar()&&impl->assets->avatar()->mouth&&impl->assets->skin()&&!impl->assets->skin()->mouth_available();
+        const auto local=impl->player_models.find(std::string{});
+        const auto assets=impl->players_managed?(local==impl->player_models.end()?nullptr:local->second.assets):impl->assets;
+        return assets&&assets->avatar()&&assets->avatar()->mouth&&assets->skin()&&!assets->skin()->mouth_available();
     }catch(...){return true;}
 }
 std::shared_ptr<const NativePoseOwner> NativeBackend::pose_owner(std::uint64_t epoch)noexcept {
@@ -1610,7 +1720,8 @@ std::shared_ptr<const NativePoseOwner> NativeBackend::pose_owner(std::uint64_t e
 void NativeBackend::test_owner(std::shared_ptr<const NativeBackendTestOwner> source)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->discard_owner_hint();impl->test_owner_source=std::move(source);}catch(...){} }
 #endif
 NativeAvatarUploadState NativeBackend::prepare_model(VkQueue queue,std::uint32_t family,const AvatarCandidatePtr& candidate)noexcept {
-    try{std::lock_guard<std::mutex> guard(impl->mutex);
+    try{std::unique_lock<std::mutex> guard(impl->mutex);
+        if(impl->players_managed){guard.unlock();return prepare_player_model(queue,family,candidate);}
         const auto previous_generation=impl->hot_generation;
         impl->hot_generation=candidate?candidate->generation:0;
         if(impl->disabled||impl->context.uncertain)return NativeAvatarUploadState::Failed;
@@ -1626,7 +1737,8 @@ NativeAvatarUploadState NativeBackend::prepare_model(VkQueue queue,std::uint32_t
     }catch(const std::exception& error){try{impl->report(error.what());}catch(...){}return NativeAvatarUploadState::Failed;}catch(...){return NativeAvatarUploadState::Failed;}
 }
 bool NativeBackend::activate_model(const AvatarCandidate& candidate,bool(*commit)(void*,std::uint64_t)noexcept,void* context)noexcept {
-    try{std::lock_guard<std::mutex> guard(impl->mutex);
+    try{std::unique_lock<std::mutex> guard(impl->mutex);
+        if(impl->players_managed){guard.unlock();return activate_player_model(candidate,commit,context);}
         if(!impl->replacement_enabled||impl->disabled||impl->context.uncertain||!impl->asset_stager||impl->hot_generation!=candidate.generation||
             !impl->asset_stager->ready(candidate.generation,candidate.model->asset))return false;
         if(!commit||!commit(context,impl->metadata.buffer_epoch()))return false;
@@ -1644,6 +1756,7 @@ void NativeBackend::set_replacement_enabled(bool enabled)noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
         if(impl->replacement_enabled==enabled)return;
         impl->replacement_enabled=enabled;
+        if(!enabled&&impl->surface_stager){impl->surface_stager->cancel();impl->surface_upload={};impl->surface_failures.clear();}
         if(!enabled){native_preview_subjects().retire_owner(reinterpret_cast<std::uintptr_t>(impl.get()));impl->latest.reset();impl->view_publications.reset();impl->revoke_preparation();impl->tool_slots.disable();}
         // Recorded/submitted bundles retain their leases until normal retirement.
         // The common submit permit disables both replacement and native clipping.
@@ -1676,6 +1789,18 @@ void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const 
             NativeMaterialPlan plan;if(!publication_material_plan(*impl->latest,plan)){impl->revoke_preparation();impl->report("mixed publication material partition declined before upload");return;}
         }
         impl->initialize();
+        if(impl->players_managed){
+            const auto advance=[&](const std::shared_ptr<const NativeAvatarPublication>& view){
+                if(!native_publication_subjects_valid(view))return;
+                const auto one=[&](const std::shared_ptr<const NativeAvatarPublication>& p){if(impl->owner_process&&impl->player_current(*p)){
+                    const auto source=impl->metadata.buffer(reinterpret_cast<VkBuffer>(static_cast<std::uintptr_t>(p->source_instances)));
+                    impl->tool_slots.advance(*impl->owner_process,p,source.generation);}};
+                one(view);for(const auto& p:view->additional_subjects)one(p);
+            };
+            advance(impl->view_publications);for(const auto& view:impl->view_publications->additional_views)advance(view);
+            impl->refresh_surface_assets();
+            return;
+        }
         if(!impl->assets){
             if(impl->hot_generation)return;
             impl->ensure_asset_stager();
@@ -1686,6 +1811,7 @@ void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const 
         }
         try{if(impl->wants_notice("publication-ready"))impl->notice("publication-ready parts="+std::to_string(impl->latest->parts.size())+" vertices="+std::to_string(impl->latest->geometry?impl->latest->geometry->vertices.size():0),"publication-ready");}catch(...){}
         if(impl->assets->avatar()!=impl->latest->asset){impl->revoke_preparation();impl->report("model has not completed its activation transaction");return;}
+        impl->refresh_surface_assets();
         if(impl->replacement&&impl->owner_process){const auto started=std::chrono::steady_clock::now();
             const auto hint=impl->pose_owner_state.preparation_hint();
             const auto world=hint?native_publication_view(impl->view_publications,hint->candidate.native_buffer):impl->latest;
@@ -1694,6 +1820,7 @@ void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const 
             impl->resource_timing(4,started);}
     }catch(const std::exception& e){impl->revoke_preparation();impl->disabled=true;try{impl->report(e.what());}catch(...){}}catch(...){impl->revoke_preparation();impl->disabled=true;}
 }
+#include "native_player_models.inl"
 void NativeBackend::pipeline_layout_created(VkPipelineLayout layout,const VkPipelineLayoutCreateInfo& info)noexcept {
     impl->metadata.pipeline_layout_created(layout,info);
     if(impl->clips)impl->clips->pipeline_layout_created(layout,info);
@@ -1732,7 +1859,7 @@ void NativeBackend::incoming_rendering(VkCommandBuffer command,const VkRendering
         r.shadow_depth=r.shadow_pass?impl->metadata.attachment_view(info.pDepthAttachment->imageView):NativeOitView{};
         r.shadow_area=info.renderArea;r.shadow_view_start=r.bundle?r.bundle->shadow_views.size():0;
         impl->observe_rendering(r,info);
-        impl->mixed_rendering(r,info);
+        if(r.bundle)impl->each_subject(r,[&](Recording& subject){impl->mixed_rendering(subject,info);});else impl->mixed_rendering(r,info);
         if(impl->replacement&&r.pass.supported) {
             const auto view=r.ownership_instances?impl->publication_for(r.ownership_instances.info.buffer):impl->view_publications;
             const auto window=view?view->serial:r.ownership_window;
@@ -1740,7 +1867,7 @@ void NativeBackend::incoming_rendering(VkCommandBuffer command,const VkRendering
             if(!r.affected_pass){r.affected_pass=true;r.ownership_window=window;r.ownership_presentation=view?view->presentation_serial:0;}
         }
         if(!r.pass.supported && (info.colorAttachmentCount==2 || info.colorAttachmentCount==6))impl->notice("unrecognized-pass colors="+std::to_string(info.colorAttachmentCount)+" depth-layout="+std::to_string(info.pDepthAttachment?info.pDepthAttachment->imageLayout:VK_IMAGE_LAYOUT_UNDEFINED));
-        if(r.bundle){if(r.bundle->first_regions_open)r.bundle->first_regions_open=false;if(r.pass.kind==NativePipelineKind::visibility)++r.bundle->visibility_passes;else if(r.pass.kind==NativePipelineKind::gbuffer)++r.bundle->gbuffer_passes;}
+        if(r.bundle)impl->each_bundle(r.bundle,[&](Bundle& b){b.pass_drawn=false;b.shadow_view_start=b.shadow_views.size();if(b.first_regions_open)b.first_regions_open=false;if(r.pass.kind==NativePipelineKind::visibility)++b.visibility_passes;else if(r.pass.kind==NativePipelineKind::gbuffer)++b.gbuffer_passes;});
     }catch(...){}
 }
 void NativeBackend::rendering_unavailable(VkCommandBuffer command)noexcept {scope_unsupported(command,"BeginRendering was not deferred");}
@@ -1751,7 +1878,7 @@ void NativeBackend::before_attachment_clear(VkCommandBuffer command)noexcept {
         // A depth clear can erase already emitted caster pixels. Begin a fresh
         // emission epoch without changing the common permit or native clear.
         if(recording.pass_active&&recording.shadow_pass&&recording.bundle)
-            recording.shadow_view_start=recording.bundle->shadow_views.size();
+            impl->each_bundle(recording.bundle,[](Bundle& b){b.shadow_view_start=b.shadow_views.size();});
     }catch(...){scope_unsupported(command,"shadow clear observation failed");}
 }
 void NativeBackend::before_rendering(VkCommandBuffer command,const VkRenderingInfo&,const char* release_trigger)noexcept {
@@ -1762,20 +1889,24 @@ void NativeBackend::before_rendering(VkCommandBuffer command,const VkRenderingIn
         if(!r.eligible||r.tainted||r.bundle||!r.pass.supported||r.pass.kind!=NativePipelineKind::visibility||impl->disabled)return;
         if(!r.compute_producer||!r.first_count||!r.first_indirect){r.tainted=true;impl->unknown_ownership(r,"visibility-window");impl->notice("visibility-window-missed producer="+std::to_string(r.compute_producer)+" counted-draw="+std::to_string(static_cast<bool>(r.first_count)));return;}
         impl->clip_diagnostic(impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS),"first-visibility","unobserved");
-        auto b=impl->make_bundle(r,command);if(!b){r.tainted=true;impl->notice("current native preparation context unavailable","context-unavailable");return;}
+        auto b=impl->make_player_bundle(r,command);if(!b){r.tainted=true;impl->notice("current native preparation context unavailable","context-unavailable");return;}
         const auto compute=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);auto& context=impl->context;
-        r.bundle=b;b->visibility_passes=1; // Retain before the first recorded private command.
+        r.bundle=b;impl->each_bundle(b,[](Bundle& subject){subject.visibility_passes=1;}); // Retain before the first recorded private command.
         VkMemoryBarrier before{};before.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER;before.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;before.dstAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_UNIFORM_READ_BIT;
         context.fn<PFN_vkCmdPipelineBarrier>("vkCmdPipelineBarrier")(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&before,0,nullptr,0,nullptr);
-        context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->menu_preview?impl->menu_prepare_pipeline:impl->prepare_pipeline);
+        impl->each_subject(r,[&](Recording& subject){const auto& b=subject.bundle;
+        context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->surface.any()?
+            (b->menu_preview?impl->surface_menu_prepare:impl->surface_prepare):(b->menu_preview?impl->menu_prepare_pipeline:impl->prepare_pipeline));
         context.fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,impl->prepare_layout,0,1,&b->prepare,0,nullptr);
         context.fn<PFN_vkCmdDispatch>("vkCmdDispatch")(command,1,1,1);
         if(b->skin)impl->skinning_gpu->record(command,b->skin);
+        });
+        if(b->common_commit&&!impl->player_commit->record(command,*b->common_commit))throw std::runtime_error("Player common commit unavailable");
         before.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;before.dstAccessMask=VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_HOST_READ_BIT;
         context.fn<PFN_vkCmdPipelineBarrier>("vkCmdPipelineBarrier")(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_HOST_BIT|(impl->mesh_enabled?VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT:0),0,1,&before,0,nullptr,0,nullptr);
         context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,compute.pipeline.pipeline);
         context.fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->compute_restore->handle,0,compute.sets.size(),compute.sets.data(),0,nullptr);
-        b->recorded=true;
+        impl->each_bundle(b,[](Bundle& subject){subject.recorded=true;});
     }catch(const std::exception& e){scope_unsupported(command);try{impl->report(e.what());}catch(...){}}catch(...){scope_unsupported(command);}
 }
 void NativeBackend::draw(VkCommandBuffer command,VkBuffer buffer,VkDeviceSize offset,VkBuffer counts,VkDeviceSize count_offset,uint32_t maximum,uint32_t stride)noexcept {
@@ -1794,11 +1925,11 @@ void NativeBackend::draw(VkCommandBuffer command,VkBuffer buffer,VkDeviceSize of
         }return;}
         if(impl->replacement)impl->observe_ownership_source(r,impl->metadata.buffer_binding(bound,2,4));
         if(!r.first_indirect){r.first_indirect=buffer;r.first_count=counts;r.first_offset=offset;r.first_count_offset=count_offset;r.first_max=maximum;r.first_stride=stride;}
-        if(r.bundle&&r.pass.kind==NativePipelineKind::gbuffer){const auto camera=impl->metadata.buffer_binding(bound,1,16);if(r.bundle->gbuf_camera&&!same_binding(r.bundle->gbuf_camera,camera))r.bundle->invalid=true;else r.bundle->gbuf_camera=camera;}
+        if(r.bundle&&r.pass.kind==NativePipelineKind::gbuffer){const auto camera=impl->metadata.buffer_binding(bound,1,16);impl->each_bundle(r.bundle,[&](Bundle& b){if(b.gbuf_camera&&!same_binding(b.gbuf_camera,camera))b.invalid=true;else b.gbuf_camera=camera;});}
     }catch(...){scope_unsupported(command);}
 }
 void NativeBackend::render_current(VkCommandBuffer command)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;if(!r.bundle||!r.pass_active||r.tainted)return;auto& b=*r.bundle;if(b.invalid)return;
+    try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;if(!r.bundle||!r.pass_active||r.tainted)return;impl->each_subject(r,[&](Recording& r){auto& b=*r.bundle;if(b.invalid)return;
         if(!impl->character_subject_draw(b)){b.invalid=true;return;}
         const auto bound=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);if(!bound.valid||bound.pipeline.kind!=r.pass.kind)return;
         if(r.pass.kind==NativePipelineKind::visibility) {
@@ -1824,12 +1955,13 @@ void NativeBackend::render_current(VkCommandBuffer command)noexcept {
         if(!same_binding(b.instances,instance))b.invalid=true;
         b.sources.push_back(instance);
         r.pass_drawn=true;if(r.pass.kind==NativePipelineKind::visibility)++b.visibility_draws;else if(r.pass.kind==NativePipelineKind::gbuffer)++b.gbuffer_draws;
+        });
     }catch(...){scope_unsupported(command);}
 }
 void NativeBackend::before_end_rendering(VkCommandBuffer command)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end())impl->mixed_end(found->second,command);}catch(...){scope_unsupported(command,"mixed OIT insertion failed");}
+    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end())impl->each_subject(found->second,[&](Recording& subject){impl->mixed_end(subject,command);});}catch(...){scope_unsupported(command,"mixed OIT insertion failed");}
 }
-void NativeBackend::end_rendering(VkCommandBuffer command)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){auto& r=found->second;if(r.bundle&&r.bundle->material_plan.mixed&&r.bundle->oit_window.active){r.bundle->oit_window.end(false);r.bundle->invalid=true;}if(r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer)r.view_gbuffer=true;r.pass_active=false;r.observed_oit_active=false;}}catch(...){} }
+void NativeBackend::end_rendering(VkCommandBuffer command)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){auto& r=found->second;impl->each_bundle(r.bundle,[](Bundle& b){if(b.material_plan.mixed&&b.oit_window.active){b.oit_window.end(false);b.invalid=true;}});if(r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer)r.view_gbuffer=true;r.pass_active=false;r.observed_oit_active=false;}}catch(...){} }
 bool NativeBackend::pose_capture_boundary(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);
         return impl->replacement_enabled&&found!=impl->commands.end()&&found->second.eligible&&found->second.pass_active&&
@@ -1844,11 +1976,16 @@ void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uin
                 if(sampled||storage){const auto& view=sampled?sampled.view:storage.view;debug_report_observe_lighting({view.extent.width,view.extent.height,view.extent.depth});}}
         }catch(...){} // Diagnostic observations cannot change the native permit.
         if(!impl->replacement_enabled&&!r.bundle)return;
-        impl->mixed_dispatch(r,command,capture_owner,x,y,z);
+        // A single proven volume snapshot is shared by all BLEND subjects.
+        std::shared_ptr<Bundle> volume;
+        impl->each_subject(r,[&](Recording& subject){auto& b=*subject.bundle;if(!b.material_plan.mixed)return;
+            if(!volume){impl->mixed_dispatch(subject,command,capture_owner,x,y,z);volume=subject.bundle;}
+            else impl->share_player_volume(b,*volume);
+        });
         impl->observe_volume(r,command,capture_owner,x,y,z);
         if(!r.bundle || !capture_owner)return;
         const auto bound=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);if(!bound.valid||bound.pipeline.kind!=NativePipelineKind::lighting)return;
-        const auto owner=impl->metadata.buffer_binding(bound,2,24);if(r.bundle->owner&&!same_binding(r.bundle->owner,owner))r.bundle->invalid=true;else r.bundle->owner=owner;
+        const auto owner=impl->metadata.buffer_binding(bound,2,24);impl->each_bundle(r.bundle,[&](Bundle& b){if(b.owner&&!same_binding(b.owner,owner))b.invalid=true;else b.owner=owner;});
     }catch(const std::exception& error){scope_unsupported(command,"native compute observation failed");
         try{std::lock_guard<std::mutex> lock(impl->mutex);impl->notice("native compute observation failed: "+std::string(error.what()),"native-compute-exception");}catch(...){}
     }catch(...){scope_unsupported(command,"native compute observation failed");}
@@ -1870,7 +2007,7 @@ void NativeBackend::unsupported_draw(VkCommandBuffer command)noexcept {
 }
 void NativeBackend::uncovered_draw(VkCommandBuffer command,const char* command_name)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);
-        if(found!=impl->commands.end()){impl->mixed_late(found->second,command);impl->observe_transparent_draw(found->second,command);}
+        if(found!=impl->commands.end()){impl->each_subject(found->second,[&](Recording& subject){impl->mixed_late(subject,command);});impl->observe_transparent_draw(found->second,command);}
         if(impl->replacement&&found!=impl->commands.end()&&found->second.pass_active&&found->second.pass.supported) {
             const auto observed=impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);
             auto& recording=found->second;
@@ -1922,11 +2059,13 @@ void NativeBackend::before_native_draw(VkCommandBuffer command)noexcept {
         if(!impl->replacement)return;
         const auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;
         if(!impl->replacement_enabled&&!r.bundle)return;
-        impl->mixed_late(r,command);impl->observe_transparent_draw(r,command);
+        impl->each_subject(r,[&](Recording& subject){impl->mixed_late(subject,command);});impl->observe_transparent_draw(r,command);
         impl->observe_ownership_draw(r,impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS));
         impl->cover_native_draw(r,command);
         impl->diagnostic_shadow_draw(r,command);
-        impl->caster_shadow_draw(r,command);
+        {const auto root=r.bundle;impl->each_subject(r,[&](Recording& subject){
+            impl->caster_shadow_draw(subject,command,subject.bundle==root);
+        },true);}
     }catch(...){scope_unsupported(command);}
 }
 void NativeBackend::after_native_draw(VkCommandBuffer command)noexcept {
@@ -1939,10 +2078,11 @@ void NativeBackend::after_native_draw(VkCommandBuffer command)noexcept {
 }
 void NativeBackend::scope_unsupported(VkCommandBuffer command,const char* reason)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){
     found->second.tainted=true;impl->unknown_ownership(found->second,"unsupported-scope");if(reason)impl->notice("tainted-command "+std::string(reason));}}catch(...){} }
-void NativeBackend::command_end(VkCommandBuffer command,VkResult result)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->each_view(command,[&](VkCommandBuffer,Recording& r){r.ownership_closed=result==VK_SUCCESS&&!r.pass_active;if(r.bundle)r.bundle->ended=result==VK_SUCCESS;impl->finish_transparency(r,result);});}catch(...){} }
+void NativeBackend::command_end(VkCommandBuffer command,VkResult result)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->each_view(command,[&](VkCommandBuffer,Recording& r){r.ownership_closed=result==VK_SUCCESS&&!r.pass_active;impl->each_bundle(r.bundle,[&](Bundle& b){b.ended=result==VK_SUCCESS;});impl->finish_transparency(r,result);});}catch(...){} }
 VkResult NativeBackend::before_submit(VkQueue queue,uint32_t count,const VkSubmitInfo* submits)noexcept {
     const auto started=std::chrono::steady_clock::now();const auto tick=GetTickCount64();
     try{std::lock_guard<std::mutex> lock(impl->mutex);
+        impl->owner_work_started=Impl::owner_clock_milliseconds();
         NativeSubmitCall call(impl->submit_timing,started,tick,true);
         {NativeSubmitStageScope retry(impl->submit_timing,NativeSubmitStage::Retry);
             for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBuffers[j]);if(gate!=VK_SUCCESS)return gate;}}
@@ -1955,6 +2095,7 @@ VkResult NativeBackend::before_submit(VkQueue queue,uint32_t count,const VkSubmi
 VkResult NativeBackend::before_submit2(VkQueue queue,uint32_t count,const VkSubmitInfo2* submits)noexcept {
     const auto started=std::chrono::steady_clock::now();const auto tick=GetTickCount64();
     try{std::lock_guard<std::mutex> lock(impl->mutex);
+        impl->owner_work_started=Impl::owner_clock_milliseconds();
         NativeSubmitCall call(impl->submit_timing,started,tick,false);
         {NativeSubmitStageScope retry(impl->submit_timing,NativeSubmitStage::Retry);
             for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBufferInfos[j].commandBuffer);if(gate!=VK_SUCCESS)return gate;}}
@@ -1969,8 +2110,8 @@ void NativeBackend::submission_result(VkQueue queue,VkResult result)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);bool failed=false;
         struct Result {unsigned observed=0,candidates=0;std::shared_ptr<SubmittedHistory> emission;};
         std::map<Impl::HistoryKey,Result> views;
-        impl->each_recording([&](VkCommandBuffer,Recording& item){if(item.bundle){auto& b=*item.bundle;if(b.awaiting_submit_result&&b.submitted_queue==queue){
-            auto& view=views[Impl::history_key(b.instances.info.buffer,b.first_pass.extent)];
+        impl->each_subject_recording([&](VkCommandBuffer,Recording& item){if(item.bundle){auto& b=*item.bundle;if(b.awaiting_submit_result&&b.submitted_queue==queue){
+            auto& view=views[Impl::history_key(b.instances.info.buffer,b.first_pass.extent,b.pose.get())];
             ++view.observed;b.awaiting_submit_result=false;
             if(result!=VK_SUCCESS){b.failed_submit=b.invalid=true;failed=true;}
             else{

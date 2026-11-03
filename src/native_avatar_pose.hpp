@@ -18,6 +18,7 @@ struct NativeAvatarDraw {
 
 struct NativeAvatarPose {
     std::vector<NativeAvatarVertex> vertices;
+    std::vector<vrm::SurfaceVertex> surface_vertices;
     std::vector<std::uint32_t> indices;
     std::vector<NativeAvatarDraw> draws;
     std::string error;
@@ -29,5 +30,7 @@ struct NativeAvatarPose {
 // history when switching assets or reactivating an avatar (identity is external).
 NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,
     const vrm::RetargetResult& pose, const NativeAvatarPose* previous = nullptr) noexcept;
+NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,
+    const vrm::RetargetResult& pose, const NativeAvatarPose* previous, bool surface) noexcept;
 
 } // namespace evrm

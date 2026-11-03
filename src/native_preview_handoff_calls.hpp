@@ -19,8 +19,8 @@ class NativePreviewHandoffCalls {
     static U add(U pointer,U offset)noexcept{return pointer<0x800000000000ULL&&offset<0x800000000000ULL-pointer?pointer+offset:0;}
     unsigned origin(U caller)const noexcept {
         if(caller<base_)return 0;
-        switch(caller-base_){case 0xbadb95:return 1;case 0xbf150f:return 2;case 0xc0e001:return 3;
-            case 0xc47438:return 4;case 0xc6cda9:return 5;case 0xc70e65:return 6;default:return 0;}
+        switch(caller-base_){case 0xbadb75:return 1;case 0xbf14ef:return 2;case 0xc0dfe1:return 3;
+            case 0xc47418:return 4;case 0xc6cd89:return 5;case 0xc70e45:return 6;default:return 0;}
     }
     struct Scope {
         NativePreviewHandoffLabel& slot;NativePreviewHandoffLabel previous;
@@ -52,7 +52,7 @@ public:
         history_.request(source,origin(caller),!before&&after==1,tick);
     }
     template<class F>void render(F&& original,U renderer,U view,U frame,U target,U payload,U caller,U tick){
-        const auto source=history_.source();const bool supported=source.epoch&&renderer==source.renderer&&caller>=base_&&caller-base_==0x861d49;
+        const auto source=history_.source();const bool supported=source.epoch&&renderer==source.renderer&&caller>=base_&&caller-base_==0x861d29;
         bool copied=false;
         if(supported){std::array<unsigned char,0x8d4> expected{},packet{};
             copied=bytes(add(source.client,0x34428),expected.data(),expected.size())&&bytes(payload,packet.data(),packet.size())&&

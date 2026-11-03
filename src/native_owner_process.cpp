@@ -12,7 +12,7 @@
 
 namespace evrm { namespace {
 using U=std::uint64_t;
-constexpr U file_bytes=35480136;
+constexpr U file_bytes=35476040;
 constexpr std::size_t header_window=65536;
 struct Declined {const char* reason;};
 void need(bool ok,const char* reason){if(!ok)throw Declined{reason};}
@@ -83,6 +83,35 @@ bool NativeOwnerProcess::capture(NativeOwnerCandidate& candidate,std::string& wh
     if(!supported_){candidate={};set_reason(why,reason_.empty()?"current main executable is unsupported":reason_.c_str());return false;}
     try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture(*this,image_,candidate,why,limits,stats);}
     catch(...){candidate={};set_reason(why,"owner observation synchronization failure");return false;}
+}
+bool NativeOwnerProcess::players(NativePlayerRoster& roster,std::string& why,const NativeOwnerLimits& limits)const noexcept{
+    if(!supported_){roster={};set_reason(why,"current main executable is unsupported");return false;}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.players(*this,image_,roster,why,limits);}
+    catch(...){roster={};set_reason(why,"player observation synchronization failure");return false;}
+}
+bool NativeOwnerProcess::capture_players(const std::vector<NativePlayerIdentity>& players,std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
+    if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
+    if(!supported_){candidates.clear();set_reason(why,"current main executable is unsupported");return false;}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture_players(*this,image_,players,candidates,why,limits,stats);}
+    catch(...){candidates.clear();set_reason(why,"player observation synchronization failure");return false;}
+}
+NativePlayerOwnerBatch NativeOwnerProcess::capture_available_players(const std::vector<NativePlayerIdentity>& players,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
+    if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
+    if(!supported_){set_reason(why,"current main executable is unsupported");return {};}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture_available_players(*this,image_,players,why,limits,stats);}
+    catch(...){set_reason(why,"player observation synchronization failure");return {};}
+}
+bool NativeOwnerProcess::capture_player(const NativePlayerIdentity& player,NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
+    if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
+    if(!supported_){candidate={};set_reason(why,"current main executable is unsupported");return false;}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture_player(*this,image_,player,candidate,why,limits,stats);}
+    catch(...){candidate={};set_reason(why,"player observation synchronization failure");return false;}
+}
+bool NativeOwnerProcess::revalidate_players(std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
+    if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
+    if(!supported_){candidates.clear();set_reason(why,"current main executable is unsupported");return false;}
+    for(const auto& candidate:candidates)if(!same_image(candidate.image,image_)){candidates.clear();set_reason(why,"player owner batch image disagrees with attested current main");return false;}
+    return revalidate_native_player_owners(*this,candidates,why,limits,stats);
 }
 bool NativeOwnerProcess::revalidate(NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}

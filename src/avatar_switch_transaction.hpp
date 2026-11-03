@@ -13,4 +13,11 @@ inline bool avatar_switch_pose_matches(const std::shared_ptr<const NativeAvatarP
         native_publication_view(root,child->source_instances)!=child)return false;
     return native_publication_view(root,root->source_instances)==root;
 }
+inline bool avatar_switch_player_pose_matches(const std::shared_ptr<const NativeAvatarPublication>& root,
+    const std::string& subject,std::uint64_t generation,const PreparedAvatar& model,std::uint64_t epoch,std::uint64_t now)noexcept {
+    if(!root||root->subject!=subject||root->assignment_generation!=generation||!avatar_switch_pose_matches(root,model,epoch,now))return false;
+    for(const auto& child:root->additional_views)if(child->subject!=subject||child->assignment_generation!=generation)return false;
+    return true;
+}
+
 }

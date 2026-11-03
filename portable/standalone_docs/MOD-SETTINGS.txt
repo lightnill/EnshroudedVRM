@@ -1,14 +1,33 @@
 Press F8 in game (or your saved menu key).
 
 Avatar: Browse for a local VRM or refresh the installed Avatars folder.
+Player: choose You or a connected anonymous Player N before changing a model.
+Other players default to no replacement. Choices are saved per account on this
+PC, including an explicit None choice and the model remembered while disabled.
+Session labels may change; a saved assignment follows the account, not the label.
+There is no transfer of models or assignments to another client.
 The included vroid-sample.vrm by Lightnill is an optional starting model.
 No model replacement: use the original game character while retaining your
 selected VRM and its shader settings. Model/appearance controls are greyed out
 until replacement is enabled again. This choice saves automatically.
 Appearance: choose a whole-model preset; individual materials can override it.
+Presets are shared by model content, including all players using that model.
+Auto (the default) uses supported authored normal maps and MToon matcap/rim
+masks when present. Enhanced explicitly enables those same supported features.
+Fast uses the previous optimized game-lighting path. Matte uses its existing
+matte style. Materials without effective maps keep the fast path even when
+Auto or Enhanced is selected. Individual materials can inherit the whole-model
+preset, override it, or reset their override. Choices save automatically.
+These effects adapt authored materials to the game's lighting. They do not
+reproduce the complete Unity/MToon shader or custom Unity shader effects.
+While optional material resources load, the current avatar keeps rendering.
+Fast disables the effects immediately; resources retire when queued draws finish.
 Voice to viseme: click to enable; expand for strength, sensitivity and smoothing.
 Voice source: Game voice, or Local microphone for offline use. Local microphone
 offers Windows default and a device list. Silence/rest behavior is unchanged.
+Voice always animates You, regardless of the selected player. Remote mouth
+animation is deferred. Remote assignments affect world characters only;
+inventory/title previews remain local and survivor previews remain native.
 
 The dark menu can be moved by dragging its header. Escape closes it.
 Preferences save automatically in your user folder. A save warning means live
@@ -30,6 +49,10 @@ Raw logs/settings, personal paths, account/server IDs, microphone IDs, audio,
 model files and memory dumps are omitted. Missing details are marked unavailable.
 Review the ZIP before sharing it yourself. Cancel abandons the unfinished report.
 
-World replacement follows the selected local player. Inventory previews need
-their exact local request/task/captured pose; survivors remain native. No
-multiplayer assignments or persistent player identifiers are added in 0.3.3.
+Player assignments are private to this installation and saved per account.
+Never share player-model-assignments.json or the installation key. Reports omit
+them. The current implementation is still buggy and incomplete; enhanced shaders
+need refinement and remote visemes/lip sync are not implemented.
+F8 memory figures estimate decoded textures and retained CPU buffers, not total
+process/GPU allocation. Background preparation can temporarily keep previews native.
+Debug reports use the historical game-lighting label for Auto (saved value 0).

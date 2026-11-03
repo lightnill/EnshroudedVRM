@@ -7,6 +7,9 @@ struct PreparedAvatar {
     std::shared_ptr<const vrm::Avatar> asset;
     std::shared_ptr<const NativeSkinAsset> skin;
     std::vector<std::string> material_names;
+    // Cached once after preparation. CPU estimate includes texture buffers;
+    // excludes text/allocator overhead, decoder transients and GPU allocations.
+    std::uint64_t decoded_texture_bytes=0,retained_cpu_buffer_bytes=0;
 };
 struct AvatarLoadResult {
     std::shared_ptr<const PreparedAvatar> model;std::string error;

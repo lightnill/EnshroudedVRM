@@ -1,9 +1,9 @@
-The 0.3.2 preview contains native DLLs, including an unsigned project
+EnshroudedVRM 0.4.0 contains native DLLs, including an unsigned project
 bootstrap named vulkan-1.dll. Its version metadata identifies EnshroudedVRM and
 lightnill. It forwards Vulkan graphics API entry points to the actual system library;
 it is not a redistributed Microsoft DLL. The bootstrap is built with Microsoft
 C++ tools and uses native PE forwarding to C:\Windows\system32\vulkan-1 on this
-preview. Nondefault Windows-directory layouts are unsupported. An
+release. Nondefault Windows-directory layouts are unsupported. An
 already-loaded system loader can bypass it. No loader-lock resolver, worker,
 entry-point patch or helper process is added.
 
@@ -25,21 +25,13 @@ The single creator-authorized vroid-sample.vrm is included unchanged, explicitly
 hash/size-pinned during packaging and covered by the exact runtime manifest.
 Third-party terms are listed in THIRD_PARTY_NOTICES.md and notices/.
 
-0.3.2 retains the original startup DLL and rebuilds only the avatar runtime.
-Local fallback/CPU profiling logs contain bounded runtime diagnostic metadata;
-they are not sent to a service automatically. Sparse CPU samples and overlapping
-scopes are not GPU timings or proof of a performance improvement. Release scan
-results are published separately for the exact DLLs and player ZIP. A missing,
-pending or unsupported scan is not a clean result, and zero detections alone
-does not establish safety. Any reported detection stops this release workflow.
+The per-player model feature reads the game's account/actor association
+inside this process to bind each optional replacement to its player. Persistent
+choices use HMAC-SHA-256 tokens with a random installation key, not raw account
+values or a globally comparable hash. The key, tokens and local model paths stay
+in player-model-assignments.json in the private user State directory. This file
+is not a debug-report or package input. Anonymous Player N menu labels are session
+labels. No account data, assignments or models are transmitted by this feature.
+Reports retain their existing field allowlist and omit these private fields.
 
-0.3.2 debug reports are local, user-requested allowlisted exports. They do not
-attach raw logs/settings, model files, audio, saves, memory dumps, personal paths,
-account/server IDs or device endpoint IDs. The location field describes only
-fresh qualified game-world coordinates; no real-world location is queried.
-Screenshots start disabled for every report and need exact-image preview and
-explicit approval. Included visible names/chat are not automatically redacted.
-No automatic report upload or telemetry is added. Private preview-subject tags
-are transient in-memory validation state and are not exported as identities.
-
-0.3.3 retains the prior security/privacy behavior and bootstrap bytes while updating the exact supported game profile. Optional Portuguese documentation adds no executable behavior.
+Debug reports reconstruct allowlisted fields, not raw files. In-game map position is permitted when fresh; no real-world location source is queried. Screenshots are off until explicitly requested, previewed and included. Names/chat in the approved image remain visible. No automatic uploads, audio recordings, model transfers or remote-viseme networking are added. Exact-file scan evidence is in validation/0.4.0; unsupported engines and archive inspection limits remain coverage gaps.

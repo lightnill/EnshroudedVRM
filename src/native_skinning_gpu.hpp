@@ -9,6 +9,7 @@ class NativeSkinGpuAsset {
 public:
     ~NativeSkinGpuAsset();
     VkDescriptorBufferInfo indices()const noexcept;
+    VkDescriptorBufferInfo surface()const noexcept;
     bool mouth_available()const noexcept;
 private:
     struct Impl;std::shared_ptr<Impl> impl;
@@ -19,6 +20,7 @@ class NativeSkinGpuGeometry {
 public:
     ~NativeSkinGpuGeometry();
     VkDescriptorBufferInfo binding()const noexcept;
+    VkDescriptorBufferInfo surface_binding()const noexcept;
 private:
     struct Impl;std::shared_ptr<Impl> impl;
     explicit NativeSkinGpuGeometry(std::shared_ptr<Impl>);
@@ -44,12 +46,19 @@ public:
         const VkPhysicalDeviceLimits&,const std::filesystem::path&,const bool* quarantine);
     ~NativeSkinningGpu();
     std::shared_ptr<NativeSkinGpuAsset> asset(std::shared_ptr<const NativeSkinAsset>);
+    std::shared_ptr<NativeSkinGpuAsset> asset(std::shared_ptr<const NativeSkinAsset>,bool surface,
+        const std::shared_ptr<NativeSkinGpuAsset>& reuse={});
+    // Lazy enhanced compute resources. Static mask UV uploads need no pipeline.
+    void prepare_surface();
     void upload(VkCommandBuffer,const std::shared_ptr<NativeSkinGpuAsset>&);
     // Call only after successful completion of the upload's owning submission.
     void finish_upload(const std::shared_ptr<NativeSkinGpuAsset>&);
     std::shared_ptr<NativeSkinGpuFrame> frame(const std::shared_ptr<NativeSkinGpuAsset>&,
         const NativeSkinPose&,VkDescriptorBufferInfo prepared_frame,
         std::shared_ptr<const NativeSkinGpuGeometry> previous={},const vrm::MouthWeights& mouth_weights={});
+    std::shared_ptr<NativeSkinGpuFrame> frame(const std::shared_ptr<NativeSkinGpuAsset>&,
+        const NativeSkinPose&,VkDescriptorBufferInfo prepared_frame,
+        std::shared_ptr<const NativeSkinGpuGeometry> previous,const vrm::MouthWeights& mouth_weights,bool surface);
     // Preparation must already have written the shared frame. This records
     // transforms -> deformation -> aggregate commit gate -> graphics visibility.
     void record(VkCommandBuffer,const std::shared_ptr<NativeSkinGpuFrame>&);

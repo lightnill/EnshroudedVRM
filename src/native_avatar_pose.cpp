@@ -87,6 +87,10 @@ bool matching_history(const NativeAvatarPose* previous,const NativeAvatarPose& c
 
 NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::RetargetResult& pose,
                                         const NativeAvatarPose* previous) noexcept {
+    return make_native_avatar_pose(avatar,pose,previous,false);
+}
+NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::RetargetResult& pose,
+                                        const NativeAvatarPose* previous,bool surface) noexcept {
     try {
         require(static_cast<bool>(pose), "Invalid native avatar retarget result");
         require(!avatar.nodes.empty() && avatar.nodes.size()<=max_nodes &&
@@ -99,10 +103,11 @@ NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::Re
 
         // Count storage and instanced output separately, before allocating output
         // or walking vertices. Shared meshes can expand beyond the import cap.
-        std::size_t source_vertices=0,source_indices=0,source_primitives=0;
+        std::size_t source_vertices=0,source_indices=0,source_primitives=0;bool has_surface=false;
         for(const auto& mesh:avatar.meshes) {
             add_bounded(source_primitives,mesh.primitives.size(),max_primitives);
             for(const auto& primitive:mesh.primitives) {
+                require(primitive.surface_vertices.empty()||primitive.surface_vertices.size()==primitive.vertices.size(),"Native surface stream layout mismatch");
                 add_bounded(source_vertices,primitive.vertices.size(),max_vertices);
                 add_bounded(source_indices,primitive.indices.size(),max_indices);
             }
@@ -116,6 +121,7 @@ NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::Re
             require(node.skin==-1 || reference(node.skin,avatar.skins.size()), "Invalid native avatar skin node");
             if(!node.active || node.mesh<0)continue;
             for(const auto& primitive:avatar.meshes[node.mesh].primitives) {
+                has_surface=has_surface||!primitive.surface_vertices.empty();
                 require(!primitive.vertices.empty() && !primitive.indices.empty() && primitive.indices.size()%3==0,
                         "Invalid native avatar triangle layout");
                 require(primitive.material==-1 || reference(primitive.material,avatar.materials.size()),
@@ -155,6 +161,7 @@ NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::Re
 
         NativeAvatarPose output;
         output.vertices.reserve(vertex_count);output.indices.reserve(index_count);output.draws.reserve(draw_count);
+        if(surface&&has_surface)output.surface_vertices.reserve(vertex_count);
         for(std::size_t n=0;n<avatar.nodes.size();++n) {
             const auto& node=avatar.nodes[n];if(!node.active || node.mesh<0)continue;
             // A bounded per-node conversion avoids validating/copying palette
@@ -175,6 +182,7 @@ NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::Re
                     output.indices.push_back(base+index);
                 }
                 const auto static_normal=normal_matrix(worlds[n]);
+                std::size_t local_vertex=0;
                 for(const auto& vertex:primitive.vertices) {
                     for(const auto value:vertex.position)require(std::isfinite(value),"Nonfinite native avatar position");
                     for(const auto value:vertex.normal)require(std::isfinite(value),"Nonfinite native avatar normal");
@@ -211,6 +219,29 @@ NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::Re
                     require(std::isfinite(length) && length>0, "Degenerate native avatar normal");
                     for(int c=0;c<3;++c)result.normal[c]=output_float(normal[c]/length);
                     std::copy(vertex.uv.begin(),vertex.uv.end(),result.uv);
+                    if(surface&&has_surface){vrm::SurfaceVertex side{};
+                        if(!primitive.surface_vertices.empty()){
+                            side=primitive.surface_vertices[local_vertex];
+                            for(auto v:side.normal_uv)require(std::isfinite(v),"Nonfinite native surface normal UV");
+                            for(auto v:side.rim_uv)require(std::isfinite(v),"Nonfinite native surface rim UV");
+                            for(auto v:side.tangent)require(std::isfinite(v),"Nonfinite native surface tangent");
+                            const auto sign=side.tangent[3];require(sign==0||sign==1||sign==-1,"Invalid native surface tangent sign");
+                            std::array<double,3> tangent{};
+                            if(sign!=0)for(int r=0;r<3;++r)for(int c=0;c<3;++c)tangent[r]+=transform[c*4+r]*side.tangent[c];
+                            double dot=0;for(int c=0;c<3;++c)dot+=tangent[c]*(normal[c]/length);
+                            for(int c=0;c<3;++c)tangent[c]-=dot*(normal[c]/length);
+                            const auto tangent_length=std::hypot(tangent[0],tangent[1],tangent[2]);
+                            std::fill(std::begin(side.tangent),std::end(side.tangent),0);
+                            if(sign!=0&&std::isfinite(tangent_length)&&tangent_length>0){
+                                for(int c=0;c<3;++c)side.tangent[c]=output_float(tangent[c]/tangent_length);
+                                const double det=transform[0]*(transform[5]*transform[10]-transform[9]*transform[6])-
+                                    transform[4]*(transform[1]*transform[10]-transform[9]*transform[2])+transform[8]*(transform[1]*transform[6]-transform[5]*transform[2]);
+                                side.tangent[3]=det<0?-sign:sign;
+                            }
+                        }
+                        output.surface_vertices.push_back(side);
+                    }
+                    ++local_vertex;
                     output.vertices.push_back(result);
                 }
             }

@@ -3,6 +3,12 @@
 // Previous motion is read only from a retained, successfully submitted private
 // frame. Its GPU commit is checked independently of current replacement.
 #include "native_oit_limits.hlsli"
+#ifndef EVRM_NATIVE_SURFACE
+#define EVRM_NATIVE_SURFACE 0
+#endif
+#if EVRM_NATIVE_SURFACE
+#include "native_surface_camera.hlsli"
+#endif
 struct PrepareControl {
     uint4 permit; uint4 offsets; uint4 extent; float4 config;
     uint4 parts[64]; uint4 regions[32];
@@ -194,7 +200,21 @@ bool prepare_oit_constants(float4 matrix[4],out float values[10]) {
         const float slack=magnitude*(1.f/4096.f)+1e-6f;
         clipMin[row]=lo-slack;clipMax[row]=hi+slack;
     }
+    // EVRM_OIT_W_BOUNDS_BEGIN
+#ifdef EVRM_NATIVE_MENU_PREVIEW
     const float wMin=clipMin.w*(1.f-1.f/1024.f),wMax=clipMax.w*(1.f+1.f/1024.f);
+#else
+    // The owned OIT triangle pipeline uses default0..W depth clipping, with no
+    // depth clamp/clip override. Every surviving fragment has W>=Z>=clipMin.z.
+    // Intersect the whole-model W bound with that conservative raster floor;
+    // camera-crossing vertices are clipped before the fragment shader executes.
+    // If max W is below the floor, no BLEND fragment survives. A finite dummy
+    // interval for that empty set lets unrelated geometry keep its permit.
+    const float rasterFloor=max(clipMin.z,0.f);
+    const float wMin=max(clipMin.w,rasterFloor)*(1.f-1.f/1024.f);
+    const float wMax=max(clipMax.w,rasterFloor)*(1.f+1.f/1024.f);
+#endif
+    // EVRM_OIT_W_BOUNDS_END
     preparedFrame.Store2(312u,asuint(float2(wMin,wMax)));
     diagnosticMask|=2u;preparedFrame.Store(264u,diagnosticMask);
     preparedFrame.Store(260u,4u);
@@ -250,7 +270,12 @@ bool previous_uv_rows(out float4 rows[4]) {
     if(control.history.x!=1u||any(control.history.yzw!=0u))return false;
     uint bytes;previousFrame.GetDimensions(bytes);if(bytes<208u)return false;
     const uint4 previousControl=previousFrame.Load4(192u);
+#if EVRM_NATIVE_SURFACE
+    // z/w now carry optional lighting, not motion/history authority.
+    if(previousControl.x!=1u||previousControl.y>1u)return false;
+#else
     if(previousControl.x!=1u||previousControl.y>1u||any(previousControl.zw!=0u))return false;
+#endif
     const float4 screen=asfloat(previousFrame.Load4(176u));
     const float2 expected=1.f/float2(control.extent.xy);
     if(!all(isfinite(screen))||any(abs(screen.xy-expected)>expected*1e-5f))return false;
@@ -288,8 +313,14 @@ void cs_prepare() {
     const uint partCount=control.permit.y,recordCount=control.permit.z,regionCount=control.permit.w;
     if(partCount==0u||partCount>64u||recordCount==0u||recordCount>131072u||regionCount==0u||regionCount>32u)return;
     if(control.extent.x==0u||control.extent.y==0u||control.extent.z!=0u||control.extent.w!=0u)return;
+    // EVRM_PLAYER_CONFIG_BEGIN
+#ifdef EVRM_NATIVE_MENU_PREVIEW
     if(!all(isfinite(control.config))||control.config.x<0.1f||control.config.x>10.f||
        (control.config.y!=1.f&&control.config.y!=-1.f)||control.config.w!=0.f)return;
+#else
+    if(!all(isfinite(control.config))||control.config.x<0.1f||control.config.x>10.f||
+       (control.config.y!=1.f&&control.config.y!=-1.f)||(control.config.w!=0.f&&control.config.w!=1.f))return;
+#endif
     const uint v=control.offsets.x,g=control.offsets.y,l=control.offsets.z,arenaBytes=control.offsets.w;
     if(arenaBytes==0u||arenaBytes>4194304u||((v|g|l|arenaBytes)&15u)!=0u||
        !fits(v,480u,arenaBytes)||!fits(g,1024u,arenaBytes)||!fits(l,2048u,arenaBytes))return;
@@ -371,9 +402,15 @@ void cs_prepare() {
     // actors cannot use this pipeline even with otherwise matching stamps.
     if(any(root!=uint3(0,0,0)))return;
 #else
-    float3 qualifierDelta=float3(root)*(1.f/131072.f)-playerWorld;
-    qualifierDelta-=round(qualifierDelta/32768.f)*32768.f;
-    if(!all(isfinite(qualifierDelta))||any(abs(qualifierDelta)>0.001f))return;
+    // The original lighting binding is shared by the local view. Its position
+    // qualifies legacy/local selection, not a separately account-bound remote.
+    // Remote mode is set only after final CPU actor/parts/source checks; all
+    // GPU instance/model/skin/transform/native-use checks above/below remain.
+    if(control.config.w==0.f){
+        float3 qualifierDelta=float3(root)*(1.f/131072.f)-playerWorld;
+        qualifierDelta-=round(qualifierDelta/32768.f)*32768.f;
+        if(!all(isfinite(qualifierDelta))||any(abs(qualifierDelta)>0.001f))return;
+    }
 #endif
     EVRM_MENU_STAGE(8u);
     bool member=false;uint scanned=0u;
@@ -422,8 +459,20 @@ void cs_prepare() {
     float oitValues[10];
     if(control.blend.x==1u&&!prepare_oit_constants(currentRows,oitValues))return;
     float4 previousUv[4];const bool history=previous_uv_rows(previousUv);
+#if EVRM_NATIVE_SURFACE
+#ifdef EVRM_NATIVE_MENU_PREVIEW
+    const float3 surfaceCamera=evrm_surface_camera_relative(root,origin,menuCameraWorld,control.config.z);
+#else
+    const float3 surfaceCamera=evrm_surface_camera_relative(root,origin,cameraWorld,control.config.z);
+#endif
+    if(!all(isfinite(surfaceCamera)))return;
+#endif
     [unroll] for(uint row=0u;row<4u;++row)preparedFrame.Store4(row*16u,asuint(currentRows[row]));
+#if EVRM_NATIVE_SURFACE
+    [unroll] for(uint row=0u;row<3u;++row)preparedFrame.Store4(128u+row*16u,asuint(float4(normalRows[row],surfaceCamera[row])));
+#else
     [unroll] for(uint row=0u;row<3u;++row)preparedFrame.Store4(128u+row*16u,asuint(float4(normalRows[row],0)));
+#endif
     preparedFrame.Store4(176u,asuint(float4(1.f/float(control.extent.x),1.f/float(control.extent.y),jitter)));
     preparedFrame.Store4(208u,uint4(root,asuint(scale)));
     if(control.blend.x==1u){
@@ -435,6 +484,13 @@ void cs_prepare() {
     if(history)[unroll] for(uint row=0u;row<4u;++row)preparedFrame.Store4(64u+row*16u,asuint(previousUv[row]));
     // A rejected previous frame changes only motion, never current admission.
     EVRM_MENU_STAGE(11u);
+#if EVRM_NATIVE_SURFACE
+    // The admitted LightingOwner2048 block is DeferredLighting's constants:
+    // LightFactors.emissive@12 and exposure@16. Publish alongside the sole
+    // commit, retaining the existing byte192 gate and both spatial/history bits.
+    preparedFrame.Store4(192u,uint4(1,history?1u:0u,arena_word(l+16u),arena_word(l+12u)));
+#else
     preparedFrame.Store4(192u,uint4(1,history?1u:0u,0,0));
+#endif
 }
 

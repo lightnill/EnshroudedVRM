@@ -1,11 +1,13 @@
 #pragma once
 #include "mouth_data.hpp"
+#include "material_surface.hpp"
 
 #include <array>
 #include <cstdint>
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -34,6 +36,7 @@ struct Vertex {
 };
 struct Primitive {
     std::vector<Vertex> vertices;
+    std::vector<SurfaceVertex> surface_vertices;
     std::vector<std::uint32_t> indices;
     int material = -1;
     bool skinned = false;
@@ -81,7 +84,8 @@ struct Material {
     AlphaMode alpha = AlphaMode::Opaque;
     float alpha_cutoff = 0.5f;
     bool double_sided = false, unlit = false;
-    std::string mtoon_json; // Preserved; MToon shading is not implemented yet.
+    std::string mtoon_json; // Full source metadata; surface stores the supported subset.
+    std::shared_ptr<const MaterialSurface> surface;
 };
 struct Avatar {
     VrmVersion version = VrmVersion::V1;
@@ -111,16 +115,20 @@ struct ConstraintStep { std::size_t node = 0; bool world = false; };
 std::vector<ConstraintStep> node_constraint_order(const Avatar& avatar);
 }
 struct ImportLimits {
-    std::size_t file_bytes = 512 * 1024 * 1024;
+    // TinyGLTF/stb image callbacks use signed-int byte counts. Callers may set
+    // tighter budgets; the default adds no smaller importer-only memory cap.
+    std::size_t file_bytes = static_cast<std::size_t>(std::numeric_limits<int>::max());
     std::size_t json_bytes = 8 * 1024 * 1024, primitives = 4096;
-    std::size_t decoded_image_bytes = 256 * 1024 * 1024;
+    std::size_t decoded_image_bytes = std::numeric_limits<std::size_t>::max();
     std::size_t vertices = 2'000'000, indices = 6'000'000;
     // Bounded original storage validation, separate from retained render data.
     std::size_t source_vertex_visits = 16'000'000;
     std::size_t mouth_bindings=max_mouth_bindings,mouth_records=max_mouth_records;
     std::size_t mouth_source_vertex_visits=max_mouth_source_visits,mouth_ranges=max_mouth_ranges;
     std::size_t nodes = 2048, joints_per_skin = 512;
-    int image_dimension = 8192;
+    // The pinned decoder enforces its own dimensions/byte representation.
+    // Upload separately validates the active device's maxImageDimension2D.
+    int image_dimension = std::numeric_limits<int>::max();
 };
 struct ImportResult {
     Avatar avatar;

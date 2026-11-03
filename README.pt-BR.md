@@ -1,12 +1,22 @@
-# EnshroudedVRM 0.3.3 — guia em português (Brasil)
+# EnshroudedVRM 0.4.0 — guia em português (Brasil)
 
 Jogue Enshrouded com seu avatar VRM. Mod de **lightnill**.
 
-Esta versão funciona com a compilação Steam **26320373** do jogo. A versão **0.3.2** continua disponível apenas para a compilação anterior **26082781**. Não misture arquivos dessas versões.
+Esta versão funciona com a compilação Steam **26404966** do jogo. A versão **0.3.3** continua disponível para a compilação anterior **26320373**. Não misture arquivos dessas versões.
+
+**A implementação ainda tem bugs e está incompleta.** Os shaders precisam de mais refinamento: reflexos, matcaps, transparência e iluminação fraca podem apresentar resultados incorretos. **A animação da boca por voz de outros jogadores ainda não funciona.** Ainda podem ocorrer travadas e retornos breves ao personagem original.
+
+## Novidades da 0.4.0
+
+- **Modelos por jogador em F8:** escolha You ou Player N e atribua um VRM local. Outros jogadores começam sem substituição. As escolhas são lembradas por conta neste computador, inclusive após reconexão ou troca de personagem.
+- **Importador mais completo:** normal maps glTF e mapas/máscaras padrão de matcap/rim do MToon em VRM0/VRM1, com transformações UV suportadas e tangentes geradas. PNGs de 16 bits são convertidos para RGBA8. Isso não reproduz todos os shaders personalizados do Unity nem todos os tipos de máscara.
+- **Auto, Enhanced, Fast e Matte:** presets para o modelo inteiro e ajustes individuais por material, salvos por conteúdo do modelo. Auto usa os efeitos suportados quando necessários; materiais sem mapas efetivos mantêm o caminho rápido.
+- **Modelos maiores:** removidos os antigos limites pequenos de memória do importador; F8 mostra estimativas de memória das texturas e buffers da CPU. Limites estruturais, do decodificador, da GPU e de alocação continuam valendo. Modelos grandes ainda podem travar o jogo ou esgotar memória.
+- **Relatório de depuração local:** diagnósticos recentes, configurações, CPU/RAM/GPU, contexto de renderização e coordenadas dentro do jogo; captura de tela opcional com revisão antes de incluir. Nada é enviado automaticamente.
 
 ## Instalação, passo a passo
 
-1. Baixe **EnshroudedVRM-0.3.3.zip**, o pacote completo para jogadores. No GitHub, escolha esse arquivo na seção **Assets**. Os arquivos **Source code (zip)** e **Source code (tar.gz)** são o código-fonte e não são o mod pronto para instalar.
+1. Baixe **EnshroudedVRM-0.4.0.zip**, o pacote completo para jogadores. No GitHub, escolha esse arquivo na seção **Assets**. Os arquivos **Source code (zip)** e **Source code (tar.gz)** são o código-fonte e não são o mod pronto para instalar.
 2. **Feche o jogo.** Na biblioteca da Steam, clique com o botão direito em Enshrouded e abra **Gerenciar > Explorar arquivos locais** (em inglês: **Manage > Browse local files**). Encontre a pasta que contém **enshrouded.exe**.
 3. Extraia o ZIP para uma pasta temporária. Copie **vulkan-1.dll** e a pasta inteira **EnshroudedVRM** para a mesma pasta de **enshrouded.exe**. Não coloque os arquivos dentro de outra pasta chamada EnshroudedVRM e não copie apenas os arquivos de Runtime.
 4. Se já existir um **vulkan-1.dll de outro mod**, pare: não substitua, renomeie nem tente combinar os dois. Se estiver atualizando uma instalação conhecida deste mod, substitua todos os arquivos do pacote com o jogo fechado e preserve seus VRMs pessoais.
@@ -31,7 +41,9 @@ LEIA-ME-PT-BR.txt é uma documentação adicional na raiz do ZIP; pode ser guard
 
 Abra **F8 > Avatar**. Para usar o personagem original, ative **No model replacement**. Desative a opção para voltar ao VRM selecionado. A seleção e as preferências são lembradas entre sessões.
 
-Os presets **Game lighting** e **Matte** podem ser aplicados ao modelo inteiro. Também é possível alterar materiais individualmente, herdar o preset geral ou restaurar uma configuração. As roupas e armaduras nativas do jogo não são ajustadas automaticamente ao VRM. Modelos grandes podem reduzir o desempenho.
+Em **F8 > Avatar > Player**, escolha primeiro o jogador a configurar. Player N é uma identificação anônima da sessão; a escolha salva acompanha a conta. É possível usar modelos diferentes ao mesmo tempo. As atribuições mudam apenas o que este computador desenha, sem enviar modelos aos outros clientes.
+
+Os presets **Auto**, **Enhanced**, **Fast** e **Matte** podem ser aplicados ao modelo inteiro. Auto ativa normal maps e máscaras MToon suportadas quando o material precisa; Fast mantém o caminho otimizado anterior. Tente Fast se os reflexos ou a iluminação parecerem errados. Matte ainda pode manter alguns efeitos refletivos do material. Os presets são compartilhados entre todos os jogadores que usam o mesmo conteúdo de modelo. Também é possível alterar materiais individualmente, herdar o preset geral ou restaurar uma configuração. As roupas e armaduras nativas do jogo não são ajustadas automaticamente ao VRM. Modelos grandes podem reduzir o desempenho.
 
 ## Animação da boca / lip sync
 
@@ -40,11 +52,13 @@ O recurso de voz é opcional e deve ser ativado nas configurações F8.
 - **Game voice** usa a voz de saída do próprio jogo. É necessária uma sessão com chat de voz ativo. Em Single Player, esse caminho pode não receber áudio. O mute e o push-to-talk do jogo controlam o áudio disponível para essa opção.
 - **Local microphone** permite usar a animação da boca offline. **Windows default** segue o microfone padrão do Windows; também é possível escolher um dispositivo. Esse modo é independente do mute e do push-to-talk do jogo.
 
-Ajuste **Strength**, **Sensitivity** e **Smoothing** conforme necessário. O VRM precisa ter expressões de boca compatíveis. Não é preciso calibrar gravando vogais. O processamento é local: o mod não grava nem envia áudio e não transmite dados extras de visemas entre jogadores.
+Ajuste **Strength**, **Sensitivity** e **Smoothing** conforme necessário. O VRM precisa ter expressões de boca compatíveis. Não é preciso calibrar gravando vogais. **A voz anima apenas You, mesmo com outro jogador selecionado no menu. Visemas/lip sync de outros jogadores ainda não estão implementados.** O processamento é local: o mod não grava nem envia áudio e não transmite dados extras de visemas entre jogadores.
 
 ## Atualizar sem perder suas configurações
 
-Feche o jogo e substitua os arquivos do pacote em conjunto. Não apague seus modelos pessoais. As configurações ficam em **%LOCALAPPDATA%\EnshroudedVRM\State**, fora da pasta do jogo. Aguarde um momento depois da última alteração antes de fechar o jogo para permitir o salvamento em segundo plano.
+Feche o jogo e substitua os arquivos do pacote em conjunto. Não apague seus modelos pessoais. Não compartilhe **player-model-assignments.json**: ele contém tokens privados desta instalação e caminhos locais. Prefira o relatório criado em F8.
+
+As configurações ficam em **%LOCALAPPDATA%\EnshroudedVRM\State**, fora da pasta do jogo. Aguarde um momento depois da última alteração antes de fechar o jogo para permitir o salvamento em segundo plano.
 
 Não use os scripts de inicialização das versões antigas depois de instalar o pacote standalone. Não misture Runtime, shaders, Compatibility ou release-manifest.json de versões diferentes. Para voltar a uma versão anterior, faça antes um backup das configurações.
 
@@ -53,7 +67,7 @@ Não use os scripts de inicialização das versões antigas depois de instalar o
 - **F8 não abre:** confirme que vulkan-1.dll está ao lado de enshrouded.exe e que a pasta não ficou duplicada. Tente Fn + F8 em notebooks. Confira se o jogo está na compilação compatível e se outro mod já usa vulkan-1.dll.
 - **Só aparece o personagem original:** escolha um .vrm válido em F8 e desative No model replacement. Depois de uma atualização do jogo, uma versão incompatível pode recusar a substituição de propósito. Não remova nem desative as verificações de compatibilidade.
 - **A boca não se move:** ative o recurso de voz e confira a fonte. Para testar offline, escolha Local microphone e o dispositivo correto. Para Game voice, use uma sessão com voz ativa e confira o mute/push-to-talk do jogo.
-- **Aparece um erro de PowerShell:** provavelmente você está usando um pacote ou launcher antigo. A instalação 0.3.3 inicia pela Steam e não exige liberar scripts.
+- **Aparece um erro de PowerShell:** provavelmente você está usando um pacote ou launcher antigo. A instalação 0.4.0 inicia pela Steam e não exige liberar scripts.
 - **Travadas ou modelo piscando:** anote o que estava acontecendo, o modelo usado e a configuração de neblina. Em F8, crie um relatório de depuração para ajudar a investigar. Não há garantia de FPS igual em todos os modelos ou computadores.
 - **Antivírus bloqueou um arquivo:** não desative a proteção. Confira a origem do download e os resultados de verificação publicados para os hashes exatos. Um resultado sem detecções não é uma garantia absoluta de segurança.
 
@@ -73,6 +87,6 @@ Com o jogo fechado, remova apenas o vulkan-1.dll e os arquivos fornecidos por es
 
 ## Limites e licenças
 
-A substituição é local ao seu cliente. Sincronização de avatares entre jogadores, ajustes automáticos da armadura nativa e MToon completo não estão implementados. A validação desta atualização foi feita no desktop; outros computadores e configurações ainda precisam de cobertura.
+A substituição é local ao seu cliente. Duas substituições simultâneas foram verificadas no desktop e no notebook na compilação suportada, mas isso não garante estabilidade nem FPS. Há retornos breves ao personagem nativo, atrasos iniciais e picos de tempo de quadro. Um relatório do notebook não conseguiu coletar as configurações gráficas. Reflexos e iluminação fraca ainda precisam de ajustes. Shaders personalizados do Unity, outlines, animação UV, máscaras adicionais de brilho/rugosidade, MToon completo, ajuste da armadura nativa e lip sync remoto ainda não são suportados integralmente. A prévia do inventário continua sendo local; sobreviventes não devem receber o modelo do jogador.
 
 O código original usa a licença MIT. O Oculus LipSync e o modelo de exemplo têm termos separados, descritos nos avisos do pacote e nas permissões do VRM. Mod não oficial, sem vínculo ou endosso da Keen Games.

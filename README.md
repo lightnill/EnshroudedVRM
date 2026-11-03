@@ -1,73 +1,83 @@
-# EnshroudedVRM 0.3.3
+# EnshroudedVRM 0.4.0
 
 Play Enshrouded as your VRM avatar. By **lightnill**.
 
-[Português (Brasil): instalação e solução de problemas](README.pt-BR.md). The ZIP also includes `LEIA-ME-PT-BR.txt`.
+[Português (Brasil): instalação e ajuda](README.pt-BR.md). The player ZIP also includes **LEIA-ME-PT-BR.txt**.
 
-0.3.3 restores compatibility with Enshrouded Steam build **26320373** and adds a Portuguese installation guide. Start normally through Steam and configure the mod with **F8**. Local-player ownership, correct inventory/survivor previews, held equipment, both lip-sync sources, model switching and saved material presets are retained. Multiplayer avatar synchronization is future work.
+**0.4.0 is still buggy and incomplete.** This is a feature release, not a claim of stability. The shaders are still being refined: reflections, matcaps, transparency and low-light shading can look wrong. **Lip sync/visemes for other players are not implemented.** Brief native-character fallbacks and loading or frame-time spikes can still occur.
 
-The release and avatar runtime are version 0.3.3. The bootstrap keeps its independent
-0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
-records the runtime and bootstrap versions separately.
+Supports Enshrouded Steam build **26404966** only. Keep **0.3.3** for the previous build **26320373**; packages are not interchangeable across game updates.
+
+## New in 0.4.0
+
+- **Per-player VRMs in F8:** select You or a connected Player N and assign a local model. Other players default to no replacement. Choices are remembered per account on this PC, including across characters and reconnects. Different players can use different VRMs simultaneously.
+- **Broader importer/material support:** standard glTF normal maps and supported VRM0/VRM1 MToon matcap/rim maps and masks, with supported UV transforms and generated tangents. Embedded 16-bit PNGs are decoded into the existing RGBA8 render format. This does not reproduce custom Unity shaders or every possible mask workflow.
+- **Auto, Enhanced, Fast and Matte appearance presets**, with saved whole-model settings and per-material overrides. Auto selects supported enhanced effects when authored maps need them; map-free materials retain the fast path.
+- **Larger-model handling:** remove the earlier small importer memory caps, show decoded texture/retained CPU-buffer estimates in F8, and prepare optional shader variants in the background. Structural, decoder, device and allocation limits still apply; loading an oversized model can exhaust memory or stall the game.
+- **One-click local debug reports** with recent approved diagnostics, current settings, CPU/RAM/GPU information, rendering context and fresh in-game map coordinates when available. Optional screenshots require a preview and explicit inclusion. No automatic upload.
+- Updated player/preview ownership, fog and building-rendering compatibility, equipment handling and reduced repeated ownership/driver work. These improvements do not guarantee a particular FPS.
 
 ## Install and play
 
-1. Download **EnshroudedVRM-0.3.3.zip** from [the 0.3.3 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.3.3).
-2. Close Enshrouded. In Steam, choose **Manage â†’ Browse local files**.
-3. Check for an existing `vulkan-1.dll` beside `enshrouded.exe`. If it belongs to another mod, stop: do not overwrite, rename or chain it. Close the game before updating a known EnshroudedVRM installation.
-4. Copy the ZIP's `vulkan-1.dll` and `EnshroudedVRM` folder beside `enshrouded.exe`. Preserve your own models when updating the folder.
-5. Start Enshrouded normally through Steam. Press **F8** and choose a VRM using **Browse...** or the model list.
+1. Download **EnshroudedVRM-0.4.0.zip** from the [0.4.0 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.4.0). GitHub's Source code archives are for developers, not the player package.
+2. Close Enshrouded. In Steam, choose **Manage > Browse local files** and find **enshrouded.exe**.
+3. If another mod owns a **vulkan-1.dll** beside the game, stop: do not overwrite, rename or chain it. For an existing EnshroudedVRM installation, replace the complete package with the game closed and preserve your own VRMs.
+4. Extract the ZIP and copy **vulkan-1.dll** and the entire **EnshroudedVRM** folder beside **enshrouded.exe**. Avoid a duplicated folder level. The Portuguese guide at the ZIP root is optional documentation.
+5. Launch normally through Steam and press **F8** (or **Fn + F8** on some laptops). Choose a player, disable **No model replacement**, and use **Browse...** or the model list. The original character stays visible until the model is ready.
 
-The player download needs no launcher EXE, CMD/batch file, PowerShell startup command, Python, administrator access or separate mod loader. The original game character stays visible until a valid model is selected. The old 0.2.0 script launcher is no longer needed for this package.
+No launcher EXE, batch file, PowerShell startup script, Python, administrator access or separate mod loader is required. Do not use the older script launcher with this package.
 
-## Avatar and appearance
+    Enshrouded/
+      enshrouded.exe
+      vulkan-1.dll
+      EnshroudedVRM/
+        Runtime/
+        Compatibility/
+        Avatars/
+        release-manifest.json
 
-The included `vroid-sample.vrm` was assembled by Lightnill with VRoid Studio default assets. It is optional and is never selected automatically. The exact export is retained with its own embedded VRM permissions; see `EnshroudedVRM/Avatars/README.txt`. The mod's MIT code license does not replace the avatar's permissions.
+## Player models and appearance
 
-In **F8 â†’ Avatar**, enable **No model replacement** to use the game's original character. Disable it to restore your selected VRM. The switch, selected model and shader preferences survive restarts. Model and appearance controls are greyed out while replacement is off. The already-loaded avatar is cached for quick return; a disabled startup does not load the saved VRM.
+**F8 > Avatar > Player** selects whose model the controls edit. **No model replacement** keeps that player native while remembering the selected VRM. Anonymous Player N labels may change between sessions; the remembered choice follows the account. Remote assignments affect world characters only. Your inventory/title previews remain local; survivor previews stay native when their ownership is resolved.
 
-Appearance offers **Game lighting** and **Matte** whole-model presets, plus individual material overrides, inheritance and reset. Profiles use model content identity, so an identical renamed VRM retains its appearance settings. Full MToon shading and native armor fitting remain future work.
+The mod only changes what **your client** renders. It does not send model files or assignments to other clients. Other players must configure their own installation to see their preferred replacements. Native armor is not fitted to VRMs automatically.
 
-Embedded 16-bit-per-channel PNG textures are converted to RGBA8 during import. Rendering keeps the existing texture format and memory cost. Higher-depth decoding requires temporary workspace, so large images can still be declined by the existing image-memory limits.
+Appearance settings are remembered by model content, so an identical renamed file retains its settings. Settings are shared by every assigned copy of the same model. A material can inherit the whole-model preset, override it, or reset. Try **Fast** if Enhanced/Auto produces incorrect reflections or shading. **Matte is not guaranteed to remove every authored reflective effect.** Optional background preparation may temporarily keep a preview native or use the basic rendering path.
+
+The optional **vroid-sample.vrm**, assembled by Lightnill using VRoid Studio defaults, is included unchanged and is not selected automatically. Its embedded permissions apply separately from the mod's MIT code license; see Avatars/README.txt.
 
 ## Voice to viseme
 
-Voice is opt-in. **Game voice** uses the game's local outgoing voice path and requires a session with active voice chat. **Local microphone** works offline, follows Windows default input unless you choose a device, and is independent of game mute/push-to-talk. Strength, sensitivity and smoothing are configurable. Processing stays local; audio is not recorded or uploaded and no extra viseme network data is sent.
+Enable Voice to viseme in F8. **Game voice** uses your local outgoing game-voice audio and requires a voice-enabled session; Single Player may not activate it. **Local microphone** works offline, follows Windows default input or a selected device, and is independent of the game's mute/push-to-talk. Strength, sensitivity and smoothing are adjustable; no manual vowel calibration is required.
 
-## Updating and saved settings
+Voice always animates **You**, regardless of the selected Player control. **Other players' voice-driven visemes/lip sync do not work yet.** Processing is local; the mod does not record/upload audio or transmit additional viseme data. The game's own voice networking is unchanged.
 
-To update an existing EnshroudedVRM installation, close the game and replace the included package files together. Keep your own VRMs and saved preferences. The retained bootstrap has its own independent version; do not mix runtime/shader files from other builds. A 0.2.0 script launcher is no longer used after installing this standalone package.
+## Settings and updating
 
-Settings and bounded logs live in `%LOCALAPPDATA%/EnshroudedVRM/State`, independently of the game installation. For a first import from the old package, copy only `avatar-settings.json` and `mod-settings.json` from its State folder into `EnshroudedVRM/State` beside Runtime, then launch once. Existing user-folder preferences win and are never overwritten by import. Old launcher `settings.json` is not imported.
+Settings and bounded local logs live in **%LOCALAPPDATA%\EnshroudedVRM\State**. Replace all package files together; do not mix Runtime, shaders, Compatibility or manifests from different releases. Leave a moment after edits for background saving. Preserve models and back up settings before downgrading.
 
-Older avatar settings are read compatibly. New saves use schema 2 to remember replacement enablement. Keep a settings backup before downgrading to an older runtime. Leave a moment after the last edit before closing the game so the background save can finish.
+Private per-account choices live in **player-model-assignments.json**, using installation-specific keyed tokens and local paths rather than raw account IDs. Do not share that file or raw runtime logs. Use the F8 debug report instead. If saving fails, the menu warns and session choices can still work without persistence.
 
-## Coverage and limits
+For a first import from an old script installation, only avatar-settings.json and mod-settings.json from the old State folder are imported via the game-local EnshroudedVRM/State directory. Existing user-folder settings win. The old launcher settings.json is not imported.
 
-The standalone route has desktop evidence on **Windows 10 build 19045 x64**, Windows installed in **C:\Windows**, Vulkan loader **1.4.350**, and Steam build **26320373**. Desktop checks on the new game build cover Steam startup/F8, world avatar and held equipment, inventory/survivor/inventory previews, title/character reload, and Game voice plus Local microphone lip sync. Laptop reports informed these fixes; the versioned 0.3.3 package has not completed full cross-machine validation. Windows 11, other loader versions, other Windows-directory layouts and combined-loader operation remain unverified.
+## Report a problem
 
-An existing Vulkan loader loaded first, or a System32-only load, can bypass the local bootstrap. Other mods' `vulkan-1.dll` files conflict with this installation. Earlier EML/ShroudForge coexistence observations for the script route do not validate this route. Game-version and package checks intentionally decline unsupported or changed files. See [known issues](KNOWN-ISSUES.txt).
+Use **F8 > Create debug report**, then **Open reports folder**. The ZIP is saved under **%LOCALAPPDATA%\EnshroudedVRM\State\Reports**. It reconstructs allowlisted diagnostics; it does not attach raw logs/settings, account/server identifiers, personal paths, microphone IDs, audio, model files or memory dumps.
 
-Higher fog settings no longer hit the old snapshot dimension limit. The fog snapshot uses a packed representation within the existing 64 MiB allocation budget; driver allocation requirements remain checked. Local-player ownership is used before matching model parts, so unrelated world characters are excluded from that selection.
+Reports include recent timing/fallback counters, selected settings, hardware/model statistics, observed terrain/building/depth/fog context and current **Enshrouded map coordinates** when a fresh qualified local-world sample exists. No real-world location, save files or actual voxel blocks are collected. Missing fields are marked unavailable; a partial report can still help. Reports record the selected voice source at capture time, not complete voice-source history.
 
-World replacement now follows the game's explicit local-player selector. Inventory previews require their own verified local subject; survivor previews stay native. The selected local build passed inventory/survivor/inventory, equipment and title/character reload checks on the desktop. Wider scene and hardware coverage is still needed. Base-area stutters can still occur: a complete VRM-off comparison reduced, but did not eliminate, them. The included sampled hook timings are diagnostic evidence; no gameplay FPS improvement is claimed. Large avatars can reduce FPS. The release provides [exact-hash validation and scan evidence](validation/0.3.3/README.md); unsupported engines and scan limits are coverage gaps.
+Screenshots are off for each new report. If enabled, inspect the exact game-image preview and choose **Include this screenshot** or **Save without screenshot**. Visible names/chat remain visible in an included image. Review the ZIP before sharing it manually; nothing is sent automatically.
 
-## Remove
+## Current limits and validation
 
-Close the game and remove only this package's `vulkan-1.dll` and mod files. Preserve any personal avatars/import files before removing the folder. User-folder settings remain. Game executable/data files and other mods are not replaced.
+Desktop and laptop checks on the supported game build confirmed world avatars, equipment and simultaneous two-player replacements. Desktop checks also covered F8, inventory/survivor previews, reload and local game-voice lip sync. This is limited manual coverage, not a stability or performance guarantee. Short fallbacks, initial preparation delays and frame spikes remain. The laptop report omitted graphics settings, so those runs are not a matched performance comparison.
 
-See [building from source](BUILDING.md), [release notes](RELEASE-NOTES.md), [security behavior](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.md). Original code is MIT. The official Oculus LipSync runtime and the sample have separate terms. This unofficial mod is not endorsed by Keen Games.
+Enhanced rendering approximates supported materials in Enshrouded's lighting. Full Unity/MToon rendering, custom shaders, outlines, UV animation, extra gloss/roughness-mask models and remote lip sync remain incomplete or unsupported. Reflective surfaces can remain too bright in dim scenes; some nighttime underlighting also exists on the original character. See [known issues](KNOWN-ISSUES.txt).
 
-## Report an issue
+The current bootstrap has validated the default **C:\Windows** system-loader location on Windows x64. Other Windows-directory layouts are unsupported; another loader loaded first can bypass it. Unsupported game versions deliberately keep the native path. Do not disable antivirus or compatibility checks to force loading.
 
-In F8, choose **Create debug report**. The ZIP is saved under `%LOCALAPPDATA%/EnshroudedVRM/State/Reports`; **Open reports folder** opens that folder. Nothing uploads automatically.
+## Remove / developer information
 
-Reports reconstruct allowlisted recent diagnostics and settings, CPU/RAM/active GPU/driver details, anonymous model statistics, and observed terrain/building/depth/fog rendering context. Fresh qualified **in-game Enshrouded XYZ coordinates** are included when available (Y up, X/Z horizontal). Real-world location, actual voxel blocks and saves are not collected.
+Close the game and remove only this package's vulkan-1.dll and mod files, preserving personal VRMs. User-folder settings remain. The mod does not replace the game's executable/data files.
 
-Screenshots are off for every new report. If requested, capture is limited to the game image; F8 is hidden for that frame. Inspect the exact preview and choose **Include this screenshot** or **Save without screenshot**. An approved image can contain visible names/chat. Raw logs/settings, personal paths, account/server identifiers, microphone endpoint IDs, audio, models and memory dumps are omitted. Missing fields are marked unavailable. Review the ZIP before sharing it yourself.
-
-## Game update compatibility
-
-0.3.3 supports only Steam build **26320373**, executable SHA-256 `0403981fd2e8ad18bd8c5698dff03c8d505b5a46677832c496db9c645513f2a6`. **0.3.2 is retained for the previous game build 26082781** (resource 1273043); it is not a fallback for the updated game. Update all package files together. Fog Ultra hotspots, model/material persistence, optional report screenshots and the laptop still need fresh coverage on this patch; older tests do not establish that coverage.
-
-The exported report records the selected voice source at capture time. It currently omits voice-source history/counters; a later microphone selection does not mean Game voice was never used. Raw session logs stay local and may contain private details; do not publish them without reviewing them.
+See [release notes](RELEASE-NOTES.md), [building](BUILDING.md), [security](SECURITY.md), [notices](THIRD_PARTY_NOTICES.md), and exact-file verification under **validation/0.4.0**. Runtime/release version is **0.4.0**; the retained Microsoft-built bootstrap keeps its independently versioned, previously tested bytes. This unofficial mod is not endorsed by Keen Games.

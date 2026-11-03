@@ -49,6 +49,16 @@ try {
         }
         & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-T' 'ps_6_0' '-E' 'ps_oit' (Join-Path $taskProjectRoot 'shaders/avatar_native_oit.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar_native.pull.oit.spv')
         if ($LASTEXITCODE -ne 0) { throw 'Native transparency shader compilation failed.' }
+        foreach($taskSurfaceStage in @(@('vs_native','vs_6_0','avatar_native.hlsl','avatar_native.surface.vert.spv'),@('ps_gbuffer','ps_6_0','avatar_native.hlsl','avatar_native.surface.gbuffer.spv'),@('ps_oit','ps_6_0','avatar_native_oit.hlsl','avatar_native.surface.oit.spv'))){
+            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-DEVRM_NATIVE_SURFACE=1' '-T' $taskSurfaceStage[1] '-E' $taskSurfaceStage[0] (Join-Path $taskProjectRoot ('shaders/'+$taskSurfaceStage[2])) '-Fo' (Join-Path $taskShaderOutput $taskSurfaceStage[3])
+            if($LASTEXITCODE -ne 0){throw 'Enhanced material shader compilation failed.'}
+        }
+        foreach($taskSurfacePrepare in @(@('native_prepare.hlsl','native_prepare.surface.comp.spv'),@('native_menu_prepare.hlsl','native_menu_prepare.surface.comp.spv'))){
+            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_SURFACE=1' '-T' 'cs_6_0' '-E' 'cs_prepare' (Join-Path $taskProjectRoot ('shaders/'+$taskSurfacePrepare[0])) '-Fo' (Join-Path $taskShaderOutput $taskSurfacePrepare[1])
+            if($LASTEXITCODE -ne 0){throw 'Enhanced camera shader compilation failed.'}
+        }
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_SKIN_SURFACE=1' '-T' 'cs_6_0' '-E' 'cs_skin' (Join-Path $taskProjectRoot 'shaders/native_skinning.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_skinning.surface.comp.spv')
+        if($LASTEXITCODE -ne 0){throw 'Enhanced skin shader compilation failed.'}
         foreach($taskShadowStage in @(@('vs_shadow','vs_6_0','vert'),@('ps_shadow','ps_6_0','frag'))){
             & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' $taskShadowStage[1] '-E' $taskShadowStage[0] (Join-Path $taskProjectRoot 'shaders/avatar_native_shadow.hlsl') '-Fo' (Join-Path $taskShaderOutput ('avatar_native.shadow.'+$taskShadowStage[2]+'.spv'))
             if($LASTEXITCODE -ne 0){throw 'Native shadow shader compilation failed.'}
@@ -57,6 +67,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Native volume snapshot shader compilation failed.' }
         & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/debug_report_capture.hlsl') '-Fo' (Join-Path $taskShaderOutput 'debug_report_capture.comp.spv')
         if ($LASTEXITCODE -ne 0) { throw 'Debug report capture shader compilation failed.' }
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/native_player_commit.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_player_commit.comp.spv')
+        if ($LASTEXITCODE -ne 0) { throw 'Shared player commit shader compilation failed.' }
         $taskSources = @('runtime_bridge.cpp','device_features.cpp','command_trace.cpp','command_trace_runtime.cpp','deferred_rendering.cpp','deferred_runtime.cpp','gpu_probe.cpp','graphics_state.cpp','avatar_renderer.cpp','enshrouded_bridge.cpp','vrm_asset.cpp','retarget.cpp','spring_bones.cpp','tool_grip.cpp','secondary_hand_contact.cpp','native_tool_slots.cpp','native_tool_slot_target.cpp','native_tool_slots_runtime.cpp','native_visual_slot_write.cpp','native_tool_call_patch.cpp','native_avatar_pose.cpp','native_state.cpp','native_draw.cpp','native_backend.cpp','native_owner.cpp','native_owner_process.cpp','native_clip_shader.cpp','native_clip_pipelines.cpp','native_buffer_memory.cpp','native_body_coverage.cpp','native_body_selection.cpp','native_instance_qualifiers.cpp','native_oit_window.cpp','native_transparency_trace.cpp','native_image_memory.cpp','native_material_plan.cpp','native_volume_snapshot.cpp','native_oit_draw.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/' + $_) }
         $taskSources += @('native_skinning.cpp','native_skinning_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += Join-Path $taskProjectRoot 'src/mouth_deformation.cpp'
@@ -66,7 +78,7 @@ try {
         $taskSources += @('voice_clock.cpp','voice_stream.cpp','voice_features.cpp','voice_profiles.cpp','voice_analyser.cpp','voice_automatic.cpp','voice_worker.cpp','voice_profile_io.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('voice_setup.cpp','mod_settings.cpp','mod_settings_service.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('microphone_backend.cpp','microphone_source.cpp','voice_inputs.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('avatar_settings.cpp','avatar_model.cpp','avatar_service.cpp','avatar_runtime.cpp','native_avatar_assets.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+        $taskSources += @('avatar_settings.cpp','avatar_model.cpp','avatar_service.cpp','avatar_runtime.cpp','native_avatar_assets.cpp','player_assignments.cpp','native_player_commit.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('standalone_startup.cpp','standalone_startup_runtime.cpp','standalone_startup_environment.cpp','standalone_files.cpp','standalone_settings.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('mod_input_state.cpp','mod_input_win32.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
         $taskSources += @('mod_menu.cpp','mod_menu_gpu.cpp','mod_overlay.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }

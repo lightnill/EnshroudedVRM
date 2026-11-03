@@ -59,10 +59,17 @@ bool shallow(const std::vector<char>& bytes){
 }
 bool preset(const nlohmann::json& value,AvatarShaderPreset& out){
     if(!value.is_string())return false;
-    const auto name=value.get<std::string>();if(name!="game"&&name!="matte")return false;
-    out=name=="matte"?AvatarShaderPreset::Matte:AvatarShaderPreset::GameLighting;return true;
+    const auto name=value.get<std::string>();
+    if(name=="game"||name=="auto")out=AvatarShaderPreset::GameLighting;
+    else if(name=="matte")out=AvatarShaderPreset::Matte;
+    else if(name=="enhanced")out=AvatarShaderPreset::Enhanced;
+    else if(name=="fast")out=AvatarShaderPreset::Fast;
+    else return false;
+    return true;
 }
-const char* preset_name(AvatarShaderPreset value){return value==AvatarShaderPreset::Matte?"matte":"game";}
+const char* preset_name(AvatarShaderPreset value){
+    switch(value){case AvatarShaderPreset::Matte:return "matte";case AvatarShaderPreset::Enhanced:return "enhanced";case AvatarShaderPreset::Fast:return "fast";default:return "game";}
+}
 }
 bool valid_avatar_fingerprint(const std::string& value)noexcept {
     return value.size()==64&&std::all_of(value.begin(),value.end(),[](char c){return(c>='0'&&c<='9')||(c>='a'&&c<='f');});

@@ -6,6 +6,7 @@
 #include <string_view>
 namespace evrm {namespace {
 using Json=nlohmann::json;
+const char* preset_name(unsigned value)noexcept{switch(value){case 1:return "matte";case 2:return "enhanced";case 3:return "fast";default:return "game-lighting";}}
 bool version(std::string_view value){if(value.empty()||value.size()>64||value.front()<'0'||value.front()>'9')return false;for(auto c:value)if(!((c>='0'&&c<='9')||(c>='a'&&c<='z')||(c>='A'&&c<='Z')||c=='.'||c=='-'||c=='+'))return false;return true;}
 bool digest(std::string_view value){if(value.size()!=64)return false;for(auto c:value)if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')))return false;return true;}
 bool timestamp(std::string_view value){if(value.size()!=20)return false;for(unsigned i=0;i<20;++i){const char expected=i==4||i==7?'-':i==10?'T':i==13||i==16?':':i==19?'Z':0;if(expected?value[i]!=expected:value[i]<'0'||value[i]>'9')return false;}return true;}
@@ -91,9 +92,9 @@ DebugReportContents make_debug_report_contents(const DebugReportData& input){
     Json configured={{"mod_settings_available",settings.available},{"avatar_settings_available",settings.avatar_available},{"appearance_settings_available",settings.appearance_available},{"graphics_settings_available",!selected_graphics.empty()},{"graphics",selected_graphics}};
     if(settings.available){configured["voice_enabled"]=settings.voice_enabled;configured["voice_source"]=settings.voice_source==1?"microphone":"game";configured["strength"]=std::min(settings.strength,100u);configured["sensitivity"]=std::min(settings.sensitivity,100u);configured["smoothing_ms"]=std::clamp(settings.smoothing_ms,20u,140u);}
     if(settings.avatar_available)configured["replacement_enabled"]=settings.replacement_enabled;
-    if(settings.appearance_available){configured["whole_model_preset"]=settings.whole_preset==1?"matte":"game-lighting";configured["material_overrides"]=Json::array();}
-    for(const auto& material:settings.materials)if(settings.appearance_available&&configured["material_overrides"].size()<1024&&material.index<100000&&material.preset<=1)
-        configured["material_overrides"].push_back({{"index",material.index},{"preset",material.preset==1?"matte":"game-lighting"}});
+    if(settings.appearance_available){configured["whole_model_preset"]=preset_name(settings.whole_preset);configured["material_overrides"]=Json::array();}
+    for(const auto& material:settings.materials)if(settings.appearance_available&&configured["material_overrides"].size()<1024&&material.index<100000&&material.preset<=3)
+        configured["material_overrides"].push_back({{"index",material.index},{"preset",preset_name(material.preset)}});
     add(files,"settings.json",configured);
     const auto& model=input.model;Json active={{"available",model.available}};
     if(model.available)active={{"available",true},{"label","active-model"},{"bundled_sample",model.bundled_sample},{"vrm_version",std::min(model.vrm_version,1u)},

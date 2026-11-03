@@ -1,26 +1,43 @@
-[b]EnshroudedVRM0.3.3 — Steam game build26320373[/b]
-Play Enshrouded as your VRM avatar. Launch normally through Steam and configure models, lip sync and shader/material presets with F8. No separate launcher, batch file, PowerShell startup command or other mod loader is required.
+[size=5][b]EnshroudedVRM[/b][/size]
+By lightnill — 0.1.1 preview
 
-[b]Which version?[/b]
-0.3.3 is for current game build26320373. The retained0.3.2 download is for previous game build26082781 (resource1273043). Do not mix files from those packages.
+Play Enshrouded as your own VRM avatar. The mod uses your graphics card to help animate the model and reduce CPU load. This is an early preview and still being improved. Right now, only you see your replacement avatar. Multiplayer avatar support is planned, but is not implemented yet.
 
-[b]Manual installation[/b]
-Close Enshrouded. Open its installation folder through Steam > Manage > Browse local files. Extract EnshroudedVRM-0.3.3.zip and copy vulkan-1.dll plus the entire EnshroudedVRM folder beside enshrouded.exe. Avoid an extra nested folder. If another mod already supplies vulkan-1.dll, stop rather than overwrite or rename it. Update a known EnshroudedVRM installation as a complete set with the game closed; preserve personal models and preferences.
-Launch normally through Steam. Press F8 (Fn+F8 on some laptops), choose Browse... or a listed VRM, and disable No model replacement if enabled. The optional vroid-sample.vrm is not selected automatically. GitHub Source code archives are not the player package.
+Use your own VRM avatar as a local cosmetic character replacement in Enshrouded. Includes GPU skinning, lit rendering, spring bones, menu previews and held-item alignment. Finger mappings are preferred; missing optional mappings use an approximate wrist fallback.
 
-[b]Português (Brasil)[/b]
-O ZIP inclui LEIA-ME-PT-BR.txt, com instalação passo a passo, estrutura das pastas, configuração F8 e solução de problemas. Baixe o pacote completo EnshroudedVRM-0.3.3.zip, feche o jogo e copie vulkan-1.dll e a pasta EnshroudedVRM para a mesma pasta de enshrouded.exe. Inicie pela Steam e use F8 (ou Fn+F8) para escolher seu VRM. Não é necessário executar PowerShell nem liberar scripts. A versão0.3.2 é somente para a compilação anterior26082781. O guia também está disponível como README.pt-BR.md no GitHub.
+[b]Installation[/b]
+1. Download the main CMD package and extract the entire ZIP to a writable local folder outside the game directory.
+2. Start Steam, then open Launch-EnshroudedVRM.cmd.
+3. Choose your own .vrm. Select enshrouded.exe only if automatic detection cannot find a supported installation. Review the paths, then type Y for the first launch.
+4. Use the generated Play-EnshroudedVRM.cmd for subsequent launches with your saved avatar and settings, without selecting files or typing. Offline play is the tested path.
+
+Run Launch-EnshroudedVRM.cmd again to change avatars or repair paths; close the game first. Starting through Steam alone runs the normal game. To uninstall, close the game and remove the extracted mod folder.
+
+[b]Requirements[/b]
+Windows 10/11 x64 with the built-in Windows PowerShell 5.1. Supported Steam executable: build 26082781, game resource version 1273043. Other executable builds are rejected. Existing script policies are respected; restrictive policies may block the launcher. No administrator rights, Python or additional mod framework is required for players.
+
+The package uses readable CMD/PowerShell launchers and a required native VRM runtime DLL. No custom launcher EXE, avatars or game executables are bundled. Bring a VRM you have permission to use.
 
 [b]Features[/b]
-Local-player replacement; VRM inventory previews with native survivor previews; held equipment; live model switching; Game lighting/Matte presets and individual material overrides; saved model/appearance preferences; original-character toggle; optional VRoid sample; Game voice lip sync and offline Local microphone with Windows default or selected input. Multiplayer avatar synchronization, native armor fitting and full MToon are not implemented.
+• VRM 0.x/1.x humanoid loading within importer bounds.
+• GPU skinning, lit rendering and relaxed hair/clothing spring motion.
+• Main-menu, character-selection, Character-panel and world previews.
+• Sword/shield, two-handed tool and drawn-bow alignment, with optional wrist fallback for missing finger mappings.
+• Portable settings and bounded text logs in the local State folder.
 
-[b]Voice[/b]
-Opt in through F8. Game voice requires a voice-enabled session and follows available game outgoing audio. Local microphone works offline and independently of game mute/push-to-talk. Audio is processed locally, never recorded/uploaded by the mod, and no extra viseme network messages are sent.
+[b]Limits[/b]
+Only you see the replacement; multiplayer avatar synchronization is not included. Large models/textures can reduce FPS. Unusual hands and equipment/animation combinations need broader coverage. Menu previews approximate blended materials with a 0.5 alpha cutoff; standard VRoid eyebrow overlays also use cutout in the world; other world blending is unchanged. Native armor/helmet fitting is not included. Read KNOWN-ISSUES.txt in the download.
 
-[b]Debug reports and privacy[/b]
-F8 > Create debug report saves a local ZIP; Open reports folder opens its location. Nothing uploads automatically. Reports reconstruct approved diagnostics/settings/hardware/model statistics and observed rendering context, with fresh qualified in-game XYZ coordinates when available. No real-world location, actual voxel blocks, saves, raw logs/settings, account/server IDs, endpoint IDs, personal paths, audio, models or memory dumps are attached. Screenshots start off; optional images require exact-image preview and explicit inclusion. Visible names/chat can remain in an approved image. Review the ZIP before sharing. Saved voice settings describe capture time; source history is not exported.
+[b]License, source and credits[/b]
+Original code is MIT, Copyright (c) 2026 lightnill. Reuse, modification and redistribution are allowed with the copyright and license notice retained. Preserve all third-party notices. Game and avatar rights remain with their owners. This is unofficial and not affiliated with or endorsed by Keen Games.
 
-[b]Coverage[/b]
-This update passed desktop startup/F8, world/equipment, inventory/survivor/inventory, title/character reload and both voice-source checks. Fresh Ultra-fog hotspots, persistence, optional screenshot and laptop checks remain coverage gaps on this patch. Large avatars can reduce FPS. Windows11, other Windows-folder layouts and combined-loader operation remain unverified. Settings stay under %LOCALAPPDATA%/EnshroudedVRM/State.
+[url=https://github.com/lightnill/EnshroudedVRM]Source, issues and build instructions on GitHub[/url]
+[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.2-preview]CMD release and checksums[/url]
+[url=https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.1.2-preview]Current release verification, file hashes and scan coverage[/url]
 
-Original mod code: MIT. Oculus LipSync and the sample avatar have separate terms. See included notices and embedded VRM permissions. Unofficial mod; not endorsed by Keen Games.
+Dependencies and credits: TinyGLTF, nlohmann/json, stb_image, ShroudForge-derived interface contracts, Vulkan-Headers and compiler runtime components. Full provenance and notices are included in THIRD_PARTY_NOTICES.md and notices/. No ValheimVRM source or assets are bundled.
+
+Development included substantial AI-generated code under lightnill's direction and testing.
+
+[b]Support and privacy[/b]
+Include the mod version, game build and a description of the issue. Do not upload private avatars, model-derived geometry/screenshots or unredacted logs. Automatic model exports, graphics-buffer captures, command traces, telemetry and auto-updates are disabled. Nothing is uploaded automatically.

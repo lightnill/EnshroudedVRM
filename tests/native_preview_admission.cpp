@@ -39,6 +39,9 @@ struct Backend {
     mutable unsigned verifies=0;bool verify=true;mutable bool change_actor=false;
     bool revalidate_owner(NativeOwnerCandidate& owner,std::string&)const noexcept{++verifies;if(change_actor)++owner.entity_generation;return verify;}
     std::mutex mutex;std::map<VkCommandBuffer,Recording> commands;
+    // This admission fixture owns one local preview. Multi-subject iteration
+    // itself is exercised by the full native backend fixture.
+    template<class Visit>void each_subject(Recording& recording,Visit&& visit){visit(recording);}
     unsigned coverage_sources=0,coverage_independent=0,coverage_models=0;
     struct Metadata {
         NativeBoundState value;NativeBufferBinding instance,culled,camera;

@@ -497,37 +497,48 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
     bool consumed = false;
     const bool retry=info&&state->overlay&&state->overlay->retries_present(*info);
     bool native_pose_complete = false;
-    evrm::AvatarCandidatePtr avatar_candidate;
+    std::array<evrm::AvatarCandidatePtr,16> avatar_candidates{};
+    std::size_t avatar_candidate_count=0;
     auto* avatar_service=evrm::avatar_runtime_service();
-    const bool replacement_enabled=avatar_service&&avatar_service->replacement_enabled();
-    if(!retry&&state->native)state->native->set_replacement_enabled(replacement_enabled);
-    if(!retry&&state->native&&state->avatar&&state->probe&&avatar_service){
+    const auto avatar_subjects=avatar_service?avatar_service->subjects():nullptr;
+    const bool replacement_enabled=avatar_service&&avatar_service->any_replacement_enabled();
+    if(!retry){
+        if(state->native){state->native->set_replacement_enabled(replacement_enabled);if(avatar_subjects)state->native->retain_player_models(*avatar_subjects);}
+        if(state->avatar&&avatar_subjects)state->avatar->retain_player_models(*avatar_subjects);
+    }
+    if(!retry&&state->native&&state->avatar&&state->probe&&avatar_service&&avatar_subjects){
         uint32_t family=UINT32_MAX;
         if(state->probe->queue_family(queue,family)){
-            if(replacement_enabled)avatar_candidate=evrm::avatar_device_request(*avatar_service,state->avatar->prepared_model());
-            const auto upload=state->native->prepare_model(queue,family,avatar_candidate);
-            std::string error;
-            if(!state->avatar->stage_candidate(avatar_candidate,upload==evrm::NativeAvatarUploadState::Ready,error)&&avatar_candidate)
-                avatar_service->fail_candidate(avatar_candidate->generation,error.empty()?"Could not prepare model motion":error);
-            else if(upload==evrm::NativeAvatarUploadState::Failed&&avatar_candidate)
-                avatar_service->fail_candidate(avatar_candidate->generation,"Could not prepare model graphics; current avatar kept");
+            for(const auto& subject:*avatar_subjects){
+                const auto candidate=evrm::avatar_device_request(*avatar_service,state->avatar->prepared_player_model(subject.subject),subject.subject,
+                    subject.selection&&state->native->player_model_ready(*subject.selection));
+                if(!candidate){if(subject.subject.empty()){std::string unused;state->avatar->stage_candidate({},false,unused);}continue;}
+                const auto upload=state->native->prepare_player_model(queue,family,candidate);
+                std::string error;
+                if(!state->avatar->stage_player_candidate(candidate,upload==evrm::NativeAvatarUploadState::Ready,error))
+                    avatar_service->fail_candidate(candidate->generation,error.empty()?"Could not prepare model motion":error,candidate->subject);
+                else if(upload==evrm::NativeAvatarUploadState::Failed)
+                    avatar_service->fail_candidate(candidate->generation,"Could not prepare model graphics; current avatar kept",candidate->subject);
+                else if(avatar_candidate_count<avatar_candidates.size())avatar_candidates[avatar_candidate_count++]=candidate;
+            }
         }
     }
     const auto native_buffer_epoch=state->native?state->native->state().buffer_epoch():0;
     // Backend ownership is sampled before taking the renderer resource mutex;
     // model activation acquires those locks in the opposite call direction.
-    const auto pose_owner=!retry&&replacement_enabled&&info&&info->swapchainCount==1&&state->native&&state->avatar&&
-        state->avatar->enabled()&&state->probe&&state->graphics?
-        state->native->pose_owner(native_buffer_epoch):nullptr;
+    const auto pose_owners=!retry&&replacement_enabled&&info&&info->swapchainCount==1&&state->native&&state->avatar&&
+        state->avatar->enabled()&&state->probe&&state->graphics&&avatar_subjects?
+        state->native->player_pose_owners(native_buffer_epoch,*avatar_subjects):std::vector<evrm::NativePlayerPoseOwner>{};
     if (!retry && replacement_enabled && info && state->avatar && state->probe && state->graphics)
-        native_pose_complete=state->avatar->before_present(queue, *info, *state->probe, *state->graphics, consumed,native_buffer_epoch,pose_owner);
-    if(!retry&&avatar_candidate&&avatar_service&&state->native&&state->avatar){
+        native_pose_complete=state->avatar->before_present_players(queue,*info,*state->probe,*state->graphics,consumed,native_buffer_epoch,pose_owners);
+    for(std::size_t candidate_index=0;!retry&&candidate_index<avatar_candidate_count&&avatar_service&&state->native&&state->avatar;++candidate_index){
+        const auto& avatar_candidate=avatar_candidates[candidate_index];
         struct Activation {evrm::NativeBackend* backend;evrm::AvatarRenderer* renderer;const evrm::AvatarCandidate* candidate=nullptr;};
         Activation activation{state->native.get(),state->avatar.get()};
         const auto commit=[](void* raw,const evrm::AvatarCandidate& candidate)noexcept{
             auto& item=*static_cast<Activation*>(raw);item.candidate=&candidate;
-            return item.backend->activate_model(candidate,[](void* value,std::uint64_t epoch)noexcept{
-                auto& item=*static_cast<Activation*>(value);return item.renderer->commit_candidate(*item.candidate,epoch);
+            return item.backend->activate_player_model(candidate,[](void* value,std::uint64_t epoch)noexcept{
+                auto& item=*static_cast<Activation*>(value);return item.renderer->commit_player_candidate(*item.candidate,epoch);
             },&item);
         };
         const auto activation_started=std::chrono::steady_clock::now();
@@ -555,14 +566,15 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
         const auto& startup=evrm::runtime_startup_context();
         evrm::ModMenuStatus status;status.voice=evrm::selected_voice_mouth_snapshot().activity;status.starting=evrm::selected_voice_starting();status.save_failed=!startup.state_writable||evrm::mod_settings_save_failed();
         status.startup_ready=startup.ready();status.startup_version=startup.version.c_str();
-        status.avatar=evrm::avatar_runtime_snapshot();
+        status.avatar=evrm::avatar_menu_snapshot();
         status.report=evrm::debug_report_status();
         status.microphone=evrm::local_microphone_state();status.microphones=evrm::local_microphone_devices();
-        if(replacement_enabled&&state->avatar)status.mouth=state->avatar->mouth_support();
+        if(avatar_service&&avatar_service->replacement_enabled()&&state->avatar)status.mouth=state->avatar->mouth_support();
         if(state->native&&state->native->mouth_gpu_unavailable())status.mouth=evrm::ModMouthSupport::Unavailable;
         state->overlay->before_present(queue,family,*info,consumed,accessible,status,menu);presenting=menu.view();
         if(!retry&&evrm::debug_report_sources_pending())try{
-            evrm::debug_report_observe_gpu(state->report_gpu);evrm::debug_report_observe_settings(evrm::mod_settings_snapshot(),status.avatar.get());
+            const auto local_avatar=evrm::avatar_runtime_snapshot();
+            evrm::debug_report_observe_gpu(state->report_gpu);evrm::debug_report_observe_settings(evrm::mod_settings_snapshot(),local_avatar.get());
             if(state->avatar){const auto model=state->avatar->prepared_model();evrm::debug_report_observe_model(model.get());}
             if(state->graphics&&info->swapchainCount==1&&info->pSwapchains){const auto target=state->graphics->swapchain(info->pSwapchains[0]);
                 const auto depth=state->graphics->scene_depth();evrm::debug_report_observe_view(target.extent.width,target.extent.height,depth?depth.format:0,depth?depth.samples:0);}

@@ -1,5 +1,8 @@
 // Independent compute skinning from this project's model-space CPU contract.
 // The aggregate finalize pass can revoke, but never grant, the common commit.
+#ifndef EVRM_SKIN_SURFACE
+#define EVRM_SKIN_SURFACE 0
+#endif
 [[vk::binding(0,0)]] ByteAddressBuffer sources;   // 64 bytes per immutable vertex
 [[vk::binding(1,0)]] ByteAddressBuffer palettes;  // 64-byte column-major matrices
 [[vk::binding(2,0)]] ByteAddressBuffer batches;   // world matrix, base/count, padding: 80 bytes
@@ -14,6 +17,10 @@ struct Control {
 };
 // Private UBO avoids disturbing the game's push-constant state.
 [[vk::binding(7,0)]] ConstantBuffer<Control> control;
+#if EVRM_SKIN_SURFACE
+[[vk::binding(8,0)]] ByteAddressBuffer sourceSurface; // UV2 + UV2 + tangent4: 32 bytes
+[[vk::binding(9,0)]] RWByteAddressBuffer outputSurface;
+#endif
 
 struct Affine {float3 x,y,z,t;};
 bool finite3(float3 v){return all(isfinite(v));}
@@ -47,6 +54,27 @@ bool inverseTransposeDirection(Affine m,float3 n,out float3 normal){
     normal=normalize(cofactor)*(determinant<0?-1.f:1.f);
     return finite3(normal);
 }
+#if EVRM_SKIN_SURFACE
+// Tangents follow the position's blended linear transform, while normals use
+// its inverse transpose. Positive scaling cancels in this normalized basis.
+// Zero handedness or a collapsed basis is the neutral normal-map fallback.
+float4 surfaceTangent(Affine m,float4 tangent,float3 normal){
+    if(tangent.w==0.f)return 0;
+    float matrixScale=max(largest(m.x),max(largest(m.y),largest(m.z)));
+    float tangentScale=largest(tangent.xyz);
+    if(!isfinite(matrixScale)||matrixScale<=0.f||tangentScale<=0.f)return 0;
+    float3 x=m.x/matrixScale,y=m.y/matrixScale,z=m.z/matrixScale;
+    float determinant=dot(x,cross(y,z));
+    if(!isfinite(determinant)||determinant==0.f)return 0;
+    float3 source=tangent.xyz/tangentScale;
+    float3 posed=x*source.x+y*source.y+z*source.z;
+    posed-=normal*dot(normal,posed);
+    float magnitude=largest(posed);
+    if(!finite3(posed)||magnitude<=0.f)return 0;
+    posed=normalize(posed/magnitude);
+    return finite3(posed)?float4(posed,tangent.w*(determinant<0.f?-1.f:1.f)):float4(0,0,0,0);
+}
+#endif
 bool deformMouth(uint vertex,uint sourceBytes,inout float3 position,inout float3 normal){
     if(control.mouthEnabled==0u)return true;
     if(control.mouthEnabled!=1u||control.mouthLookup!=control.vertices*64u||control.mouthRecordCount==0u||control.mouthRecordCount>98304u)return false;
@@ -90,6 +118,15 @@ void cs_skin(uint3 thread:SV_DispatchThreadID){
     float2 uv=asfloat(sources.Load2(at+24));
     if(!finite3(position)||!finite3(normal)||!all(isfinite(uv))){reject(4);return;}
     if(!deformMouth(i,sourceBytes,position,normal)){reject(256);return;}
+#if EVRM_SKIN_SURFACE
+    uint sourceSurfaceBytes,outputSurfaceBytes;
+    sourceSurface.GetDimensions(sourceSurfaceBytes);outputSurface.GetDimensions(outputSurfaceBytes);
+    if(sourceSurfaceBytes!=control.vertices*32u||outputSurfaceBytes!=control.vertices*32u){reject(512);return;}
+    float4 sideUv=asfloat(sourceSurface.Load4(i*32u));
+    float4 tangent=asfloat(sourceSurface.Load4(i*32u+16u));
+    if(!all(isfinite(sideUv))||!all(isfinite(tangent))||
+       (tangent.w!=0.f&&tangent.w!=1.f&&tangent.w!=-1.f)){reject(512);return;}
+#endif
     Affine world;if(!loadAffine(batches,batch*80u,world)){reject(8);return;}
     Affine transform=world;
     if(flags!=0){
@@ -121,6 +158,10 @@ void cs_skin(uint3 thread:SV_DispatchThreadID){
     uint outAt=i*44u;
     outputVertices.Store3(outAt,asuint(posed));outputVertices.Store3(outAt+12u,asuint(posedNormal));
     outputVertices.Store2(outAt+24u,asuint(uv));outputVertices.Store3(outAt+32u,asuint(oldPosition));
+#if EVRM_SKIN_SURFACE
+    outputSurface.Store4(i*32u,asuint(sideUv));
+    outputSurface.Store4(i*32u+16u,asuint(surfaceTangent(transform,tangent,posedNormal)));
+#endif
 }
 
 // This invocation runs only after all deformation writes/errors are available.

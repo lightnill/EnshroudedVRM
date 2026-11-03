@@ -146,7 +146,7 @@ Matrix actor_matrix(const Reader& instances, std::size_t offset, const std::arra
 } // namespace
 
 struct EnshroudedBridge::Impl {
-    struct Descriptor { std::array<double,3> native_scale{},offset{}; std::vector<std::uint32_t> palette,auxiliary; std::vector<std::string> guids; bool reject=false; };
+    struct Descriptor { std::array<double,3> native_scale{},offset{}; std::vector<std::uint32_t> palette,auxiliary,owner_prefix; std::vector<std::string> guids; bool reject=false; };
     struct Match { std::vector<std::uint32_t> palette,auxiliary; std::vector<std::string> guids; bool found=false; };
     std::vector<Matrix> rest;
     std::map<std::string,std::uint32_t> semantics;
@@ -197,14 +197,42 @@ struct EnshroudedBridge::Impl {
                 auxiliary_options.insert(std::move(auxiliary));
             }
             descriptor.reject=descriptor.reject || auxiliary_options.size()!=1;descriptor.auxiliary=*auxiliary_options.begin();
+            if(entry.contains("owner_partial_palette")){
+                const auto& policy=entry.at("owner_partial_palette");
+                require(policy.is_object()&&policy.size()==2&&policy.contains("policy")&&policy.contains("palette_joint_ids")&&
+                    policy.at("policy")=="owned-prefix-v1","Unsupported owner partial-palette policy");
+                require(entry.at("must_reject_pose_binding").get<bool>()&&palettes.size()>1&&
+                    auxiliary_options.size()==1&&auxiliary_options.begin()->empty(),"Partial-palette policy requires only certified palette-length ambiguity");
+                const std::vector<std::uint32_t>* previous=nullptr;
+                for(const auto& option:palettes){
+                    require(!previous||(option.size()>previous->size()&&std::equal(previous->begin(),previous->end(),option.begin())),
+                        "Partial-palette options must form a strict prefix chain");
+                    previous=&option;
+                }
+                const auto& requested=policy.at("palette_joint_ids");
+                require(requested.is_array()&&!requested.empty()&&requested.size()<=count,"Invalid observed palette prefix");
+                for(const auto& value:requested)descriptor.owner_prefix.push_back(number(value));
+                require(descriptor.owner_prefix==*palettes.begin(),"Observed prefix must be the shortest complete palette option");
+                for(const auto& option:palettes)for(std::size_t i=descriptor.owner_prefix.size();i<option.size();++i)
+                    for(const auto& semantic:semantics)require(option[i]!=semantic.second,"Partial palette would omit a mapped semantic");
+            }
             for (const auto& match : entry.at("matches")) guids.insert(match.at("guid").get<std::string>());
             require(!guids.empty(),"Catalog descriptor lacks resource provenance"); descriptor.guids.assign(guids.begin(),guids.end());
             const auto vertices=number(entry.at("vertexCount")),indices=number(entry.at("indexCount"));
             require(vertices>0 && indices>0,"Empty catalog mesh descriptor"); descriptors[count_key(vertices,indices)].push_back(std::move(descriptor));
         }
         require(!descriptors.empty(),"Empty player descriptor catalog");
+        for(const auto& group:descriptors)for(std::size_t i=0;i<group.second.size();++i){
+            const auto& certified=group.second[i];if(certified.owner_prefix.empty())continue;
+            for(std::size_t j=0;j<group.second.size();++j){if(i==j)continue;bool overlap=true;
+                for(unsigned axis=0;axis<3;++axis)overlap=overlap&&
+                    std::abs(certified.native_scale[axis]-group.second[j].native_scale[axis])<=2*tolerance&&
+                    std::abs(certified.offset[axis]-group.second[j].offset[axis])<=2*tolerance;
+                require(!overlap,"Partial-palette signature overlaps another catalog tolerance box");
+            }
+        }
     }
-    Match match(const Reader& mesh, std::size_t offset,std::uint32_t mesh_id,std::uint32_t instance_id,const Reader& instances) const {
+    Match match(const Reader& mesh, std::size_t offset,std::uint32_t mesh_id,std::uint32_t instance_id,const Reader& instances,bool owner_partial_allowed,unsigned diagnostic_context) const {
         mesh.span(offset,mesh_stride); const auto it=descriptors.find(count_key(mesh.u32(offset+44),mesh.u32(offset+36)));
         if (it==descriptors.end()) return {};
         std::array<double,3> scale{},position{};
@@ -217,9 +245,13 @@ struct EnshroudedBridge::Impl {
             bool close=true;
             for (unsigned i=0;i<3;++i) close=close && std::abs(scale[i]-descriptor.native_scale[i])<=tolerance && std::abs(position[i]-descriptor.offset[i])<=tolerance;
             if (!close) continue;
-            if(descriptor.reject){
+            const bool partial=owner_partial_allowed&&!descriptor.owner_prefix.empty();
+            if(descriptor.reject&&!partial){
                 std::ostringstream detail;detail.imbue(std::locale::classic());detail.precision(17);
-                detail<<"mesh="<<mesh_id<<" instance="<<instance_id<<" vertices="<<mesh.u32(offset+44)<<" indices="<<mesh.u32(offset+36)<<" scale=[";
+                detail<<"owner-filter="<<bool(diagnostic_context&1)<<" account-present="<<bool(diagnostic_context&2)
+                    <<" association-valid="<<bool(diagnostic_context&4)<<" preview-tagged="<<bool(diagnostic_context&8)
+                    <<" partial-policy="<<!descriptor.owner_prefix.empty()<<" partial-eligible="<<owner_partial_allowed
+                    <<" mesh="<<mesh_id<<" instance="<<instance_id<<" vertices="<<mesh.u32(offset+44)<<" indices="<<mesh.u32(offset+36)<<" scale=[";
                 for(unsigned i=0;i<3;++i)detail<<(i?",":"")<<scale[i];
                 detail<<"] offset=[";for(unsigned i=0;i<3;++i)detail<<(i?",":"")<<position[i];
                 detail<<"] catalog-matches="<<descriptor.guids.size()<<" catalog-guids=[";
@@ -232,13 +264,24 @@ struct EnshroudedBridge::Impl {
                     detail<<" model="<<instances.u32(at+120)<<" skin-offset="<<instances.u32(at+108);
                 throw PoseRejection("Catalog rejects ambiguous palette signature",detail.str());
             }
-            require(!result.found || (result.palette==descriptor.palette && result.auxiliary==descriptor.auxiliary),"Differing palette classifications match captured descriptor");
-            result.found=true; result.palette=descriptor.palette;result.auxiliary=descriptor.auxiliary;guids.insert(descriptor.guids.begin(),descriptor.guids.end());
+            const auto& observed=partial?descriptor.owner_prefix:descriptor.palette;
+            require(!result.found || (result.palette==observed && result.auxiliary==descriptor.auxiliary),"Differing palette classifications match captured descriptor");
+            result.found=true; result.palette=observed;result.auxiliary=descriptor.auxiliary;guids.insert(descriptor.guids.begin(),descriptor.guids.end());
         }
         result.guids.assign(guids.begin(),guids.end()); return result;
     }
     PlayerFrame read(const GpuSnapshot& snapshot,const NativePoseOwner* owner) const {
         if(owner)require(native_pose_owner_matches_snapshot(*owner,snapshot),"Local player pose owner source changed");
+        // A certified prefix is a partial pose observation, never ownership or
+        // rendering permission. Its producer/final submit still attest this
+        // exact account/actor/source; legacy and ownerless reads cannot use it.
+        const bool owner_partial_allowed=owner&&!snapshot.preview_subject.source.epoch&&owner->candidate.account&&owner->candidate.connection&&
+            owner->candidate.entity_id>=1&&owner->candidate.entity_id<=16&&
+            (owner->candidate.connection&63)+1==owner->candidate.entity_id;
+        // Error context only: these bits never authorize sampling or rendering.
+        const unsigned diagnostic_context=(owner?1u:0u)|(owner&&owner->candidate.account?2u:0u)|
+            (owner&&owner->candidate.connection&&owner->candidate.entity_id>=1&&owner->candidate.entity_id<=16&&
+                (owner->candidate.connection&63)+1==owner->candidate.entity_id?4u:0u)|(snapshot.preview_subject.source.epoch?8u:0u);
         const Reader camera(snapshot,"camera"),instances(snapshot,"instances"),skin(snapshot,"skin"),mesh(snapshot,"mesh-draw"),culled(snapshot,"culled-instances");
         camera.span(0,912); require(instances.size()>=instance_stride && instances.size()%instance_stride==0,"Truncated instance layout");
         require(culled.size()>=8 && culled.size()%8==0,"Truncated culled-instance layout"); PlayerFrame frame; frame.queue_family=snapshot.queue_family;
@@ -282,7 +325,7 @@ struct EnshroudedBridge::Impl {
             if(owner&&!native_pose_owner_contains(*owner,instance_id))continue;
             ++selected_records;
             if (!visited.emplace(mesh_id,instance_id).second) continue;
-            const auto matched=match(mesh,static_cast<std::size_t>(mesh_id)*mesh_stride,mesh_id,instance_id,instances); if (!matched.found) {++catalog_misses;continue;}
+            const auto matched=match(mesh,static_cast<std::size_t>(mesh_id)*mesh_stride,mesh_id,instance_id,instances,owner_partial_allowed,diagnostic_context); if (!matched.found) {++catalog_misses;continue;}
             const auto instance_offset=static_cast<std::size_t>(instance_id)*instance_stride; instances.span(instance_offset,instance_stride);
             auto found=parts.find(instance_id);
             if (found!=parts.end()) {

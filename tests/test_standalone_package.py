@@ -33,6 +33,7 @@ class StandalonePackageTests(unittest.TestCase):
         self.folder=Path(self.temporary.name);self.source=self.folder/'source';self.source.mkdir()
         self.base=self.folder/'base.zip';self.output=self.folder/'out.zip'
         self.sdk=pe('owned fake voice SDK');self.addCleanup(patch.stopall)
+        patch.object(self.module,'OWNED_PREFIX_RULES',()).start()
         patch.object(self.module,'VOICE_SDK_SHA256',sha(self.sdk)).start()
         self.base_payload={name.removeprefix('EnshroudedVRM/'):('accepted '+name).encode() for name in self.module.BASE_TARGET_MEMBERS if name!='vulkan-1.dll'}
         self.base_payload['Runtime/enshrouded_vrm_runtime.dll']=pe('old runtime')
@@ -54,7 +55,7 @@ class StandalonePackageTests(unittest.TestCase):
             path=self.source/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(('new standalone '+name).encode())
         (self.source/'portable/standalone_layer.json').write_bytes((ROOT/'portable/standalone_layer.json').read_bytes())
         document=self.source/'portable/standalone_docs/LEIA-ME-PT-BR.txt'
-        document.parent.mkdir(parents=True,exist_ok=True);document.write_text('Guia de instalação em português: Steam e F8.\n',encoding='utf-8')
+        document.parent.mkdir(parents=True,exist_ok=True);document.write_text('Guia de instalaÃƒÂ§ÃƒÂ£o em portuguÃƒÂªs: Steam e F8.\n',encoding='utf-8')
         self.runtime=self.folder/'runtime.dll';self.runtime.write_bytes(pe('owned new runtime'))
         self.bootstrap=self.folder/'vulkan-1.dll';self.bootstrap.write_bytes(pe('EnshroudedVRM standalone bootstrap'))
         self.shaders=self.folder/'shaders';self.shaders.mkdir()
@@ -89,6 +90,34 @@ class StandalonePackageTests(unittest.TestCase):
                        bootstrap_sha256=sha(self.bootstrap.read_bytes()),shader_manifest=self.shader_manifest,source_pins=self.pins)
         arguments.update(changes);return self.module.build_release(**arguments)
 
+    def test_owned_prefix_annotations_require_exact_catalog_rows(self):
+        row=json.loads(self.base_payload['Compatibility/catalog.json'])['descriptor_signatures'][0]
+        rule={'palette_joint_ids':[16,17],'policy':'owned-prefix-v1'}
+        self.module.OWNED_PREFIX_CATALOG_COUNT=1
+        self.module.OWNED_PREFIX_RULES=((0,sha(self.module.encoded(row)),rule),)
+        self.build()
+        with zipfile.ZipFile(self.output) as z:
+            value=json.loads(z.read('EnshroudedVRM/Compatibility/catalog.json'))
+            self.assertEqual(value['descriptor_signatures'][0]['owner_partial_palette'],rule)
+        self.module.OWNED_PREFIX_RULES=((0,'0'*64,rule),)
+        with self.assertRaises(ValueError):self.build(output=self.folder/'changed-row.zip')
+
+    def test_geometry_importer_is_independently_bound(self):
+        dependency='src/import_surface_geometry.inl'
+        self.assertIn(dependency,self.module.required_source_inputs(self.info))
+        path=self.source/dependency
+        original=path.read_bytes()
+        path.write_bytes(original+b' changed geometry implementation')
+        with self.assertRaises(ValueError):self.build()
+        path.write_bytes(original)
+        path.unlink()
+        with self.assertRaises((ValueError,OSError)):self.build()
+        path.write_bytes(original)
+        pins=json.loads(self.pins.read_bytes())
+        pins['inputs']=[item for item in pins['inputs'] if item['path']!=dependency]
+        self.pins.write_bytes(encoded(pins))
+        with self.assertRaises(ValueError):self.build()
+
     def test_exact_layout_manifest_receipt_and_determinism(self):
         self.build();other=self.folder/'other.zip';self.build(output=other)
         self.assertEqual(self.output.read_bytes(),other.read_bytes())
@@ -109,7 +138,7 @@ class StandalonePackageTests(unittest.TestCase):
         self.build()
         with zipfile.ZipFile(self.output) as archive:
             manifest=json.loads(archive.read('EnshroudedVRM/release-manifest.json'))
-            expected='0403981fd2e8ad18bd8c5698dff03c8d505b5a46677832c496db9c645513f2a6'
+            expected='ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618'
             self.assertEqual(manifest['game_sha256'],expected)
             for kind,capture in [('profile','rig_capture_game'),('catalog','catalog_capture_game')]:
                 before=json.loads(self.base_payload['Compatibility/'+kind+'.json'])
@@ -124,7 +153,7 @@ class StandalonePackageTests(unittest.TestCase):
             self.assertIn('LEIA-ME-PT-BR.txt',archive.namelist())
             content=archive.read('LEIA-ME-PT-BR.txt')
             self.assertEqual(content,(self.source/'portable/standalone_docs/LEIA-ME-PT-BR.txt').read_bytes())
-            self.assertIn('português',content.decode('utf-8'))
+            self.assertIn('portuguÃƒÂªs',content.decode('utf-8'))
             info=json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))
             self.assertEqual(info['supplementalDocuments'],{'LEIA-ME-PT-BR.txt':sha(content)})
 
@@ -156,14 +185,14 @@ class StandalonePackageTests(unittest.TestCase):
         with self.assertRaises(OSError):self.build()
         self.assertFalse(self.output.exists())
 
-    def test_public_030_preview_metadata_is_explicit(self):
+    def test_explicit_release_version_metadata(self):
         self.build(version='0.3.0',publication_status='preview')
         with zipfile.ZipFile(self.output) as archive:
             for name in ['EnshroudedVRM/BUILD-INFO.json','EnshroudedVRM/release-manifest.json']:
                 metadata=json.loads(archive.read(name))
                 self.assertEqual(metadata['version'],'0.3.0')
                 self.assertEqual(metadata['publication_status'],'preview')
-            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.3.3')
+            self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['nativeMetadataVersion'],'0.4.0')
             self.assertEqual(json.loads(archive.read('EnshroudedVRM/BUILD-INFO.json'))['bootstrapMetadataVersion'],'0.2.0-standalone-dev')
 
     def test_unknown_publication_status_is_declined(self):
@@ -233,7 +262,7 @@ class StandalonePackageTests(unittest.TestCase):
     def test_real_native_and_python_member_contracts_match(self):
         import re
         names=set(re.findall(r'^\s*"([^"\r\n]+)"', (ROOT/'src/standalone_package_members.hpp').read_text(),re.MULTILINE))
-        self.assertEqual(names,set(self.module.TARGET_MEMBERS));self.assertEqual(len(names),42)
+        self.assertEqual(names,set(self.module.TARGET_MEMBERS));self.assertEqual(len(names),50)
 
     def test_baseline_checksum_sidecar_is_verified(self):
         with zipfile.ZipFile(self.base) as archive:payload={name:archive.read(name) for name in archive.namelist()}

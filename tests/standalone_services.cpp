@@ -2,6 +2,7 @@
 #include "../src/avatar_runtime.hpp"
 #include "../src/mod_settings_service.hpp"
 #include "../src/mod_input_win32.hpp"
+#include "../src/native_owner_process.hpp"
 #include <atomic>
 #include <fstream>
 #include <iostream>
@@ -14,17 +15,25 @@ struct AvatarService::Impl {};
 AvatarService::AvatarService(AvatarServiceOptions options)noexcept{captured=std::move(options);++avatar_creations;}
 AvatarService::~AvatarService()=default;
 bool AvatarService::ready()const noexcept{return true;}
-std::shared_ptr<const AvatarMenuSnapshot> AvatarService::snapshot()const noexcept{return {};}
-bool AvatarService::request_model(const std::string&)noexcept{return false;}
-bool AvatarService::request_browse(std::uintptr_t)noexcept{return false;}
-bool AvatarService::set_replacement_enabled(bool enabled)noexcept{++replacement_requests;replacement_value=enabled;return true;}
-void AvatarService::cancel_request()noexcept{}
+std::shared_ptr<const AvatarMenuSnapshot> AvatarService::snapshot(const std::string&)const noexcept{return {};}
+std::shared_ptr<const AvatarMenuSnapshot> AvatarService::menu_snapshot()const noexcept{return {};}
+std::shared_ptr<const std::vector<AvatarSubjectSelection>> AvatarService::subjects()const noexcept{return {};}
+bool AvatarService::select_player(const std::string&)noexcept{return false;}
+bool AvatarService::request_model(const std::string&,const std::string&)noexcept{return false;}
+bool AvatarService::request_browse(std::uintptr_t,const std::string&)noexcept{return false;}
+bool AvatarService::set_replacement_enabled(bool enabled,const std::string&)noexcept{++replacement_requests;replacement_value=enabled;return true;}
+void AvatarService::cancel_request(const std::string&)noexcept{}
 void AvatarService::refresh_catalogue()noexcept{}
 bool AvatarService::set_whole_preset(const std::string&,AvatarShaderPreset)noexcept{return false;}
 bool AvatarService::set_material_preset(const std::string&,std::uint32_t,std::optional<AvatarShaderPreset>)noexcept{return false;}
 bool AvatarService::reset_materials(const std::string&)noexcept{return false;}
 bool mod_input_open(HWND)noexcept{return false;}
 void request_voice_inputs(const ModSettings&)noexcept{++voice_requests;}
+NativeOwnerProcess::NativeOwnerProcess()noexcept=default;
+bool NativeOwnerProcess::read(std::uint64_t,void*,std::size_t)const noexcept{return false;}
+std::uint64_t NativeOwnerProcess::milliseconds()const noexcept{return GetTickCount64();}
+std::uint64_t NativeOwnerProcess::work_milliseconds()const noexcept{return milliseconds();}
+bool NativeOwnerProcess::players(NativePlayerRoster& out,std::string&,const NativeOwnerLimits&)const noexcept{out={};return false;}
 }
 static bool until(bool(*condition)()) {const auto end=GetTickCount64()+3000;do{if(condition())return true;Sleep(5);}while(GetTickCount64()<end);return false;}
 static std::string read(const fs::path& path){std::ifstream file(path,std::ios::binary);return {std::istreambuf_iterator<char>(file),{}};}
@@ -43,7 +52,7 @@ int wmain(int argc,wchar_t** argv) {
     fixture.status=RuntimeStartupStatus::Ready;fixture.state_directory=root;fixture.avatars_directory=root/L"installed/Avatars";fixture.state_writable=writable;
     SetEnvironmentVariableW(L"ENSHROUDED_VRM_CAPTURE_DIR",(root/L"poison/capture").c_str());
     initialize_avatar_runtime();initialize_avatar_runtime();
-    if(avatar_creations!=1 || captured.directory!=root || captured.catalogue_directory!=fixture.avatars_directory)return 12;
+    if(avatar_creations!=1 || captured.directory!=root || captured.catalogue_directory!=fixture.avatars_directory || !captured.players_reader)return 12;
     apply_avatar_action(original_action,0);if(replacement_requests!=1 || replacement_value || voice_requests)return 18;
     initialize_mod_settings_service();initialize_mod_settings_service(root/L"ignored");
     if(!until([]{return mod_settings_loaded();}) || mod_settings_snapshot().strength!=91 || voice_requests!=1)return 13;

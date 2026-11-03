@@ -13,11 +13,13 @@ struct SelectedPart {
     std::uint32_t instance_id = 0;
     std::uint32_t model_index = 0;
     std::uint32_t skin_matrix_offset = 0;
+    // Observed slots: a certified owner-only prefix may omit an uncertain tail.
+    // This vector never claims the resource's complete palette length.
     std::vector<std::uint32_t> palette_joint_ids;
     // Explicit model palette slots owned by native simulation chains.
     // Unmarked zero entries remain genuine hierarchy-root observations.
     std::vector<std::uint32_t> auxiliary_palette_indices;
-    // Geometry can identify several resources with an identical palette.
+    // Keep every compatible resource; partial observation never selects a GUID.
     std::vector<std::string> native_model_guids;
 };
 

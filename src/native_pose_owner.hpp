@@ -49,11 +49,11 @@ inline bool same_native_pose_allocation(const NativeBufferBinding& a,const Nativ
 inline bool same_native_owner_selection(const NativeOwnerCandidate& a,const NativeOwnerCandidate& b) noexcept {
     if(a.image.base!=b.image.base||a.image.size!=b.image.size||a.image.timestamp!=b.image.timestamp||a.image.sha256!=b.image.sha256)return false;
     if(std::tie(a.root,a.client,a.controller,a.main,a.execution,a.registry,a.entity_manager,a.local_player_data,
-        a.entity,a.entity_layout,a.entity_storage,a.equipment,a.entity_id,a.entity_generation,a.entity_slot,a.entity_row,
+        a.account,a.connection,a.player_infos,a.player_record,a.entity,a.entity_layout,a.entity_storage,a.equipment,a.entity_id,a.entity_generation,a.entity_slot,a.entity_row,
         a.input_registration,a.equipment_registration,a.render_scene,a.model_manager,a.writer,a.resource_object,
         a.native_buffer,a.native_buffer_bytes,a.instance_capacity,a.instance_extra)!=
        std::tie(b.root,b.client,b.controller,b.main,b.execution,b.registry,b.entity_manager,b.local_player_data,
-        b.entity,b.entity_layout,b.entity_storage,b.equipment,b.entity_id,b.entity_generation,b.entity_slot,b.entity_row,
+        b.account,b.connection,b.player_infos,b.player_record,b.entity,b.entity_layout,b.entity_storage,b.equipment,b.entity_id,b.entity_generation,b.entity_slot,b.entity_row,
         b.input_registration,b.equipment_registration,b.render_scene,b.model_manager,b.writer,b.resource_object,
         b.native_buffer,b.native_buffer_bytes,b.instance_capacity,b.instance_extra))return false;
     if(a.models.size()!=b.models.size())return false;

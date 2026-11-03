@@ -99,7 +99,9 @@ void build_meshes(const tinygltf::Model&model,const Json&doc,Avatar&avatar,const
                 });
             }
             reconstructed_normals=repair_primitive_normals(primitive)||reconstructed_normals;
-            mouth.primitive(mesh_index,primitive_index++,p,remap);
+            std::vector<SurfaceDuplicate> duplicates;
+            build_surface_geometry(model,p,primitive,p.material<0?nullptr:avatar.materials[p.material].surface.get(),remap,duplicates,avatar,limits);
+            mouth.primitive(mesh_index,primitive_index++,p,remap,duplicates);
             morphs=morphs||!p.targets.empty();mesh.primitives.push_back(std::move(primitive));mesh_bindings.push_back(binding);
         }
         avatar.meshes.push_back(std::move(mesh));bindings.push_back(std::move(mesh_bindings));++mesh_index;
@@ -127,3 +129,4 @@ void build_meshes(const tinygltf::Model&model,const Json&doc,Avatar&avatar,const
     mouth.finish(avatar);
     if(morphs)avatar.warnings.push_back(avatar.mouth?"Only standard mouth morphs are supported; other expressions are deferred.":"Expressions and morph targets are deferred; base geometry imported.");
 }
+

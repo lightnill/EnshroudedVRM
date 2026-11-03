@@ -18,6 +18,7 @@
 #include "avatar_runtime.hpp"
 #include "standalone_startup.hpp"
 #include "avatar_switch_transaction.hpp"
+#include "native_surface_material.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -155,6 +156,26 @@ struct AvatarCpuModel {
         bool origin_known=false;
     };
     std::map<std::uint64_t,ViewMotion> view_motion;
+    struct MotionBinding {
+        std::shared_ptr<const NativePoseOwner> owner;
+        NativePreviewStamp preview;
+        std::uint64_t epoch=0;
+    };
+    std::map<std::uint64_t,MotionBinding> motion_bindings;
+    void bind_motion(std::uint64_t source,const std::shared_ptr<const NativePoseOwner>& owner,
+        std::uint64_t epoch,const NativePreviewStamp& preview){
+        const auto found=motion_bindings.find(source);
+        if(found!=motion_bindings.end()){
+            const auto& old=found->second;
+            const bool same=old.epoch==epoch&&bool(old.owner)==bool(owner)&&
+                (owner?(same_native_owner_selection(old.owner->candidate,owner->candidate)&&same_native_pose_allocation(old.owner->source,owner->source)):
+                    (old.preview.subject==preview.subject&&old.preview.source.epoch==preview.source.epoch&&old.preview.source.same(preview.source)));
+            // Request serials authorize each preview sample; the same actor and
+            // allocation keep their history across fresh requests.
+            if(!same)view_motion.erase(source);
+        }else if(motion_bindings.size()>=4){motion_bindings.clear();view_motion.clear();}
+        motion_bindings[source]={owner,preview,epoch};
+    }
     ViewMotion& motion(std::uint64_t source){
         if(!view_motion.count(source)&&view_motion.size()>=4)view_motion.clear();
         return view_motion[source];
@@ -249,13 +270,21 @@ struct AvatarCpuModel {
     std::shared_ptr<NativeAvatarPublication> build_native_view(const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation,
         EnshroudedBridge& bridge,const MouthSnapshot& current_mouth,float mouth_strength,float debug_offset,
         std::array<double,5>& timings,PlayerTrace* trace=nullptr,bool* source_valid=nullptr,
-        const std::shared_ptr<const NativePoseOwner>& pose_owner={},std::string* failure_detail=nullptr) {
+        const std::shared_ptr<const NativePoseOwner>& pose_owner={},std::string* failure_detail=nullptr,
+        const std::string& subject={},NativePlayerIdentity identity={},std::uint64_t assignment_generation=0,
+        const std::shared_ptr<const AvatarAppearance>& appearance={}) {
         if(source_valid)*source_valid=false;
         if(failure_detail)failure_detail->clear();
         const auto started=std::chrono::steady_clock::now();
         const auto instances_source=snapshot.buffers.find("instances");
         const auto selection=pose_owner&&instances_source!=snapshot.buffers.end()&&
             instances_source->second.binding.buffer==pose_owner->source.info.buffer?pose_owner:nullptr;
+        // A remote subject is world-only. A missing/currently different owner
+        // must never fall through to the accepted local menu-pose fallback.
+        if(!subject.empty()&&(!selection||snapshot.preview_subject.source.epoch||
+            selection->candidate.account!=identity.account||selection->candidate.entity_id!=identity.entity_id||
+            selection->candidate.connection!=identity.connection||identity.local||!identity.account))
+            throw std::runtime_error("Remote world owner unavailable");
         const auto frame=bridge.read_player_frame(snapshot,selection.get());if(!frame){
             if(failure_detail)*failure_detail=frame.diagnostic;
             if(trace&&pose_ambiguity_diagnostics<8&&!frame.diagnostic.empty()&&frame.error!="No catalog-compatible player parts in capture"){
@@ -276,7 +305,7 @@ struct AvatarCpuModel {
             }
             throw std::runtime_error(frame.error);
         }
-        if(debug_report_sources_pending())debug_report_observe_player(frame,snapshot.captured_milliseconds);
+        if(subject.empty()&&debug_report_sources_pending())debug_report_observe_player(frame,snapshot.captured_milliseconds);
         const auto identified=std::chrono::steady_clock::now();
         vrm::RetargetOptions options;options.align_rest_directions=true;
         if(avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
@@ -285,11 +314,14 @@ struct AvatarCpuModel {
         const auto source=snapshot.buffers.at("instances").binding.buffer;
         if(!source)throw std::runtime_error("Native instance source unavailable");
         if(source_valid)*source_valid=true;
+        bind_motion(reinterpret_cast<std::uintptr_t>(source),selection,snapshot.source_epoch,snapshot.preview_subject);
         auto pose=retarget_pose(frame.source_pose,options,reinterpret_cast<std::uintptr_t>(source));if(!pose)throw std::runtime_error("Retarget: "+pose.error);
         apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height,reinterpret_cast<std::uintptr_t>(source));
         const auto posed=std::chrono::steady_clock::now();
         auto publication=std::make_shared<NativeAvatarPublication>();publication->asset=native_asset;publication->pose_owner=selection;
-        if(const auto menu=avatar_runtime_snapshot();menu&&menu->fingerprint==prepared->fingerprint)publication->appearance=menu->appearance;
+        publication->subject=subject;publication->player_identity=identity;publication->assignment_generation=assignment_generation;
+        publication->appearance=appearance;
+        if(!publication->appearance&&subject.empty())if(const auto menu=avatar_runtime_snapshot();menu&&menu->fingerprint==prepared->fingerprint)publication->appearance=menu->appearance;
         publication->serial=serial;publication->presentation_serial=presentation;publication->published_milliseconds=snapshot.captured_milliseconds;
         publication->source_buffer_epoch=snapshot.source_epoch;
         publication->preview_subject=snapshot.preview_subject;
@@ -323,12 +355,13 @@ struct AvatarCpuModel {
             if(!*skinning)throw std::runtime_error("Native skin pose: "+skinning->error);
             publication->geometry=native_skin_asset->layout;publication->skinning=std::move(skinning);
         }else{
-            auto geometry=std::make_shared<NativeAvatarPose>(make_native_avatar_pose(avatar,pose));
+            auto geometry=std::make_shared<NativeAvatarPose>(make_native_avatar_pose(avatar,pose,nullptr,
+                make_native_surface_selection(avatar,publication->appearance.get()).needs_vertices()));
             if(!*geometry)throw std::runtime_error("Native geometry: "+geometry->error);
             publication->geometry=std::move(geometry);
         }
-        apply_native_mouth_weights(*publication,current_mouth,mouth_strength,gpu_skinning);
-        if(trace)trace->sample(serial,frame,pose,avatar);
+        apply_native_mouth_weights(*publication,subject.empty()?current_mouth:MouthSnapshot{},mouth_strength,gpu_skinning);
+        if(subject.empty()&&trace)trace->sample(serial,frame,pose,avatar);
         const auto finished=std::chrono::steady_clock::now();
         const auto ms=[](auto a,auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
         timings[2]+=ms(started,identified);timings[3]+=ms(identified,posed);timings[4]+=ms(posed,finished);
@@ -345,6 +378,14 @@ struct AvatarRenderer::Impl {
     std::string staged_failure;
     bool staged_gpu_ready=false;
     std::shared_ptr<const NativeAvatarPublication> staged_publication;
+    struct PlayerModelState {
+        std::unique_ptr<AvatarCpuModel> model,staged_model;
+        AvatarCandidatePtr staged;
+        std::string staged_failure;
+        bool staged_gpu_ready=false;
+        std::shared_ptr<const NativeAvatarPublication> staged_publication;
+    };
+    std::map<std::string,PlayerModelState> players;
     std::unique_ptr<EnshroudedBridge> bridge;
     std::filesystem::path shader_directory;
     bool active=false,initialized=false;
@@ -683,10 +724,24 @@ AvatarRenderer::~AvatarRenderer()=default;
 bool AvatarRenderer::enabled() const{return impl->active;}
 std::shared_ptr<const NativeAvatarPublication> AvatarRenderer::native_publication()const noexcept {
     try {std::lock_guard<std::mutex> resources(impl->resource_mutex);
-        const auto menu=avatar_runtime_snapshot();
-        if(impl->model&&menu&&menu->fingerprint==impl->model->prepared->fingerprint)
-            return native_publication_appearance(impl->publication,menu->appearance);
-        return impl->publication;
+        if(!impl->publication)return {};
+        auto* service=avatar_runtime_service();
+        const auto appearance=[&](const NativeAvatarPublication& publication){
+            const PreparedAvatar* model=nullptr;std::shared_ptr<const PreparedAvatar> prepared;
+            if(publication.subject.empty()&&impl->model)prepared=impl->model->prepared;
+            else {const auto found=impl->players.find(publication.subject);if(found!=impl->players.end()&&found->second.model)prepared=found->second.model->prepared;}
+            model=prepared.get();
+            if(service&&model&&model->asset==publication.asset)return service->appearance_for(prepared);
+            return publication.appearance;
+        };
+        const auto revise=[&](const std::shared_ptr<const NativeAvatarPublication>& source){
+            auto view=std::make_shared<NativeAvatarPublication>(*source);view->appearance=appearance(*source);view->additional_subjects.clear();
+            for(const auto& child:source->additional_subjects){auto leaf=std::make_shared<NativeAvatarPublication>(*child);leaf->appearance=appearance(*child);view->additional_subjects.push_back(std::move(leaf));}
+            return view;
+        };
+        auto root=revise(impl->publication);root->additional_views.clear();
+        for(const auto& view:impl->publication->additional_views)root->additional_views.push_back(revise(view));
+        return root;
     }catch(...){return{};}
 }
 std::shared_ptr<const PreparedAvatar> AvatarRenderer::prepared_model()const noexcept {
@@ -709,15 +764,124 @@ bool AvatarRenderer::commit_candidate(const AvatarCandidate& candidate,std::uint
     try{std::lock_guard<std::mutex> guard(impl->resource_mutex);
         if(!impl->staged||impl->staged->generation!=candidate.generation||impl->staged->model!=candidate.model||
             !impl->staged_gpu_ready||!impl->staged_model||!impl->staged_failure.empty()||!avatar_switch_pose_matches(impl->staged_publication,*candidate.model,epoch,GetTickCount64()))return false;
-        impl->model.swap(impl->staged_model);impl->publication.swap(impl->staged_publication);
-        impl->staged.reset();impl->staged_gpu_ready=false;impl->active=true;return true;
+        auto publication=replace_native_publication_subject(impl->publication,impl->staged_publication);if(!publication)return false;
+        impl->model.swap(impl->staged_model);impl->publication=std::move(publication);
+        impl->staged.reset();impl->staged_model.reset();impl->staged_publication.reset();impl->staged_gpu_ready=false;impl->active=true;return true;
     }catch(...){return false;}
 }
 bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& present,GpuProbe& probe,GraphicsState& graphics,bool& consumed,uint64_t source_buffer_epoch,std::shared_ptr<const NativePoseOwner> pose_owner) noexcept {
+    return before_present_players(queue,present,probe,graphics,consumed,source_buffer_epoch,{{"",std::move(pose_owner)}});
+}
+std::shared_ptr<const PreparedAvatar> AvatarRenderer::prepared_player_model(const std::string& subject)const noexcept {
+    if(subject.empty())return prepared_model();
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);const auto found=impl->players.find(subject);
+        return found==impl->players.end()||!found->second.model?nullptr:found->second.model->prepared;
+    }catch(...){return {};}
+}
+bool AvatarRenderer::stage_player_candidate(const AvatarCandidatePtr& candidate,bool ready,std::string& error)noexcept {
+    if(!candidate||candidate->subject.empty())return stage_candidate(candidate,ready,error);
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);
+        if(!impl->native_mode||!impl->gpu_skinning||!candidate->model){error="Live switching requires a prepared native model";return false;}
+        auto found=impl->players.find(candidate->subject);
+        if(found==impl->players.end()){
+            if(impl->players.size()>=15){error="Player rendering capacity reached";return false;}
+            found=impl->players.emplace(candidate->subject,decltype(impl->players)::mapped_type{}).first;
+        }
+        auto& state=found->second;state.staged_publication.reset();state.staged_gpu_ready=ready;
+        if(!state.staged||state.staged->generation!=candidate->generation||state.staged->model!=candidate->model){
+            auto model=std::make_unique<AvatarCpuModel>(candidate->model,impl->native_replacement,true);
+            state.staged=candidate;state.staged_model=std::move(model);state.staged_failure.clear();
+        }
+        if(!state.staged_failure.empty()){error=state.staged_failure;return false;}
+        return true;
+    }catch(const std::exception& failure){try{error=failure.what();}catch(...){}return false;}catch(...){return false;}
+}
+bool AvatarRenderer::commit_player_candidate(const AvatarCandidate& candidate,std::uint64_t epoch)noexcept {
+    if(candidate.subject.empty())return commit_candidate(candidate,epoch);
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);auto found=impl->players.find(candidate.subject);
+        if(found==impl->players.end()||!candidate.model)return false;
+        auto& state=found->second;
+        if(!state.staged||state.staged->subject!=candidate.subject||state.staged->generation!=candidate.generation||state.staged->model!=candidate.model||
+            !state.staged_gpu_ready||!state.staged_model||!state.staged_failure.empty()||
+            !avatar_switch_player_pose_matches(state.staged_publication,candidate.subject,candidate.generation,*candidate.model,epoch,GetTickCount64()))return false;
+        auto publication=replace_native_publication_subject(impl->publication,state.staged_publication);if(!publication)return false;
+        state.model.swap(state.staged_model);impl->publication=std::move(publication);state.staged.reset();state.staged_model.reset();state.staged_publication.reset();state.staged_gpu_ready=false;impl->active=true;return true;
+    }catch(...){return false;}
+}
+void AvatarRenderer::retain_player_models(const std::vector<AvatarSubjectSelection>& targets)noexcept {
+    try{std::lock_guard<std::mutex> guard(impl->resource_mutex);
+        const auto clear_local_stage=[&]{impl->staged.reset();impl->staged_model.reset();impl->staged_publication.reset();impl->staged_failure.clear();impl->staged_gpu_ready=false;};
+        try{
+            const auto target_for=[&](const std::string& subject){
+                const AvatarSubjectSelection* found=nullptr;
+                if(targets.size()>16)return found;
+                for(const auto& target:targets)if(target.subject==subject){if(found)return static_cast<const AvatarSubjectSelection*>(nullptr);found=&target;}
+                return found;
+            };
+            const auto candidate_matches=[](const AvatarCandidatePtr& candidate,const AvatarSubjectSelection* target){
+                if(!candidate||!target||!target->replacement_enabled||candidate->subject!=target->subject)return false;
+                const auto current=target->candidate?target->candidate:target->selection;
+                return current&&candidate->generation==current->generation&&candidate->model==current->model;
+            };
+            const auto publication_matches=[&](const NativeAvatarPublication& publication,bool staged){
+                const auto* target=target_for(publication.subject);if(!target||!target->replacement_enabled)return false;
+                const auto candidate=staged&&target->candidate?target->candidate:target->selection;
+                const auto model=staged?(candidate?candidate->model:nullptr):target->model;
+                const auto generation=candidate?candidate->generation:0;
+                return model&&publication.asset==model->asset&&publication.assignment_generation==generation&&
+                    publication.player_identity.account==target->identity.account&&publication.player_identity.entity_id==target->identity.entity_id&&
+                    publication.player_identity.connection==target->identity.connection&&publication.player_identity.local==target->identity.local;
+            };
+            const auto* local=target_for("");
+            if(!candidate_matches(impl->staged,local))clear_local_stage();
+            else impl->staged_publication=retain_native_publication_subjects(impl->staged_publication,[&](const auto& p){return p.subject.empty()&&publication_matches(p,true);});
+            for(auto it=impl->players.begin();it!=impl->players.end();){
+                const auto* target=target_for(it->first);
+                if(!target||!target->replacement_enabled){it=impl->players.erase(it);continue;}
+                auto& state=it->second;
+                if(state.model&&state.model->prepared!=target->model)state.model.reset();
+                if(!candidate_matches(state.staged,target)){
+                    state.staged.reset();state.staged_model.reset();state.staged_publication.reset();state.staged_failure.clear();state.staged_gpu_ready=false;
+                }else state.staged_publication=retain_native_publication_subjects(state.staged_publication,[&](const auto& p){return p.subject==it->first&&publication_matches(p,true);});
+                if(!state.model&&!state.staged_model)it=impl->players.erase(it);else ++it;
+            }
+            impl->publication=retain_native_publication_subjects(impl->publication,[&](const auto& p){return publication_matches(p,false);});
+        }catch(...){impl->players.clear();impl->publication.reset();clear_local_stage();}
+    }catch(...){}
+}
+bool AvatarRenderer::before_present_players(VkQueue queue,const VkPresentInfoKHR& present,GpuProbe& probe,GraphicsState& graphics,bool& consumed,
+    std::uint64_t source_buffer_epoch,const std::vector<NativePlayerPoseOwner>& player_owners)noexcept {
     consumed=false;if(!enabled()||present.swapchainCount!=1)return false;
     try {
         std::lock_guard<std::mutex> resources(impl->resource_mutex);
         const auto previous=impl->publication;
+        auto* service=avatar_runtime_service();
+        const auto selected_subjects=service?service->subjects():nullptr;
+        std::map<std::string,const AvatarSubjectSelection*> selections;
+        if(selected_subjects){if(selected_subjects->size()>16)return false;
+            for(const auto& target:*selected_subjects)if(!selections.emplace(target.subject,&target).second)return false;}
+        std::map<std::string,std::shared_ptr<const NativePoseOwner>> owners;
+        if(player_owners.size()>16)return false;
+        for(const auto& value:player_owners)if(!owners.emplace(value.subject,value.owner).second)return false;
+        const auto owner_for=[&](const std::string& subject){const auto found=owners.find(subject);return found==owners.end()?std::shared_ptr<const NativePoseOwner>{}:found->second;};
+        const auto target_for=[&](const std::string& subject){const auto found=selections.find(subject);return found==selections.end()?static_cast<const AvatarSubjectSelection*>(nullptr):found->second;};
+        const auto target_enabled=[&](const std::string& subject){const auto* target=target_for(subject);return target?target->replacement_enabled:!service&&subject.empty();};
+        const auto identity_for=[&](const std::string& subject){const auto* target=target_for(subject);return target?target->identity:NativePlayerIdentity{};};
+        const auto generation_for=[&](const std::string& subject){const auto* target=target_for(subject);return target&&target->selection?target->selection->generation:std::uint64_t{0};};
+        for(auto it=impl->players.begin();it!=impl->players.end();){
+            const auto* target=target_for(it->first);
+            if(!target||!target->replacement_enabled||(!target->model&&!target->candidate)){it=impl->players.erase(it);continue;}
+            auto& state=it->second;state.staged_publication.reset();
+            const auto requested=target->candidate?target->candidate:target->selection;
+            if(state.staged&&(!requested||state.staged->generation!=requested->generation||state.staged->model!=requested->model)){
+                state.staged.reset();state.staged_model.reset();state.staged_failure.clear();state.staged_gpu_ready=false;}
+            ++it;
+        }
+        if(selected_subjects)for(const auto& target:*selected_subjects){
+            if(target.subject.empty()||!target.replacement_enabled||!target.model)continue;
+            auto& state=impl->players[target.subject];
+            if(!state.model||state.model->prepared!=target.model)state.model=std::make_unique<AvatarCpuModel>(target.model,impl->native_replacement,impl->gpu_skinning);
+        }
         impl->staged_publication.reset();
         GpuSnapshot snapshot;
         FallbackCaptureMetadata capture_facts;
@@ -770,16 +934,39 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
         const bool capture_anchor=probe.player_anchor_capture_enabled();
         if(capture_anchor)limits["player_anchor"]=2048;
         const auto hold=[&](const std::shared_ptr<const NativeAvatarPublication>& source){
-            if(!impl->model)return std::shared_ptr<NativeAvatarPublication>{};
-            std::uint64_t owner=0,observed=0;
-            const auto raw=source?read_native_hand_contact_mode(*source,GetTickCount64(),owner,&observed):SecondaryHandContactMode::None;
-            if(source)impl->model->motion(source->source_instances).contact.observe(raw,source->published_milliseconds,observed,owner,source_buffer_epoch);
-            auto value=hold_native_contact_publication(source,source_buffer_epoch,GetTickCount64(),impl->frame_count+1,raw,owner,
-                [](const vrm::Avatar&asset,const vrm::RetargetResult&baseline){return std::make_shared<NativeAvatarPose>(make_native_avatar_pose(asset,baseline));});
-            if(!value)return std::shared_ptr<NativeAvatarPublication>{};
-            auto result=std::make_shared<NativeAvatarPublication>(*value);result->additional_views.clear();
-            result->serial=++impl->frame_count;result->presentation_serial=capture_sequence;
-            apply_native_mouth_weights(*result,impl->current_mouth,impl->mouth_strength,impl->gpu_skinning);++pose_diagnostics.retained_views;return result;
+            if(!source||!native_publication_subjects_valid(source))return std::shared_ptr<NativeAvatarPublication>{};
+            const auto cohort_serial=++impl->frame_count;
+            std::shared_ptr<NativeAvatarPublication> group;
+            std::vector<std::shared_ptr<const NativeAvatarPublication>> subjects{source};
+            subjects.insert(subjects.end(),source->additional_subjects.begin(),source->additional_subjects.end());
+            for(const auto& subject:subjects){
+                if(!target_enabled(subject->subject)||subject->assignment_generation!=generation_for(subject->subject))continue;
+                AvatarCpuModel* model=nullptr;
+                if(subject->subject.empty())model=impl->model.get();
+                else {const auto found=impl->players.find(subject->subject);if(found!=impl->players.end())model=found->second.model.get();}
+                if(!model||model->native_asset!=subject->asset)continue;
+                const auto current_owner=owner_for(subject->subject);
+                if(subject->pose_owner){
+                    if(!current_owner||!same_native_owner_selection(subject->pose_owner->candidate,current_owner->candidate)||
+                        !same_native_pose_allocation(subject->pose_owner->source,current_owner->source))continue;
+                }else if(!subject->subject.empty())continue;
+                const auto identity=identity_for(subject->subject);
+                if(subject->player_identity.account!=identity.account||subject->player_identity.connection!=identity.connection||subject->player_identity.entity_id!=identity.entity_id)continue;
+                auto leaf=std::make_shared<NativeAvatarPublication>(*subject);leaf->additional_subjects.clear();leaf->additional_views.clear();
+                std::uint64_t owner=0,observed=0;
+                const auto raw=read_native_hand_contact_mode(*leaf,GetTickCount64(),owner,&observed);
+                model->motion(leaf->source_instances).contact.observe(raw,leaf->published_milliseconds,observed,owner,source_buffer_epoch);
+                auto value=hold_native_contact_publication(leaf,source_buffer_epoch,GetTickCount64(),cohort_serial,raw,owner,
+                    [&](const vrm::Avatar&asset,const vrm::RetargetResult&baseline){return std::make_shared<NativeAvatarPose>(make_native_avatar_pose(asset,baseline,nullptr,
+                        make_native_surface_selection(asset,leaf->appearance.get()).needs_vertices()));});
+                if(!value)continue;
+                auto result=std::make_shared<NativeAvatarPublication>(*value);result->presentation_serial=capture_sequence;
+                apply_native_mouth_weights(*result,result->subject.empty()?impl->current_mouth:MouthSnapshot{},impl->mouth_strength,impl->gpu_skinning);
+                if(service)result->appearance=service->appearance_for(model->prepared);
+                if(!group)group=std::move(result);else group->additional_subjects.push_back(std::move(result));
+            }
+            if(group)++pose_diagnostics.retained_views;
+            return group;
         };
         if(impl->native_mode&&source_buffer_epoch&&!capture_anchor) {
             outcome.phase="async-capture";
@@ -824,17 +1011,43 @@ bool AvatarRenderer::before_present(VkQueue queue,const VkPresentInfoKHR& presen
                     if(!sources.insert(source).second)throw std::runtime_error("Duplicate native view allocation");
                     if(view.source_epoch!=source_buffer_epoch)throw std::runtime_error("Native view source epoch changed");
                     outcome.phase="view-pose";
-                    if(impl->model){auto publication=impl->model->build_native_view(view,++impl->frame_count,capture_sequence,
-                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace,nullptr,pose_owner,&failure_detail);
-                        if(!root)root=std::move(publication);else root->additional_views.push_back(std::move(publication));}
+                    const auto cohort_serial=++impl->frame_count;
+                    std::shared_ptr<NativeAvatarPublication> group;
+                    const auto append=[&](std::shared_ptr<NativeAvatarPublication> publication){
+                        if(!group)group=std::move(publication);else group->additional_subjects.push_back(std::move(publication));
+                    };
+                    const auto appearance=[&](AvatarCpuModel& model){return service?service->appearance_for(model.prepared):std::shared_ptr<const AvatarAppearance>{};};
+                    if(impl->model&&target_enabled(""))try{append(impl->model->build_native_view(view,cohort_serial,capture_sequence,
+                        *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace,nullptr,owner_for(""),&failure_detail,
+                        "",identity_for(""),generation_for(""),appearance(*impl->model)));
+                    }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what(),failure_detail.c_str());impl->report("View pose: "+std::string(error.what()));}
+                    for(auto& item:impl->players){auto& state=item.second;
+                        if(!state.model||!target_enabled(item.first)||!owner_for(item.first))continue;
+                        try{append(state.model->build_native_view(view,cohort_serial,capture_sequence,
+                            *impl->bridge,MouthSnapshot{},impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,nullptr,owner_for(item.first),nullptr,
+                            item.first,identity_for(item.first),generation_for(item.first),appearance(*state.model)));
+                        }catch(const std::exception&){/* An off-screen/unavailable subject stays native. */}
+                    }
+                    if(group&&!native_publication_subjects_valid(group))group.reset();
+                    if(group){if(!root)root=std::move(group);else root->additional_views.push_back(std::move(group));}
+                    if(impl->staged_gpu_ready&&impl->staged_model&&target_enabled("")){
+                        try{auto candidate=impl->staged_model->build_native_view(view,cohort_serial,capture_sequence,
+                            *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&candidate_source_valid,owner_for(""),nullptr,
+                            "",identity_for(""),impl->staged?impl->staged->generation:0,appearance(*impl->staged_model));
+                            if(!staged_root)staged_root=std::move(candidate);else staged_root->additional_views.push_back(std::move(candidate));
+                        }catch(const std::exception& error){if(candidate_source_valid)impl->staged_failure=std::string("Model cannot use the current game pose: ")+error.what();}
+                    }
+                    for(auto& item:impl->players){auto& state=item.second;
+                        if(!state.staged_gpu_ready||!state.staged_model||!state.staged||!target_enabled(item.first)||!owner_for(item.first))continue;
+                        bool source_valid=false;
+                        try{auto candidate=state.staged_model->build_native_view(view,cohort_serial,capture_sequence,
+                            *impl->bridge,MouthSnapshot{},impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&source_valid,owner_for(item.first),nullptr,
+                            item.first,identity_for(item.first),state.staged->generation,appearance(*state.staged_model));
+                            if(!state.staged_publication)state.staged_publication=std::move(candidate);
+                            else {auto combined=std::make_shared<NativeAvatarPublication>(*state.staged_publication);combined->additional_views.push_back(std::move(candidate));state.staged_publication=std::move(combined);}
+                        }catch(const std::exception&){if(source_valid)state.staged_failure="Model cannot use the current game pose";}
+                    }
                 }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what(),failure_detail.c_str());impl->report("View pose: "+std::string(error.what()));}
-                if(impl->staged_gpu_ready&&impl->staged_model&&view.source_epoch==source_buffer_epoch){
-                    try{const auto source=native_view_instance_source(view);(void)source;
-                        auto candidate=impl->staged_model->build_native_view(view,++impl->frame_count,capture_sequence,
-                            *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&candidate_source_valid,pose_owner);
-                        if(!staged_root)staged_root=std::move(candidate);else staged_root->additional_views.push_back(std::move(candidate));
-                    }catch(const std::exception& error){if(candidate_source_valid)impl->staged_failure=std::string("Model cannot use the current game pose: ")+error.what();}
-                }
             }
             impl->staged_publication=std::move(staged_root);
             outcome.phase="retain-views";

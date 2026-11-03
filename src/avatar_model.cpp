@@ -12,7 +12,42 @@
 #include <windows.h>
 #include <array>
 #include <cwctype>
+#include <limits>
+#include <stdexcept>
 namespace evrm {
+namespace {
+struct BufferBytes {
+    std::uint64_t value=0;
+    template<class T>void add(const std::vector<T>& values){
+        const auto maximum=std::numeric_limits<std::uint64_t>::max();
+        if(values.capacity()>(maximum-value)/sizeof(T))throw std::overflow_error("Avatar CPU buffer size overflow");
+        value+=std::uint64_t(values.capacity())*sizeof(T);
+    }
+    void mouth(const std::shared_ptr<const vrm::MouthData>& data){if(data){add(data->records);add(data->ranges);}}
+};
+void cache_memory_usage(PreparedAvatar& model){
+    const auto& asset=*model.asset;const auto& skin=*model.skin;BufferBytes bytes;
+    bytes.add(asset.nodes);bytes.add(asset.meshes);bytes.add(asset.skins);bytes.add(asset.images);bytes.add(asset.textures);
+    bytes.add(asset.materials);bytes.add(asset.constraints);bytes.add(asset.spring_colliders);bytes.add(asset.spring_joints);
+    for(const auto& image:asset.images){
+        if(image.rgba.size()>std::numeric_limits<std::uint64_t>::max()-model.decoded_texture_bytes)throw std::overflow_error("Avatar texture size overflow");
+        model.decoded_texture_bytes+=image.rgba.size();bytes.add(image.rgba);
+    }
+    for(const auto& node:asset.nodes)bytes.add(node.children);
+    for(const auto& mesh:asset.meshes){bytes.add(mesh.primitives);for(const auto& primitive:mesh.primitives){bytes.add(primitive.vertices);bytes.add(primitive.surface_vertices);bytes.add(primitive.indices);}}
+    for(const auto& rig:asset.skins){bytes.add(rig.joints);bytes.add(rig.inverse_bind);}
+    for(const auto& spring:asset.spring_joints)bytes.add(spring.colliders);
+    bytes.mouth(asset.mouth);
+    bytes.add(skin.vertices);bytes.add(skin.surface_vertices);bytes.add(skin.nodes);
+    bytes.add(skin.mouth_lookup);bytes.add(skin.mouth_nodes);
+    bytes.add(skin.material_plan.opaque_draws);bytes.add(skin.material_plan.blend_draws);
+    for(const auto& node:skin.nodes)bytes.add(node.joint_blend);
+    for(const auto& node:skin.mouth_nodes)bytes.add(node.joints);
+    if(skin.mouth!=asset.mouth)bytes.mouth(skin.mouth);
+    if(skin.layout){bytes.add(skin.layout->vertices);bytes.add(skin.layout->surface_vertices);bytes.add(skin.layout->indices);bytes.add(skin.layout->draws);}
+    model.retained_cpu_buffer_bytes=bytes.value;
+}
+}
 bool normalize_avatar_path(const std::string& input,std::string& output,bool require_file)noexcept {try{
     if(!valid_avatar_path(input))return false;
     const auto path=std::filesystem::u8path(input);auto extension=path.extension().wstring();
@@ -52,17 +87,20 @@ AvatarLoadResult prepare_avatar_bytes(const std::vector<std::uint8_t>& bytes,con
     const auto pose=vrm::retarget(*result->asset,rest);if(!pose)return {{},"Avatar rest pose: "+pose.error};
     auto skin=std::make_shared<const NativeSkinAsset>(make_native_skin_asset(*result->asset,pose));
     if(!*skin)return {{},"Avatar skin: "+skin->error};
-    result->skin=std::move(skin);return {std::move(result),{}};
-}catch(const std::exception& error){return {{},error.what()};}catch(...){return {{},"Avatar preparation failed"};}}
+    result->skin=std::move(skin);cache_memory_usage(*result);return {std::move(result),{}};
+}catch(const std::bad_alloc&){return {{},"Out of memory"};}
+catch(const std::exception& error){return {{},error.what()};}catch(...){return {{},"Avatar preparation failed"};}}
 AvatarLoadResult load_prepared_avatar(const std::string& path)noexcept {try{
     std::string normalized;if(!normalize_avatar_path(path,normalized))return {{},"Choose an existing local VRM file"};
     struct File {HANDLE value=INVALID_HANDLE_VALUE;~File(){if(value!=INVALID_HANDLE_VALUE)CloseHandle(value);}} file;
     file.value=CreateFileW(std::filesystem::u8path(normalized).c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr);
     FILE_ATTRIBUTE_TAG_INFO attributes{};LARGE_INTEGER length{};const vrm::ImportLimits limits;
     if(file.value==INVALID_HANDLE_VALUE||GetFileType(file.value)!=FILE_TYPE_DISK||!GetFileInformationByHandleEx(file.value,FileAttributeTagInfo,&attributes,sizeof attributes)||
-        (attributes.FileAttributes&(FILE_ATTRIBUTE_REPARSE_POINT|FILE_ATTRIBUTE_DIRECTORY))||!GetFileSizeEx(file.value,&length)||length.QuadPart<=0||std::uint64_t(length.QuadPart)>limits.file_bytes)return {{},"Cannot read this VRM file"};
+        (attributes.FileAttributes&(FILE_ATTRIBUTE_REPARSE_POINT|FILE_ATTRIBUTE_DIRECTORY))||!GetFileSizeEx(file.value,&length)||length.QuadPart<=0)return {{},"Cannot read this VRM file"};
+    if(std::uint64_t(length.QuadPart)>limits.file_bytes)return {{},"VRM file exceeds decoder byte range"};
     std::vector<std::uint8_t> bytes(std::size_t(length.QuadPart));DWORD count=0;
     if(!ReadFile(file.value,bytes.data(),DWORD(bytes.size()),&count,nullptr)||count!=bytes.size())return {{},"Cannot read the complete VRM file"};
     return prepare_avatar_bytes(bytes,normalized);
-}catch(const std::exception& error){return {{},error.what()};}catch(...){return {{},"Avatar loading failed"};}}
+}catch(const std::bad_alloc&){return {{},"Out of memory"};}
+catch(const std::exception& error){return {{},error.what()};}catch(...){return {{},"Avatar loading failed"};}}
 }

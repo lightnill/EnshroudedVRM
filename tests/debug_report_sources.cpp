@@ -1,3 +1,10 @@
+#include "../src/debug_report_archive.hpp"
+#include "../vendor/tinygltf/json.hpp"
+#include <windows.h>
+#include <csignal>
+#include <exception>
+#include <cstdlib>
+inline void fixture_guard(){SetErrorMode(0x8003);std::set_terminate([]{std::_Exit(98);});std::signal(SIGABRT,[](int){std::_Exit(99);});SetUnhandledExceptionFilter([](EXCEPTION_POINTERS*)->LONG{std::_Exit(97);});}
 #include "../src/debug_report_sources.hpp"
 #include "../src/debug_report_policy.hpp"
 #include "../src/enshrouded_bridge.hpp"
@@ -9,14 +16,14 @@
 #include <stdexcept>
 void need(bool value,const char* text){if(!value)throw std::runtime_error(text);}
 std::array<std::uint8_t,32> hex(const char* value){std::array<std::uint8_t,32> result{};const auto digit=[](char c){return c<='9'?c-'0':c-'a'+10;};for(unsigned i=0;i<32;++i)result[i]=std::uint8_t(digit(value[i*2])*16+digit(value[i*2+1]));return result;}
-int main(){try{
+int main(){fixture_guard();try{
     evrm::NativeBodyShaderIdentity terrain;terrain.vertex_bytes=35200;terrain.fragment_bytes=3696;
     terrain.vertex_digest=hex("dc1b3a77be743a3bae9422d76d1f4c5f195405b851d3211eab6cdd70b7ed4dac");
     terrain.fragment_digest=hex("8f31a706d837f9c14acd2ba51d1325631e1e1a96961cab3acd4b27db0de293b0");
     need(evrm::classify_debug_report_scene(terrain)==evrm::DebugReportSceneFamily::Terrain,"exact terrain classification missing");
     terrain.fragment_digest[0]^=1;need(evrm::classify_debug_report_scene(terrain)==evrm::DebugReportSceneFamily::Unknown,"partial terrain signature trusted");
     evrm::NativeBodyShaderIdentity building;building.vertex_bytes=8036;building.fragment_bytes=5284;
-    building.vertex_digest=hex("13e2ccd24b50e99c55a8001a6f77144f57931fa0f6c742dd9fe3f9dce59d06f4");
+    building.vertex_digest=hex("743159a78dbd804210bedf87e330aec87d80878874ad0c3eb73d9c252e420788");
     building.fragment_digest=hex("db9368b153c6ed5864ec205c3f1fd9b9c9a5dc1950481b468f8064916266d51f");
     need(evrm::classify_debug_report_scene(building)==evrm::DebugReportSceneFamily::Building,"exact building classification missing");
     for(unsigned i=0;i<20;++i)evrm::debug_report_presented(1000000+i*33333,1,false,false);
@@ -27,6 +34,8 @@ int main(){try{
     evrm::debug_report_observe_scene(evrm::DebugReportSceneFamily::Building);evrm::debug_report_observe_view(1920,1080,126,1);
     evrm::ModSettings settings;settings.microphone_device=std::make_shared<const std::string>("SECRET_CANARY");settings.voice_enabled=true;
     evrm::AvatarMenuSnapshot menu;menu.name="SECRET_CANARY";menu.path="C:/Users/Alice/private.vrm";
+    menu.subject=std::string(64,'c');menu.error="PRIVATE_ASSIGNMENT_SECRET_CANARY";
+    menu.players=std::make_shared<const std::vector<evrm::AvatarPlayerChoice>>(std::vector<evrm::AvatarPlayerChoice>{{{},"You",true},{menu.subject,"PRIVATE_PLAYER_NAME_CANARY",false}});
     evrm::debug_report_observe_settings(settings,&menu);
     evrm::PreparedAvatar prepared;prepared.name="SECRET_CANARY";prepared.path=menu.path;
     auto asset=std::make_shared<vrm::Avatar>();asset->title="SECRET_CANARY";asset->authors={"SECRET_CANARY"};asset->meshes.resize(1);
@@ -44,12 +53,31 @@ int main(){try{
     need(data.diagnostics.find("code=3")!=std::string::npos&&data.diagnostics.find("SECRET")==std::string::npos,"engine error normalization leaked or lost category");
     for(const auto& file:evrm::make_debug_report_contents(data))if(file.name=="diagnostics.log"){
         const std::string text(file.bytes.begin(),file.bytes.end());need(text.find("code=3")!=std::string::npos,"safe engine category was dropped at final export boundary");}
-    for(const auto& file:evrm::make_debug_report_contents(data)){const std::string text(file.bytes.begin(),file.bytes.end());need(text.find("SECRET_CANARY")==std::string::npos&&text.find("Alice")==std::string::npos,"private model or microphone metadata copied");}
+    for(const auto& file:evrm::make_debug_report_contents(data)){const std::string text(file.bytes.begin(),file.bytes.end());need(text.find("SECRET_CANARY")==std::string::npos&&text.find("Alice")==std::string::npos,"private model or microphone metadata copied");
+        need(text.find(menu.subject)==std::string::npos&&text.find("PRIVATE_PLAYER_NAME_CANARY")==std::string::npos&&text.find(menu.error)==std::string::npos,"private player assignment/name/error metadata copied");}
     need(!evrm::debug_report_take_sources(8,1030).scene.location.available,"different job borrowed scene data");
     evrm::debug_report_cancel_sources(7);evrm::debug_report_begin_sources(8,2000);frame.map_position_known=false;
     evrm::debug_report_observe_player(frame,2010);evrm::debug_report_end_source_frame(2020);evrm::debug_report_end_source_frame(2030);
     need(!evrm::debug_report_take_sources(8,2030).scene.location.available,"preview/unqualified or previous-job coordinates borrowed");
     evrm::debug_report_cancel_sources(8);evrm::debug_report_presented(300000000,1,true,false);evrm::debug_report_begin_sources(9,3000);
     need(evrm::debug_report_take_sources(9,3000).frame_intervals_us.empty(),"long-idle history was incorrectly reported as recent timing evidence");
+    for(unsigned preset=0;preset<5;++preset){
+        evrm::debug_report_cancel_sources(9+preset);evrm::debug_report_begin_sources(10+preset,4000);
+        auto profile=std::make_shared<evrm::AvatarProfile>();profile->whole=static_cast<evrm::AvatarShaderPreset>(preset);
+        profile->overrides={{0,"SECRET_CANARY",evrm::AvatarShaderPreset::Enhanced},{1,"SECRET_CANARY",evrm::AvatarShaderPreset::Fast},{2,"SECRET_CANARY",static_cast<evrm::AvatarShaderPreset>(255)}};
+        menu.profile=profile;menu.preferences_loaded=true;evrm::debug_report_observe_settings(settings,&menu);
+        auto observed=evrm::debug_report_take_sources(10+preset,4030);
+        const char* expected[]={"game-lighting","matte","enhanced","fast","game-lighting"};
+        auto contents=evrm::make_debug_report_contents(observed);
+        for(const auto& file:contents)if(file.name=="settings.json"){
+            auto config=nlohmann::json::parse(file.bytes);need(config.at("whole_model_preset")==expected[preset],"whole preset lost at observe-policy boundary");
+            const auto& overrides=config.at("material_overrides");need(overrides.size()==2&&overrides[0].at("preset")=="enhanced"&&overrides[1].at("preset")=="fast","material presets lost or invalid enum admitted");
+        }
+        std::string archive;need(evrm::write_debug_report_zip(contents,[&](const std::uint8_t* bytes,std::size_t count){archive.append(reinterpret_cast<const char*>(bytes),count);return true;}),"actual settings archive failed");
+        need(archive.find("enhanced")!=std::string::npos&&archive.find("fast")!=std::string::npos&&archive.find("SECRET_CANARY")==std::string::npos,"archive lost approved presets or exposed names");
+        observed.settings.whole_preset=255;observed.settings.materials.push_back({3,255});
+        for(const auto& file:evrm::make_debug_report_contents(observed))if(file.name=="settings.json"){
+            auto config=nlohmann::json::parse(file.bytes);need(config.at("whole_model_preset")=="game-lighting"&&config.at("material_overrides").size()==2,"policy did not independently reject invalid numeric presets");}
+    }
     std::cout<<"PASS readonly sources: exact terrain/building families, qualified game map location, scoped frames and private model/device fields omitted\n";return 0;
 }catch(const std::exception& error){std::cerr<<"FAIL report sources: "<<error.what()<<'\n';return 1;}}

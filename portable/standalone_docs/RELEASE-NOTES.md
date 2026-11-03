@@ -1,70 +1,20 @@
-# EnshroudedVRM 0.3.3 — game build 26320373 compatibility
+# EnshroudedVRM 0.4.0
 
-- Update the exact supported game identity, reflected component table, ownership/service layouts, preview calls, equipment publication and Game voice locations for Steam build26320373.
-- Preserve explicit local-player selection and per-request/captured-pose inventory ownership. Survivor previews stay native; existing lifetime and work/pose-age checks remain.
-- Keep the previously accepted bootstrap, shaders, sample avatar, settings format and feature behavior. Runtime file version becomes0.3.3.
-- Add README.pt-BR.md and a bundled LEIA-ME-PT-BR.txt with step-by-step installation, folder layout, F8/model/voice setup and troubleshooting.
-- Keep0.3.2 available for the previous Steam build26082781 (resource1273043); do not mix packages across game patches.
+**Still buggy and incomplete.** Shader quality and stability are below the intended standard. Other players' voice-driven visemes/lip sync are not implemented. This release is named 0.4.0 without a Preview suffix.
 
-The selected implementation passed desktop startup/F8, world/equipment, inventory-survivor-inventory, title/character reload and both voice-source checks. CPU/static checks and exact release scan coverage are recorded separately. Wider Ultra-fog scene coverage, persistence on this patch, optional report screenshots and laptop testing remain coverage gaps; no general FPS guarantee is made. The report still records capture-time settings without voice-history events.
+For Enshrouded Steam build **26404966**. Version 0.3.3 remains available for build 26320373.
 
----
+## Features
 
-# EnshroudedVRM 0.3.2 — local ownership, correct previews and debug reports
+- F8 Player selector reuses Avatar controls for per-account, remembered local model assignments. Unassigned players default to native appearance; multiple different VRMs can render simultaneously. No model/assignment networking is added.
+- Broader importer support for standard glTF normal maps, supported VRM0/VRM1 MToon matcap/rim textures and masks, supported UV transforms and tangent generation. Existing 16-bit PNG-to-RGBA8 import remains supported. Custom Unity effects and arbitrary gloss/roughness-mask workflows are not claimed.
+- Auto/Enhanced/Fast/Matte whole-model presets and per-material overrides, persisted by model content. Same-model assignments share shader profiles.
+- Relaxed importer-only memory caps, F8 memory estimates and background optional shader preparation. Decoder, structural, device and allocation safeguards remain; large-model loading can still stall or fail.
+- One-click privacy-conscious local reports with recent diagnostics, settings, hardware/rendering context and in-game map position. Screenshots require review and explicit inclusion; reports never upload automatically.
+- Updated exact-game ownership, correct local inventory versus survivor previews, multiplayer join/leave handling, equipment and fog/building compatibility. Repeated ownership reads and driver lookup work were reduced.
 
-- Resolve world ownership through the game's explicit local-player selector and direct entity lookup.
-- Keep local inventory previews on the VRM and survivor previews on their native models, using per-request/task/captured-pose association and fresh actor checks.
-- Reduce ownership refresh and driver-lookup overhead; retain the existing verification, work and pose-age limits.
-- Correct equipment publication/advance timing and preserve held-item alignment through recovery.
-- Add F8 Create debug report and Open reports folder, with allowlisted diagnostics/settings/hardware/rendering context and qualified in-game map coordinates. Reports stay local until the user shares them.
-- Screenshots are off per report and require preview plus explicit inclusion. No audio, model files, saves, raw logs/settings, account/server IDs, personal paths or real-world location are collected.
-- Retain standalone Steam startup, F8 models/voice/materials, higher-fog compatibility, optional sample and persistent original-character switch.
+## Known limitations
 
-The selected local implementation passed desktop inventory/survivor/inventory, equipment and title/character reload checks. Ownership CPU tests improved initial 7.598→2.389 ms, repeated 1.023→0.378 ms and changed-generation refresh 6.689→0.922 ms in the same controlled 6,500-entity fixture. These are resolver CPU measurements; a matched gameplay FPS comparison has not been performed. Occasional stutters, wider scene/hardware coverage and optional screenshot/map interpretation still need broader testing. Multiplayer synchronization, full MToon and native armor fitting are not implemented.
+Reflective surfaces, matcaps, transparency and dim/night lighting still need work. Fast can be a useful fallback for incorrect enhanced shading. Brief native-model fallbacks and frame spikes remain, including a known wall/visibility edge case. Initial preparation can delay a body or preview; a remote weapon can appear first. Local microphone/game-voice lip sync animates You only; **remote visemes do not work yet**. Native armor fitting, complete Unity/MToon/custom shader effects and remote model synchronization are not implemented.
 
-The runtime is version 0.3.2. The tested startup DLL is unchanged and keeps its independent 0.2.0-standalone-dev file version. Close Enshrouded before updating package files together; retain personal VRMs and preferences. Exact release scan results are supplied separately.
-
----
-
-# EnshroudedVRM 0.3.1 â€” fog compatibility and replacement recovery
-
-- Reworks the fog/lighting-volume snapshot so replacement can operate above Fog Performance, within the existing checked 64 MiB allocation budget.
-- Selects the local player's owned GPU instance IDs before model-part matching; unrelated world actors no longer participate in that world-pose selection.
-- Resolves refreshed poses for their own source view and preserves a freshly verified ownership observation when only the old render pose expires. Full owner revalidation and the original 250 ms pose lifetime remain.
-- Includes transient GPU-busy/menu and readback-lifetime fixes, plus bounded local fallback and sampled performance diagnostics.
-- Retains normal Steam startup, F8 configuration, audio lip sync, offline/default/selectable microphones, model switching, saved shader/material profiles, the optional sample and the saved original-character switch.
-
-Known limits: some scene/menu fallbacks and survivor-preview identification remain under investigation. Stutters remain at a user-built voxel base and were reduced, not eliminated, with VRM completely disabled. No measured gameplay performance improvement is claimed. Multiplayer replacement synchronization is not implemented.
-
-The release/runtime version is 0.3.1. The startup DLL is retained byte-for-byte with its independent 0.2.0-standalone-dev file version. The unchanged 16-bit PNG-to-RGBA8 importer compatibility from 0.3.0 is included. Close the game before updating; preserve user models/preferences. Exact scan/test records are supplied separately and apply only to their stated hashes.
-
----
-
-EnshroudedVRM 0.3.0 â€” standalone startup
-
-The release and avatar runtime are version 0.3.0. The bootstrap keeps its independent
-0.2.0-standalone-dev file version and its previously tested DLL bytes. BUILD-INFO.json
-records the runtime and bootstrap versions separately.
-
-Start through Steam after installing the game-local bootstrap and mod folder.
-Configure avatars, voice and appearance in F8. The player package has no
-launcher EXE, batch/PowerShell startup file or external mod-loader dependency.
-
-Includes Lightnill's unchanged vroid-sample.vrm as an optional model in F8.
-No model replacement switches to the original game character and persists across
-restarts while remembering the chosen VRM and shader presets. Disabled startup
-does not load the saved model, and disabled replacement skips avatar pose/upload
-work. Existing settings migrate without changing their enabled behavior.
-
-Settings now use a stable user folder, with validated, non-overwriting import
-of the two existing preference files. Native package/game checks precede
-optional services. Unsupported helper programs use ordinary Vulkan forwarding.
-
-The lip-sync/model/material algorithms and shaders are retained from the tested
-feature build. Multiplayer synchronization remains future work. Desktop manual
-startup/model/toggle/restart checks passed; laptop validation is still pending.
-Platform coverage and scan results belong to each exact release's evidence.
-
-Importer compatibility: embedded 16-bit-per-channel PNG textures are normalized
-to RGBA8 at load time, with alpha preservation and decode-workspace checks.
-Existing 8-bit decoding and unused-map placeholders retain their established paths.
+Desktop/laptop two-player checks passed on the supported build, with remaining timing events documented. CPU fixtures and isolated shader checks do not prove game FPS or full visual fidelity. Exact-file verification/scans accompany the release. Preserve your VRMs/settings, update the entire package with the game closed, launch normally through Steam and configure through F8.

@@ -65,22 +65,28 @@ class MouthImporter {
         }
     }
     void accessor_rows(int accessor,std::size_t count,const Bind& bind,std::uint32_t node,std::uint32_t primitive,
-                       const std::vector<std::uint32_t>& remap,bool normal){
+                       const std::vector<std::uint32_t>& remap,const std::vector<SurfaceDuplicate>& duplicates,bool normal){
         const auto& source=indexed(model_.accessors,accessor,"mouth accessor");
         require(source.componentType==5126&&!source.normalized&&source.type==TINYGLTF_TYPE_VEC3&&source.count==count,"Invalid mouth accessor type/count");
         const auto limit=std::min(limits_.mouth_source_vertex_visits,max_mouth_source_visits);
         require(visits_<=limit&&count<=limit-visits_,"Mouth source work limit");visits_+=count;
+        require(duplicates.size()<=limit-visits_,"Mouth seam work limit");visits_+=duplicates.size();
         visit_accessor(model_,accessor,TINYGLTF_TYPE_VEC3,true,[&](std::size_t i,const auto& row){
             if(remap[i]==std::numeric_limits<std::uint32_t>::max()||(row[0]==0&&row[1]==0&&row[2]==0))return;
             const auto key=std::make_pair(node,primitive);auto range=pending_.find(key);
             if(range==pending_.end()){require(pending_.size()<std::min(limits_.mouth_ranges,max_mouth_ranges),"Mouth range limit");range=pending_.emplace(key,Rows{}).first;}
-            auto record=range->second.find(remap[i]);
+            auto emit=[&](std::uint32_t destination){
+            auto record=range->second.find(destination);
             if(record==range->second.end()){require(records_<std::min(limits_.mouth_records,max_mouth_records),"Mouth record limit");
-                MouthDeltaRecord fresh;fresh.vertex=remap[i];record=range->second.emplace(remap[i],fresh).first;++records_;}
+                MouthDeltaRecord fresh;fresh.vertex=destination;record=range->second.emplace(destination,fresh).first;++records_;}
             auto& delta=(normal?record->second.normal:record->second.position)[bind.channel];
             for(unsigned c=0;c<3;++c){const auto value=double(delta[c])+row[c]*bind.weight;
                 if(!std::isfinite(value)||std::abs(value)>std::numeric_limits<float>::max())fail("Mouth delta accumulation overflow");
                 delta[c]=float(value);}
+            };
+            emit(remap[i]);
+            auto at=std::lower_bound(duplicates.begin(),duplicates.end(),std::uint32_t(i),[](const auto& v,std::uint32_t source){return v.source<source;});
+            for(;at!=duplicates.end()&&at->source==i;++at)emit(at->destination);
         });
     }
     static std::uint8_t channels(const MouthDeltaRecord& record)noexcept {
@@ -91,14 +97,14 @@ class MouthImporter {
 public:
     MouthImporter(const tinygltf::Model& model,const Json& doc,const Avatar& avatar,const ImportLimits& limits)noexcept:
         model_(model),avatar_(avatar),limits_(limits){try{parse(doc);}catch(...){discard("Unsupported mouth metadata");}}
-    void primitive(std::size_t mesh,std::size_t index,const tinygltf::Primitive& source,const std::vector<std::uint32_t>& remap)noexcept {
+    void primitive(std::size_t mesh,std::size_t index,const tinygltf::Primitive& source,const std::vector<std::uint32_t>& remap,const std::vector<SurfaceDuplicate>& duplicates)noexcept {
         if(failure_)return;
         try{
             const auto matching=requests_.find(int(mesh));if(matching==requests_.end())return;
             for(const auto& node:matching->second)for(const auto& bind:node.second){
                 const auto& target=source.targets.at(std::size_t(bind.target));require(target.count("POSITION"),"Mouth target requires position deltas");
-                accessor_rows(target.at("POSITION"),remap.size(),bind,node.first,std::uint32_t(index),remap,false);
-                if(target.count("NORMAL"))accessor_rows(target.at("NORMAL"),remap.size(),bind,node.first,std::uint32_t(index),remap,true);
+                accessor_rows(target.at("POSITION"),remap.size(),bind,node.first,std::uint32_t(index),remap,duplicates,false);
+                if(target.count("NORMAL"))accessor_rows(target.at("NORMAL"),remap.size(),bind,node.first,std::uint32_t(index),remap,duplicates,true);
             }
         }catch(...){discard("Unsupported mouth deltas or limits");}
     }

@@ -116,7 +116,7 @@
         // Constructor validates formats, equal extents, capability/size budgets
         // and allocates every private resource before any private command.
         b.snapshot_decline="snapshot-construction";
-        auto snapshot=std::make_unique<NativeVolumeSnapshot>(context.device,context.get,sources,snapshot_caps,snapshot_words.data(),snapshot_words.size());
+        auto snapshot=std::make_shared<NativeVolumeSnapshot>(context.device,context.get,sources,snapshot_caps,snapshot_words.data(),snapshot_words.size());
         b.snapshot_decline="none";
         b.volume_bound=bound;b.volume_restore=restore;b.volume_snapshot=std::move(snapshot);
         if(!volume_metadata_current(b)){decline("retained-metadata");return;}
@@ -191,7 +191,9 @@
             }
             F(vkUpdateDescriptorSets)(context.device,writes.size(),writes.data(),0,nullptr);
         }
-        for(const auto index:b.material_plan.blend_draws){const auto& draw=b.pose->geometry->draws[index];const auto material=draw.material<0?count-1:static_cast<unsigned>(draw.material);b.oit_calls.push_back({sets.at(material),draw.first_index,draw.index_count});}
+        std::vector<VkDescriptorSet> surface(count);
+        try{surface=make_surface_sets(b,sets,true);}catch(...){/* Base OIT remains valid when optional allocation fails. */}
+        for(const auto index:b.material_plan.blend_draws){const auto& draw=b.pose->geometry->draws[index];const auto material=draw.material<0?count-1:static_cast<unsigned>(draw.material);b.oit_calls.push_back({sets.at(material),draw.first_index,draw.index_count,surface.at(material)});}
     }
     void mixed_end(Recording& r,VkCommandBuffer command) {
         if(!r.bundle||!r.bundle->material_plan.mixed||!r.bundle->oit_window.active)return;

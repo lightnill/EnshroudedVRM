@@ -85,7 +85,7 @@ constexpr SceneContract scene_contracts[]={
     // Terrain_Visibility_Preview_Chunklets default
     {4,false,8660,sha("81eced2635046e2e99949c19280c73598f27698c02605b00f2ba3e312f9a5c65"),6228,sha("ab6221416bfd37be05b35a753a68ab3b1e09b0ab78fb9709339567d0d02d01fc"),32920,sha("9fb33be16e33521a20720c771e9f772c30afab4e61130ab8f3920ba61fc0948d"),3808,sha("c8d8516f025cdcef9eb5ecd2cb051d9cf4ceec6c26d32d98a4f0a87c985f6fdc"),chunklet(3)},
     // Building_Visibility_Chunklets default
-    {2,false,8036,sha("13e2ccd24b50e99c55a8001a6f77144f57931fa0f6c742dd9fe3f9dce59d06f4"),0,{},0,{},5284,sha("db9368b153c6ed5864ec205c3f1fd9b9c9a5dc1950481b468f8064916266d51f"),chunklet(2)},
+    {2,false,8036,sha("743159a78dbd804210bedf87e330aec87d80878874ad0c3eb73d9c252e420788"),0,{},0,{},5284,sha("db9368b153c6ed5864ec205c3f1fd9b9c9a5dc1950481b468f8064916266d51f"),chunklet(2)},
     // Building_Visibility_Tessellated_Chunklets default
     {4,false,8008,sha("60f0698b70aeb07c5e8fc5ffa3f56b5e6f8c88ecdf7c5e7e380d377fb26c8dcc"),50704,sha("3aafc4e7967a29edffafde068e9033483ef843befb055e50c498cc6269739d86"),33264,sha("237e456026ffdeb7f873ffe3abaff3373dff8343f2b54f70fb14e48c45056cf6"),5284,sha("be01af7336f341ddd63f0ca234b55100e05131b2cebcc8edc4532b67f0cb312c"),chunklet(2)},
     // Building_Visibility_Tessellated_Chunklets Float16

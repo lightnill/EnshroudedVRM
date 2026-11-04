@@ -1,5 +1,7 @@
 # EnshroudedVRM 0.4.0
 
+**ZIP packaging correction (November 3, 2026):** the current 0.4.0 download uses the fixed release timestamp and Windows archive attributes. All 52 file contents, including every DLL, shader and the sample, are unchanged. A clean laptop install using 7-Zip worked; the original startup cause remains unconfirmed because old files were also removed. Close the game, extract to an empty temporary folder, then copy the complete package beside enshrouded.exe. Preserve personal models/settings and other mods. See validation/0.4.0/archive-metadata-correction.json for provenance and updated checksums.
+
 Play Enshrouded as your VRM avatar. By **lightnill**.
 
 [Português (Brasil): instalação e ajuda](README.pt-BR.md). The player ZIP also includes **LEIA-ME-PT-BR.txt**.

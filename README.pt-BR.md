@@ -1,5 +1,7 @@
 # EnshroudedVRM 0.4.0 — guia em português (Brasil)
 
+**Correção do empacotamento ZIP (3 de novembro de 2026):** o download atual da 0.4.0 usa a data fixa de publicação e atributos de arquivo do Windows. O conteúdo dos 52 arquivos, incluindo DLLs, shaders e o modelo de exemplo, permanece idêntico. A instalação limpa no notebook usando 7-Zip funcionou; a causa original da falha ainda não foi confirmada, pois arquivos antigos também foram removidos. Feche o jogo, extraia para uma pasta temporária vazia e copie o pacote completo ao lado de enshrouded.exe. Preserve seus modelos, configurações e outros mods. Os registros atualizados estão em validation/0.4.0.
+
 Jogue Enshrouded com seu avatar VRM. Mod de **lightnill**.
 
 Esta versão funciona com a compilação Steam **26404966** do jogo. A versão **0.3.3** continua disponível para a compilação anterior **26320373**. Não misture arquivos dessas versões.

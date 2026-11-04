@@ -31,3 +31,8 @@ Auto/Enhanced support normal maps and selected VRM0/VRM1 matcap/rim textures and
 Player choices use installation-keyed HMAC tokens and private local paths; they are never release/report inputs. Other players default to native, assignments remain client-local, remote visemes are not implemented, and same-model shader settings are shared. Initial preparation, short fallback events, reflection/low-light issues and performance spikes remain. See KNOWN-ISSUES.txt and validation/0.4.0 for bounded manual coverage.
 
 Never publish personal models, raw logs/reports/screenshots, State, installation keys, account IDs, game executables/assets, developer fixture EXEs or speech audio. The sole authorized sample is explicitly hash-pinned. Release assets contain the player ZIP and public-only checksums/provenance/scan summaries, not private acceptance reports.
+
+
+## Archive metadata
+
+The 0.4.0 packager writes a fixed publication time (2026-11-03 14:47:00 America/Denver), creator system 0 and Windows archive attribute 0x20. This preserves deterministic output without using a placeholder 1980 date. The corrected public ZIP is a header-only repack of the original release; its embedded provenance still describes the unchanged payload. A source rebuild regenerates source pins/BUILD-INFO and therefore is not promised to reproduce that header-only repack byte for byte. Native implementation sources and binaries are unchanged.

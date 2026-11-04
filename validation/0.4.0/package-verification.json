@@ -2,7 +2,7 @@
   "version": "0.4.0",
   "gameSteamBuild": "26404966",
   "gameSha256": "ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618",
-  "archiveSha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+  "archiveSha256": "57f79f4f5fe4f50ee32fb212b97f62cf26ee0d74f23fd531f6e3eef4ecf73e9b",
   "runtimeSha256": "88c96519723be77bd6dd7964ee74a9955eeb38ee6f694e3e441f144848aa6712",
   "bootstrapSha256": "d0e5c7f7db86f5e7a5b0bb69780da746d54ade3837eb026e2b23d32fba231cef",
   "packageMembers": 52,
@@ -13,7 +13,7 @@
   "unchangedCustomShaderModules": 21,
   "unchangedAcceptedProfileAndCatalog": true,
   "retainedOwnerPartialPaletteAnnotations": 21,
-  "releasePackagingMethodsPassed": 20,
+  "releasePackagingMethodsPassed": 21,
   "additionalTargetedEncodingRerunsPassed": 2,
   "productionConstructorCasesPassed": 3,
   "priorGameCompatibilityMethodsCovered": 146,
@@ -21,5 +21,23 @@
   "manualValidation": "User-run desktop world/equipment/F8, inventory-survivor distinction, reload and local Game voice checks passed. Simultaneous two-player VRMs confirmed on desktop and laptop.",
   "limitations": "Still buggy/incomplete; shaders need refinement; remote lip sync/visemes unimplemented. Brief fallbacks and initial/load/frame-time spikes remain. Laptop graphics settings unavailable in one report, with only a short resolved two-player window. Not a controlled performance comparison or a stability/FPS guarantee.",
   "privacy": "No private reports/screenshots/raw logs, account identities/tokens, State, paths, audio, game images or personal avatars published. Sole authorized bundled VRoid sample retained unchanged.",
-  "installedOrExecutedByReleasePreparation": false
+  "installedOrExecutedByReleasePreparation": false,
+  "metadataCorrection": {
+    "kind": "ZIP header metadata correction",
+    "originalArchiveSha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+    "correctedArchiveSha256": "57f79f4f5fe4f50ee32fb212b97f62cf26ee0d74f23fd531f6e3eef4ecf73e9b",
+    "all52MemberContentsUnchanged": true,
+    "allCompressedPayloadsUnchanged": true,
+    "nativeBinariesRebuilt": false,
+    "timestamp": "2026-11-03 14:47:00 America/Denver (fixed publication time)",
+    "creatorSystem": "MS-DOS/Windows",
+    "externalAttributes": "0x20 FILE_ATTRIBUTE_ARCHIVE",
+    "packageTestsPassed": 21,
+    "sevenZipExtractionVerified": true,
+    "userReportedCleanLaptopInstallWorks": true,
+    "startupCauseConfirmed": false,
+    "scope": "A clean laptop reinstall also removed leftover EnshroudedVRM files. The test did not isolate metadata from cleanup.",
+    "provenance": "The corrected ZIP is a header-only repack of the original Nexus 0.4.0 download. Embedded BUILD-INFO, release-manifest and guides retain their original bytes and describe the unchanged payload. Repository packaging source and external verification records are updated separately.",
+    "nativeSourceCommit": "e020588e958faf048d4dd4568f346236dbd15988"
+  }
 }

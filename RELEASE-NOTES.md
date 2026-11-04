@@ -18,3 +18,8 @@ For Enshrouded Steam build **26404966**. Version 0.3.3 remains available for bui
 Reflective surfaces, matcaps, transparency and dim/night lighting still need work. Fast can be a useful fallback for incorrect enhanced shading. Brief native-model fallbacks and frame spikes remain, including a known wall/visibility edge case. Initial preparation can delay a body or preview; a remote weapon can appear first. Local microphone/game-voice lip sync animates You only; **remote visemes do not work yet**. Native armor fitting, complete Unity/MToon/custom shader effects and remote model synchronization are not implemented.
 
 Desktop/laptop two-player checks passed on the supported build, with remaining timing events documented. CPU fixtures and isolated shader checks do not prove game FPS or full visual fidelity. Exact-file verification/scans accompany the release. Preserve your VRMs/settings, update the entire package with the game closed, launch normally through Steam and configure through F8.
+
+
+## ZIP packaging correction
+
+**ZIP packaging correction (November 3, 2026):** the current 0.4.0 download uses the fixed release timestamp and Windows archive attributes. All 52 file contents, including every DLL, shader and the sample, are unchanged. A clean laptop install using 7-Zip worked; the original startup cause remains unconfirmed because old files were also removed. Close the game, extract to an empty temporary folder, then copy the complete package beside enshrouded.exe. Preserve personal models/settings and other mods. See validation/0.4.0/archive-metadata-correction.json for provenance and updated checksums.

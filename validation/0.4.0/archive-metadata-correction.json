@@ -1,0 +1,18 @@
+{
+  "kind": "ZIP header metadata correction",
+  "originalArchiveSha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+  "correctedArchiveSha256": "57f79f4f5fe4f50ee32fb212b97f62cf26ee0d74f23fd531f6e3eef4ecf73e9b",
+  "all52MemberContentsUnchanged": true,
+  "allCompressedPayloadsUnchanged": true,
+  "nativeBinariesRebuilt": false,
+  "timestamp": "2026-11-03 14:47:00 America/Denver (fixed publication time)",
+  "creatorSystem": "MS-DOS/Windows",
+  "externalAttributes": "0x20 FILE_ATTRIBUTE_ARCHIVE",
+  "packageTestsPassed": 21,
+  "sevenZipExtractionVerified": true,
+  "userReportedCleanLaptopInstallWorks": true,
+  "startupCauseConfirmed": false,
+  "scope": "A clean laptop reinstall also removed leftover EnshroudedVRM files. The test did not isolate metadata from cleanup.",
+  "provenance": "The corrected ZIP is a header-only repack of the original Nexus 0.4.0 download. Embedded BUILD-INFO, release-manifest and guides retain their original bytes and describe the unchanged payload. Repository packaging source and external verification records are updated separately.",
+  "nativeSourceCommit": "e020588e958faf048d4dd4568f346236dbd15988"
+}

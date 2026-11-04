@@ -13,7 +13,7 @@
   "compiler": "Runtime GCC 16.2.0; retained Microsoft-built x64 bootstrap; normal unsigned unpacked PEs",
   "voiceSdkSha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
   "packageName": "EnshroudedVRM-0.4.0.zip",
-  "packageSha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+  "packageSha256": "57f79f4f5fe4f50ee32fb212b97f62cf26ee0d74f23fd531f6e3eef4ecf73e9b",
   "supportedGame": {
     "steamBuildId": "26404966",
     "executableSha256": "ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618"
@@ -1226,8 +1226,8 @@
     },
     {
       "path": "BUILDING.md",
-      "sha256": "341868e6f8135a8aed39751a83b60d799279697215e5f1a3951ee57de26da1aa",
-      "bytes": 4891
+      "sha256": "492b49d0614ccfff07ebaad22719412800fd59e7c8643e017bd02f0462f469e7",
+      "bytes": 5465
     },
     {
       "path": "docs/compatibility/hands-free-lantern.md",
@@ -1481,8 +1481,8 @@
     },
     {
       "path": "portable/package_standalone_release.py",
-      "sha256": "0c1b2c1d20eba853f0aeb8b24f7ec86126fbcfb3cef4e80cf72844507fd05530",
-      "bytes": 36239
+      "sha256": "b46e49279158dbff3d343fa45d937e19f3d1843b968f348978f81647b6042b6b",
+      "bytes": 36346
     },
     {
       "path": "portable/runtime.rc",
@@ -1566,18 +1566,18 @@
     },
     {
       "path": "README.md",
-      "sha256": "1f2eacb301c639c5834f754d79133e087e6b2e8837c4571a5bb75562c16a723c",
-      "bytes": 9714
+      "sha256": "7ae8bf328a263a3125afc2dff6295bdf1d72461c84bb1f0f594a6f1caec16120",
+      "bytes": 10316
     },
     {
       "path": "README.pt-BR.md",
-      "sha256": "48314981b94a450f3d2661eb476d2db936548ad58fad4f73c203c88d08cdc5de",
-      "bytes": 11155
+      "sha256": "92638df0a27b24676ec680d28d8dce62ac95d61999d229b26b4d79703fc71a2f",
+      "bytes": 11781
     },
     {
       "path": "RELEASE-NOTES.md",
-      "sha256": "bb6abfa8be73fda5d9a1149b19895850dc0b8f6cde77544bd965aa1f67b3c344",
-      "bytes": 2639
+      "sha256": "faedd5533c17db035b97713a19b81fa881612dd69c0fd560cc3a216c82ef6315",
+      "bytes": 3274
     },
     {
       "path": "SECURITY.md",
@@ -3871,8 +3871,8 @@
     },
     {
       "path": "tests/test_standalone_package.py",
-      "sha256": "bef449f4ce7340b0f401bf5719c3c3d0ef2a72b51c8a8a0092dad0c4a177257e",
-      "bytes": 18926
+      "sha256": "856af39aee39f74b3ce13a6efb572a2f5fd71340dcf07b154c806eb7e82539ac",
+      "bytes": 19393
     },
     {
       "path": "tests/test_standalone_runtime_dll.py",
@@ -4090,19 +4090,24 @@
       "bytes": 4097
     },
     {
+      "path": "validation/0.4.0/archive-metadata-correction.json",
+      "sha256": "bd63e414b800ffbc5d0cc40395478c5ec9aba072484c692f7b89a017272172cc",
+      "bytes": 1185
+    },
+    {
       "path": "validation/0.4.0/package-verification.json",
-      "sha256": "68c2baa3d4d32055da99d2f0063dd3ba4f9d3712451f0efed7899a43d5c5a6fb",
-      "bytes": 1920
+      "sha256": "88771888bbbaa25a9ec9aff5d4e87415aceb3c28d38a1291afbe0664868efe86",
+      "bytes": 3164
     },
     {
       "path": "validation/0.4.0/README.md",
-      "sha256": "131028df2f8cb24a39b2d5fb6099fa1338236542d6b3398f87cf2f465037a240",
-      "bytes": 1935
+      "sha256": "d81064389e9d31eaf21fd91af6753799a34c8bd847e6ccaa2065ef6e1e05bb1f",
+      "bytes": 3074
     },
     {
       "path": "validation/0.4.0/SCAN-RESULTS-0.4.0.json",
-      "sha256": "0879ad5ac90d07a56dbc54c63452cadfb591f116bcc95d0bc7361e1342a07466",
-      "bytes": 16968
+      "sha256": "5306f3ff0b2da0dac197c5af57dbcb038a0b3f9bd5c6d9f44378d58f961169ab",
+      "bytes": 19509
     },
     {
       "path": "validation/hands-free-lantern-20261027/results.json",
@@ -4369,5 +4374,23 @@
       "sha256": "b061bd4672c939fbbfbcd8a923385f51276e4fea1c44b0b7035768378160b336",
       "bytes": 289320
     }
-  ]
+  ],
+  "metadataCorrection": {
+    "kind": "ZIP header metadata correction",
+    "originalArchiveSha256": "c6d1d4715674d6ce9c42c2b90ecb1ae984013f36ae6346f5fdba02edfeeca3c4",
+    "correctedArchiveSha256": "57f79f4f5fe4f50ee32fb212b97f62cf26ee0d74f23fd531f6e3eef4ecf73e9b",
+    "all52MemberContentsUnchanged": true,
+    "allCompressedPayloadsUnchanged": true,
+    "nativeBinariesRebuilt": false,
+    "timestamp": "2026-11-03 14:47:00 America/Denver (fixed publication time)",
+    "creatorSystem": "MS-DOS/Windows",
+    "externalAttributes": "0x20 FILE_ATTRIBUTE_ARCHIVE",
+    "packageTestsPassed": 21,
+    "sevenZipExtractionVerified": true,
+    "userReportedCleanLaptopInstallWorks": true,
+    "startupCauseConfirmed": false,
+    "scope": "A clean laptop reinstall also removed leftover EnshroudedVRM files. The test did not isolate metadata from cleanup.",
+    "provenance": "The corrected ZIP is a header-only repack of the original Nexus 0.4.0 download. Embedded BUILD-INFO, release-manifest and guides retain their original bytes and describe the unchanged payload. Repository packaging source and external verification records are updated separately.",
+    "nativeSourceCommit": "e020588e958faf048d4dd4568f346236dbd15988"
+  }
 }

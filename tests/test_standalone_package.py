@@ -90,6 +90,15 @@ class StandalonePackageTests(unittest.TestCase):
                        bootstrap_sha256=sha(self.bootstrap.read_bytes()),shader_manifest=self.shader_manifest,source_pins=self.pins)
         arguments.update(changes);return self.module.build_release(**arguments)
 
+    def test_archive_entries_use_fixed_release_time_and_windows_attributes(self):
+        self.build()
+        with zipfile.ZipFile(self.output) as archive:
+            for entry in archive.infolist():
+                with self.subTest(member=entry.filename):
+                    self.assertEqual(entry.date_time,(2026,11,3,14,47,0))
+                    self.assertEqual(entry.create_system,0)
+                    self.assertEqual(entry.external_attr,0x20)
+
     def test_owned_prefix_annotations_require_exact_catalog_rows(self):
         row=json.loads(self.base_payload['Compatibility/catalog.json'])['descriptor_signatures'][0]
         rule={'palette_joint_ids':[16,17],'policy':'owned-prefix-v1'}

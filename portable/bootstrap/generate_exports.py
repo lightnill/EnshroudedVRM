@@ -103,6 +103,25 @@ def definition(inventory, provider):
     return '\n'.join(lines)+'\n'
 
 
+def microsoft_export_arguments(inventory, provider):
+    """Keep whitespace forwarder paths in single MSVC /EXPORT arguments.
+
+    LIB's .def parser re-tokenizes even quoted forwarder module paths. Passing
+    one argument per export preserves the exact path without literal quotes.
+    """
+    definition(inventory, provider)  # Apply the same trusted-provider checks.
+    if ',' in provider:
+        raise ValueError('forwarder module contains a Microsoft export-option delimiter')
+    arguments = []
+    for item in inventory['exports']:
+        ordinal, names = item['ordinal'], item['names']
+        for name in names:
+            arguments.append(f'/EXPORT:{name}={provider}.{name},@{ordinal}')
+        if not names:
+            arguments.append(f'/EXPORT:evrm_ordinal_{ordinal}={provider}.#{ordinal},@{ordinal},NONAME')
+    return arguments
+
+
 def write_inventory(path, output):
     inventory = export_inventory(path)
     Path(output).write_text(json.dumps(inventory, indent=2, sort_keys=True)+'\n', encoding='utf-8')

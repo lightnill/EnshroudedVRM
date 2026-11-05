@@ -1,9 +1,10 @@
 """Local model/appearance fixtures; no game, actual dialogs or audio capture."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import os,shutil,subprocess,tempfile,unittest,re,importlib.util,sys
 class AvatarSwitchTests(unittest.TestCase):
     def native(self,name,sources=(),flags=()):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if not compiler or os.name!='nt':self.skipTest('Windows native compiler required')
         root=Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-avatar-',ignore_cleanup_errors=True) as folder:
@@ -28,8 +29,8 @@ class AvatarSwitchTests(unittest.TestCase):
                 (Path(folder)/'avatar_backend_switch_methods.inc').write_text(backend[start:end],encoding='utf-8')
             binary=Path(folder)/(name+'.exe')
             if 'avatar_service.cpp' in sources:
-                sources=(*sources,'player_assignments.cpp');flags=(*flags,'-lbcrypt')
-            built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+folder,str(root/'tests'/(name+'.cpp')),
+                sources=(*sources,'player_assignments.cpp');flags=(*flags,'-lbcrypt','-luser32')
+            built=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+folder,str(root/'tests'/(name+'.cpp')),
                 *[str(root/'src'/source) for source in sources],*flags,'-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(built.returncode,0,built.stdout+built.stderr)
             argument=str(root/'portable/standalone_assets/vroid-sample.vrm') if name=='avatar_sample' else folder

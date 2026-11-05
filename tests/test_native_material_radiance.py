@@ -4,6 +4,7 @@ The small float3 adapter supplies HLSL arithmetic only. Expressions are read
 from the real fragment shaders, not restated in an expected-value function.
 DXC/SPIR-V and independent GPU checks cover the language/driver boundary.
 """
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import re
@@ -116,9 +117,9 @@ int main(int argc,char** argv){try{
 class MaterialRadianceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler:
-            raise unittest.SkipTest('Set EVRM_TEST_COMPILER to local x64 GCC')
+            raise unittest.SkipTest('Set EVRM_TEST_COMPILER to pinned x64 MSVC 14.44')
         cls.temp = tempfile.TemporaryDirectory(prefix='evrm-material-radiance-')
         folder = Path(cls.temp.name)
         oit = (ROOT / 'shaders/avatar_native_oit.hlsl').read_text()
@@ -127,7 +128,7 @@ class MaterialRadianceTests(unittest.TestCase):
             raise AssertionError('Expected the production Enhanced and Basic radiance expressions')
         gbuffer = (ROOT / 'shaders/avatar_native.hlsl').read_text()
         opaque = re.findall(r'^\s*o\.emissive=pack_rgb9e5\((.+)\);$', gbuffer, re.M)[0]
-        preprocessed = subprocess.run([compiler, '-E', '-P', '-x', 'c++', '-DEVRM_NATIVE_SURFACE=1', str(ROOT / 'shaders/native_prepare.hlsl')], capture_output=True, text=True, timeout=30)
+        preprocessed = run_compiler([compiler, '-E', '-P', '-x', 'c++', '-DEVRM_NATIVE_SURFACE=1', str(ROOT / 'shaders/native_prepare.hlsl')], capture_output=True, text=True, timeout=30)
         if preprocessed.returncode:
             raise AssertionError('Preparation preprocessing failed:\n' + preprocessed.stderr)
         stores = '\n'.join(line for line in preprocessed.stdout.splitlines() if re.match(r'\s*preparedFrame\.Store[24]\((?:192|200)u,', line))
@@ -142,7 +143,7 @@ class MaterialRadianceTests(unittest.TestCase):
         cpp = folder / 'radiance.cpp'
         cpp.write_text(code)
         cls.binary = folder / 'radiance.exe'
-        run = subprocess.run([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static', str(cpp), '-o', str(cls.binary)], capture_output=True, text=True, timeout=120)
+        run = run_compiler([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static', str(cpp), '-o', str(cls.binary)], capture_output=True, text=True, timeout=120)
         if run.returncode:
             raise AssertionError('CPU adapter did not compile:\n' + run.stdout + run.stderr)
 

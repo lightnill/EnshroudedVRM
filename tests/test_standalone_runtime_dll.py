@@ -1,4 +1,5 @@
 """Actual rebuilt DLL through the system loader; unrelated/synthetic clients only."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes
 import os
@@ -19,7 +20,7 @@ class StandaloneRuntimeDllTests(unittest.TestCase):
             folder=Path(raw);shader=folder/'owned.spv';binary=folder/'owned_gpu.exe'
             compile_shader=subprocess.run([dxc,'-spirv','-fspv-target-env=vulkan1.1','-T','cs_6_0','-E','cs_main',str(ROOT/'tests/standalone_gpu_smoke.hlsl'),'-Fo',str(shader)],capture_output=True,text=True,timeout=60)
             self.assertEqual(compile_shader.returncode,0,compile_shader.stdout+compile_shader.stderr)
-            built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-municode','-I'+include,str(ROOT/'tests/standalone_gpu_smoke.cpp'),'-o',str(binary)],capture_output=True,text=True,timeout=90)
+            built=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-municode','-I'+include,str(ROOT/'tests/standalone_gpu_smoke.cpp'),'-o',str(binary)],capture_output=True,text=True,timeout=90)
             self.assertEqual(built.returncode,0,built.stdout+built.stderr)
             env={k:v for k,v in os.environ.items() if not k.startswith(('VK_','ENSHROUDED_VRM_'))};env.update(VK_LAYER_PATH=str(Path(runtime).resolve()),VK_INSTANCE_LAYERS='VK_LAYER_LOCAL_enshrouded_vrm')
             run=subprocess.run([str(binary),str(shader)],env=env,capture_output=True,text=True,timeout=60)
@@ -27,7 +28,7 @@ class StandaloneRuntimeDllTests(unittest.TestCase):
 
     def test_declined_startup_preserves_vulkan_and_ignores_inherited_activation(self):
         runtime=os.environ.get('EVRM_RUNTIME_TEST_DIRECTORY')
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         include=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if os.name!='nt' or not runtime or not compiler or not include:
             self.skipTest('explicit rebuilt DLL, compiler and Vulkan headers required')
@@ -36,7 +37,7 @@ class StandaloneRuntimeDllTests(unittest.TestCase):
         self.assertTrue((runtime/'enshrouded_vrm_runtime.dll').exists())
         with tempfile.TemporaryDirectory(prefix='evrm-runtime-admission-',ignore_cleanup_errors=True) as raw:
             folder=Path(raw);child=folder/'assets.exe'
-            built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-municode','-DEVRM_NO_BOOTSTRAP',
+            built=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-municode','-DEVRM_NO_BOOTSTRAP',
                                   '-I'+include,str(ROOT/'tests/bootstrap_vulkan_child.cpp'),'-o',str(child)],capture_output=True,text=True,timeout=90)
             self.assertEqual(built.returncode,0,built.stdout+built.stderr)
             for name in ['assets.exe','enshrouded.exe']:

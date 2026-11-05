@@ -22,8 +22,8 @@ class NativePreviewSubjectCalls {
     }
     NativePreviewSubject subject(U caller)const noexcept {
         if(caller<base_)return NativePreviewSubject::unresolved;
-        switch(caller-base_){case 0xbadb75:return NativePreviewSubject::local;
-            case 0xbf14ef:case 0xc0dfe1:case 0xc47418:case 0xc6cd89:case 0xc70e45:return NativePreviewSubject::other;
+        switch(caller-base_){case 0xbadc55:return NativePreviewSubject::local;
+            case 0xbf15cf:case 0xc0e0c1:case 0xc474f8:case 0xc6ce69:case 0xc70f25:return NativePreviewSubject::other;
             default:return NativePreviewSubject::unresolved;}
     }
     struct Scope {
@@ -73,7 +73,7 @@ public:
     template<class F>U main_destroy(F&& original,U main,U flags){LifetimeScope scope(subjects_);return original(main,flags);}
     template<class F>void render(F&& original,U renderer,U view,U frame,U target,U payload,U caller){
         const auto copied=thread_.copied;const auto packet=thread_.packet;thread_.copied={};thread_.packet=0;
-        const bool ours=packet&&packet==payload&&renderer==copied.source.renderer&&caller>=base_&&caller-base_==0x861d29&&subjects_.current(copied);
+        const bool ours=packet&&packet==payload&&renderer==copied.source.renderer&&caller>=base_&&caller-base_==0x861e09&&subjects_.current(copied);
         Scope scope(thread_.rendering,ours?copied:NativePreviewStamp{});original(renderer,view,frame,target,payload);
     }
     template<class F>U allocate(F&& original,U context,U flags,U label){

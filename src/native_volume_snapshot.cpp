@@ -59,7 +59,7 @@ NativeVolumeSnapshot::NativeVolumeSnapshot(VkDevice device,PFN_vkGetDeviceProcAd
     VkDeviceSize allocated=0;
     for(unsigned i=0;i<2;++i){
         const std::array<VkFormat,2> formats={VK_FORMAT_R32_UINT,VK_FORMAT_E5B9G9R9_UFLOAT_PACK32};
-        VkImageFormatListCreateInfo list{};list.sType=VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;list.viewFormatCount=formats.size();list.pViewFormats=formats.data();
+        VkImageFormatListCreateInfo list{};list.sType=VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;list.viewFormatCount=static_cast<std::uint32_t>(formats.size());list.pViewFormats=formats.data();
         VkImageCreateInfo image{};image.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;image.pNext=i?nullptr:&list;image.flags=i?0:VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;image.imageType=VK_IMAGE_TYPE_3D;image.format=i?VK_FORMAT_R32_SFLOAT:VK_FORMAT_R32_UINT;image.extent=p.extent;image.mipLevels=image.arrayLayers=1;image.samples=VK_SAMPLE_COUNT_1_BIT;image.tiling=VK_IMAGE_TILING_OPTIMAL;image.usage=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT;checked(p.vkCreateImage(device,&image,nullptr,&p.images[i]),"Snapshot owned image");
         VkMemoryRequirements r{};p.vkGetImageMemoryRequirements(device,p.images[i],&r);require(r.size&&r.size<=memory_byte_limit-allocated&&power_two(r.alignment)&&r.alignment<=memory_byte_limit,"Snapshot allocation budget/requirements");allocated+=r.size;
         unsigned type=VK_MAX_MEMORY_TYPES;for(unsigned n=0;n<caps.memory.memoryTypeCount;++n){const auto& t=caps.memory.memoryTypes[n];if((r.memoryTypeBits&(1u<<n))&&pure(t.propertyFlags)&&t.heapIndex<caps.memory.memoryHeapCount&&caps.memory.memoryHeaps[t.heapIndex].size>=r.size){type=n;break;}}

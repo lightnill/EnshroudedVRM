@@ -3,7 +3,9 @@
 #include <string_view>
 
 namespace enshrouded::vrm {
-enum class BootstrapReason { ready, wrong_process, wrong_directory, unsafe_path, disabled, search_override, too_long, already_present };
+// Zero is the inactive default, keeping the bounded static workspace in BSS
+// instead of embedding its large zero-filled arrays as initialized file data.
+enum class BootstrapReason { wrong_process, ready, wrong_directory, unsafe_path, disabled, search_override, too_long, already_present };
 struct BootstrapPlan {
     wchar_t paths[32768]{};
     wchar_t manifest[32768]{};

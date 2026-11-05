@@ -570,8 +570,8 @@ struct SpringBones::Impl {
                     // collision pass, and no render-only history writes.
                     const auto posed_axis=unit(sub(tail(j,baseline),position(baseline[settings.node])),axis_unit);
                     const double raw=twist_angle(posed_axis,solved_axis,baseline[settings.node],world[settings.node],rotation);
-                    const double angle=std::remainder(section_twists[i]-raw,2*3.14159265358979323846),s=std::sin(angle*.5);
-                    rotation=compose({solved_axis[0]*s,solved_axis[1]*s,solved_axis[2]*s,std::cos(angle*.5)},rotation);
+                const double angle=std::remainder(section_twists[i]-raw,2*3.14159265358979323846),half_sine=std::sin(angle*.5);
+                rotation=compose({solved_axis[0]*half_sine,solved_axis[1]*half_sine,solved_axis[2]*half_sine,std::cos(angle*.5)},rotation);
                 }
                 for(auto n:j.descendants){rotate_about(world[n],rotation,root);changed[n]=true;}
                 result.max_offset=std::max(result.max_offset,norm(sub(next,tail(j,baseline))));

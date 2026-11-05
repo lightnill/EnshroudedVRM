@@ -1,20 +1,23 @@
-# EnshroudedVRM 0.4.0
+# EnshroudedVRM 0.5.0
 
-**Still buggy and incomplete.** Shader quality and stability are below the intended standard. Other players' voice-driven visemes/lip sync are not implemented. This release is named 0.4.0 without a Preview suffix.
+For Enshrouded Steam build **26430625** only.
 
-For Enshrouded Steam build **26404966**. Version 0.3.3 remains available for build 26320373.
+- Replaced the game-local Vulkan bootstrap with **dinput8.dll** and normal Steam startup.
+- Added optional **dinput8.chainload.dll** support for a preserved existing input loader, with Windows input fallback and bounded startup diagnostics.
+- One complete player ZIP supports manual installation and Vortex. Existing **EML dbghelp.dll** can remain installed; the VRM runtime starts independently.
+- Ported the loader, runtime and native tests to Visual Studio 2022 / MSVC 14.44 with the static runtime.
+- Updated native compatibility checks for the current game build.
+- Retained per-player VRMs, supported enhanced MToon materials, appearance presets, local voice animation and privacy-conscious F8 debug reports.
 
-## Features
+**Updating:** close the game, preserve your own VRMs/settings, and disable/remove the older EnshroudedVRM package. Remove the game-local vulkan-1.dll only if it belongs to an older EnshroudedVRM installation. If another mod owns dinput8.dll, preserve it as dinput8.chainload.dll before extraction; do not overwrite an existing chainload file or rename an unidentified DLL. Replace an older EnshroudedVRM input DLL directly. Extract the complete ZIP beside enshrouded.exe, or install/enable/deploy that ZIP through Vortex. No older release files are required.
 
-- F8 Player selector reuses Avatar controls for per-account, remembered local model assignments. Unassigned players default to native appearance; multiple different VRMs can render simultaneously. No model/assignment networking is added.
-- Broader importer support for standard glTF normal maps, supported VRM0/VRM1 MToon matcap/rim textures and masks, supported UV transforms and tangent generation. Existing 16-bit PNG-to-RGBA8 import remains supported. Custom Unity effects and arbitrary gloss/roughness-mask workflows are not claimed.
-- Auto/Enhanced/Fast/Matte whole-model presets and per-material overrides, persisted by model content. Same-model assignments share shader profiles.
-- Relaxed importer-only memory caps, F8 memory estimates and background optional shader preparation. Decoder, structural, device and allocation safeguards remain; large-model loading can still stall or fail.
-- One-click privacy-conscious local reports with recent diagnostics, settings, hardware/rendering context and in-game map position. Screenshots require review and explicit inclusion; reports never upload automatically.
-- Updated exact-game ownership, correct local inventory versus survivor previews, multiplayer join/leave handling, equipment and fog/building compatibility. Repeated ownership reads and driver lookup work were reduced.
+Launch normally through Steam and press F8 (Fn + F8 on some laptops). Choose You or a connected Player N, turn off No model replacement and select a .vrm. Choices affect your client only.
 
-## Known limitations
+The implementation was checked on desktop and laptop, including two-player replacements, equipment, restart/reconnect and disconnect. Release-native version stamps changed; fresh build, byte-comparison, packaging and scan evidence is recorded under validation/0.5.0. Historical 0.4.0 evidence is retained separately. This is limited coverage, not a stability or FPS guarantee.
 
-Reflective surfaces, matcaps, transparency and dim/night lighting still need work. Fast can be a useful fallback for incorrect enhanced shading. Brief native-model fallbacks and frame spikes remain, including a known wall/visibility edge case. Initial preparation can delay a body or preview; a remote weapon can appear first. Local microphone/game-voice lip sync animates You only; **remote visemes do not work yet**. Native armor fitting, complete Unity/MToon/custom shader effects and remote model synchronization are not implemented.
+Known limits: shaders, transparency, reflections and low-light appearance still need work; brief native-model fallbacks and stutters can occur. Other players' voice lip sync, arbitrary custom shaders and direct EML-hosted loading are not implemented. BuildingTools initialized when chained but disabled its own features on this game build, including without EnshroudedVRM. Other Windows-directory layouts than C:\Windows are unsupported by this bootstrap.
 
-Desktop/laptop two-player checks passed on the supported build, with remaining timing events documented. CPU fixtures and isolated shader checks do not prove game FPS or full visual fidelity. Exact-file verification/scans accompany the release. Preserve your VRMs/settings, update the entire package with the game closed, launch normally through Steam and configure through F8.
+Use F8 > Create debug report for support and review the report before sharing. Settings/reports/logs live in %LOCALAPPDATA%\EnshroudedVRM\State. Reports do not upload automatically. Do not share personal models, raw logs or account assignment/settings files publicly.
+
+
+The input loader is retained byte for byte from the tested candidate (SHA-256 0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386). It keeps its independently versioned 0.4.0-input-test resource metadata. The package and runtime are version 0.5.0; no files from an older installation are required. Exact-hash scan reports and coverage gaps accompany this release.

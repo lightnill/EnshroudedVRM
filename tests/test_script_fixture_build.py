@@ -1,4 +1,5 @@
 """Run the developer fixture builder without loading a game or graphics layer."""
+from native_fixture_compiler import default_compiler
 import os
 from pathlib import Path
 import subprocess
@@ -20,16 +21,16 @@ class ScriptFixtureBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             output = root / 'never-created'
-            result = self.run_helper(root / 'missing-g++.exe', output)
+            result = self.run_helper(root / 'missing-cl.exe', output)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('Compiler not found', result.stdout + result.stderr)
             self.assertFalse(output.exists())
 
-    @unittest.skipUnless(os.environ.get('EVRM_FIXTURE_COMPILER'), 'Set EVRM_FIXTURE_COMPILER to a local Windows x64 g++.exe')
+    @unittest.skipUnless(os.name == 'nt', 'The MSVC fixture is Windows-only')
     def test_build_creates_only_the_synthetic_child_executable(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / 'fixture build'
-            result = self.run_helper(os.environ['EVRM_FIXTURE_COMPILER'], output)
+            result = self.run_helper(os.environ.get('EVRM_FIXTURE_COMPILER') or default_compiler(), output)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual({path.name for path in output.iterdir()}, {'portable_child.exe'})
             self.assertEqual((output / 'portable_child.exe').read_bytes()[:2], b'MZ')

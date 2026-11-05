@@ -67,7 +67,7 @@ RuntimeStartupContext evaluate_runtime_startup(const RuntimeStartupInput& input,
         auto lease=std::make_shared<RuntimePackageLease>();std::set<std::filesystem::path> directories;
         const auto lock_directory=[&](const auto& path){if(directories.insert(path).second)lease->files.push_back(std::make_unique<detail::StandaloneFile>(path,true));};
         lock_directory(result.game_directory);lock_directory(result.mod_directory);
-        auto manifest=std::make_unique<detail::StandaloneFile>(result.mod_directory/L"release-manifest.json");
+        auto manifest=std::make_unique<detail::StandaloneFile>(result.mod_directory/L"release-manifest.json",false,detail::StandaloneReadPolicy::ImmutablePackage);
         const auto json=manifest_json(manifest->read(64*1024));lease->files.push_back(std::move(manifest));
         need(json.size()==5 && json.value("schema","")=="enshrouded-vrm-standalone-v1" && json.at("game_sha256").is_string() &&
              json.at("game_sha256").get<std::string>()==hex(owner->sha256),"manifest-build");
@@ -84,7 +84,7 @@ RuntimeStartupContext evaluate_runtime_startup(const RuntimeStartupInput& input,
             need(digest.size()==64 && std::all_of(digest.begin(),digest.end(),[](char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');}),"manifest-digest");
             const auto path=result.game_directory/std::filesystem::u8path(name);
             for(auto directory=path.parent_path();!detail::same_standalone_path(directory,result.game_directory);directory=directory.parent_path())lock_directory(directory);
-            auto file=std::make_unique<detail::StandaloneFile>(path);const auto bytes=file->read(64*1024*1024);
+            auto file=std::make_unique<detail::StandaloneFile>(path,false,detail::StandaloneReadPolicy::ImmutablePackage);const auto bytes=file->read(64*1024*1024);
             need(result.hashed_bytes<=128*1024*1024-bytes.size(),"package-size");
             need(hex(detail::sha256(bytes.data(),bytes.size()))==digest,"member-hash-mismatch");
             result.hashed_bytes+=bytes.size();++result.verified_files;lease->files.push_back(std::move(file));

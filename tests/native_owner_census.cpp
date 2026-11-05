@@ -8,7 +8,7 @@
 #include <windows.h>
 #include "../src/native_owner.hpp"
 #include "../src/native_owner_profile.hpp"
-#include "game_26404966_fixture.hpp"
+#include "game_26430625_fixture.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -47,7 +47,7 @@ struct Memory:evrm::NativeOwnerMemory{
 };
 struct Fixture{
     static constexpr U capacity=8192,population=6500,registrations=600;
-    Bytes image=Bytes(game_26404966_fixture::image_size),client=Bytes(218000),controller=Bytes(448),main=Bytes(480),execution=Bytes(15000000),
+    Bytes image=Bytes(game_26430625_fixture::image_size),client=Bytes(218000),controller=Bytes(448),main=Bytes(480),execution=Bytes(15000000),
         rows=Bytes(registrations*256),sizes=Bytes(registrations*2),types=Bytes(registrations*8),callbacks=Bytes(registrations*40),
         table=Bytes(capacity*8),keys=Bytes(capacity*4),occupancy=Bytes(capacity/8),entities=Bytes(population*64),
         ordinary=Bytes(5500),player=Bytes(5500),storage=Bytes(1600),services=Bytes(464),service_bits=Bytes(8),service_keys=Bytes(8),service_values=Bytes(4),local_player=Bytes(8),
@@ -60,7 +60,7 @@ struct Fixture{
         memory.owned={&image,&client,&controller,&main,&execution,&rows,&sizes,&types,&callbacks,&table,&keys,&occupancy,&entities,
             &ordinary,&player,&storage,&services,&service_bits,&service_keys,&service_values,&local_player,&scene,&manager,&records,&generations,&writer,
             &resource_owner,&device,&interface,&resource_table,&dimensions,&resource};
-        namespace game=game_26404966_fixture;
+        namespace game=game_26430625_fixture;
         identity.base=address(image);identity.size=game::image_size;identity.timestamp=game::image_timestamp;
         identity.sha256=game::image_sha256;memory.dos=identity.base;
         image[0]='M';image[1]='Z';put<std::uint32_t>(image,0x3c,128);put<std::uint32_t>(image,128,0x4550);

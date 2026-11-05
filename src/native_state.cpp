@@ -778,7 +778,7 @@ void NativeState::view_created(VkImageView h,const VkImageViewCreateInfo& i)noex
         if(i.pNext){const auto& narrowed=*static_cast<const VkImageViewUsageCreateInfo*>(i.pNext);
             if(narrowed.sType!=VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO || narrowed.pNext || !narrowed.usage || (narrowed.usage&~usage))return;
             usage=narrowed.usage;}
-        const auto aspect=i.format==VK_FORMAT_D32_SFLOAT?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT;
+        const auto aspect=static_cast<VkImageAspectFlags>(i.format==VK_FORMAT_D32_SFLOAT?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT);
         if(i.subresourceRange.aspectMask!=aspect)return;
         auto copy=i;copy.pNext=nullptr;const Impl::View observed{copy,image->second.generation,usage,impl_->generation()};
         impl_->store(impl_->attachment_views,h,observed);

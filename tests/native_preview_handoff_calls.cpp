@@ -22,20 +22,20 @@ int main(){try{
     unsigned requests=0,renders=0,constructs=0,executes=0;
     auto original_request=[&](U a,U p,U color){require(a==app&&p==request&&color==0x12345678,"request arguments changed");++requests;
         if(*m.at(slot+0x8d0,1)==0){std::memcpy(m.at(slot,0x8d0),m.at(p,0x8d0),0x8d0);m.put<unsigned char>(slot+0x8d0,1);}};
-    calls.request(original_request,app,request,0x12345678,base+0xbadb75,100);
+    calls.request(original_request,app,request,0x12345678,base+0xbadc55,100);
     std::memcpy(m.at(packet,0x8d4),m.at(slot,0x8d4),0x8d4);
     auto original_construct=[&](U b,U c,U l,U f,U d,U t){require(b==builder&&c==11&&l==22&&f==33&&d==44&&t==55,"constructor ABI arguments changed");++constructs;m.put(builder+0x10,task);};
     auto original_render=[&](U r,U v,U f,U t,U p){require(r==renderer&&v==1&&f==2&&t==3&&p==packet,"renderer ABI arguments changed");++renders;
         require(bool(thread.rendering)&&thread.rendering.origin==1,"actual renderer scope lost accepted request");
         calls.construct(original_construct,builder,11,22,33,44,55,102);};
-    calls.render(original_render,renderer,1,2,3,packet,base+0x861d29,101);
+    calls.render(original_render,renderer,1,2,3,packet,base+0x861e09,101);
     require(!thread.rendering,"renderer scope leaked after original return");
     calls.execute([&](U b,U c,U t,U h){require(b==11&&c==22&&t==task&&h==44,"worker ABI arguments changed");++executes;
         require(history.gpu(buffer,thread.working,5,104),"actual worker scope lost exact task");},11,22,task,44,103);
     require(!thread.working,"worker scope leaked after return");
     m.fail=true;
-    calls.request(original_request,app,request,0x12345678,base+0xc6cd89,110);
-    calls.render([&](U,U,U,U,U){++renders;require(!thread.rendering,"failed read reused an earlier request");},renderer,1,2,3,packet,base+0x861d29,111);
+    calls.request(original_request,app,request,0x12345678,base+0xc6ce69,110);
+    calls.render([&](U,U,U,U,U){++renders;require(!thread.rendering,"failed read reused an earlier request");},renderer,1,2,3,packet,base+0x861e09,111);
     m.fail=false;
     calls.render([&](U,U,U,U,U){++renders;require(!thread.rendering,"unsupported caller inherited renderer scope");},renderer,1,2,3,packet,base+0x857a33,112);
     try{calls.execute([&](U,U,U,U){++executes;throw std::runtime_error("original worker exception");},11,22,task,44,113);require(false,"original exception swallowed");}catch(const std::runtime_error& error){require(std::string(error.what())=="original worker exception","wrong exception");}

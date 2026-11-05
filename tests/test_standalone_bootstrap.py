@@ -8,27 +8,43 @@ import os
 import shutil
 import subprocess
 import statistics
+import sys
 import tempfile
 import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'portable'))
+from native_compiler import default_compiler, prepare_msvc_environment, run_compiler
 
 
 class StandaloneBootstrapTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
-        cls.bootstrap_compiler = os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY')
-        if os.name != 'nt' or not cls.compiler or not cls.bootstrap_compiler:
+        cls.compiler = os.environ.get('EVRM_TEST_COMPILER') or default_compiler()
+        cls.bootstrap_compiler = os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY') or str(Path(cls.compiler).parent)
+        if os.name != 'nt':
             raise unittest.SkipTest('Windows x64 compiler required')
+        cls.compiler_environment = prepare_msvc_environment(cls.compiler)
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode() | 0x8003)
-        cls.temporary = tempfile.TemporaryDirectory(prefix='evrm-bootstrap-', ignore_cleanup_errors=True)
-        cls.addClassCleanup(cls.temporary.cleanup)
-        cls.folder = Path(cls.temporary.name)
+        destination = os.environ.get('EVRM_BOOTSTRAP_FIXTURE_DIRECTORY')
+        if destination:
+            cls.folder = Path(destination).resolve()
+            cls.folder.mkdir(parents=True, exist_ok=False)
+        else:
+            cls.temporary = tempfile.TemporaryDirectory(prefix='evrm-bootstrap-', ignore_cleanup_errors=True)
+            cls.addClassCleanup(cls.temporary.cleanup)
+            cls.folder = Path(cls.temporary.name)
 
     def run_checked(self, command, **kwargs):
-        result = subprocess.run([str(x) for x in command], capture_output=True, text=True, timeout=90, **kwargs)
+        command = [str(x) for x in command]
+        compiling = Path(command[0]) == Path(self.compiler)
+        kwargs.setdefault('env', self.compiler_environment)
+        runner = run_compiler if compiling else subprocess.run
+        result = runner(command, capture_output=True, text=True, timeout=90, **kwargs)
+        if compiling:
+            with (self.folder/'fixture-build.log').open('a', encoding='utf-8') as stream:
+                stream.write('COMMAND '+json.dumps(result.args)+'\n'+result.stdout+result.stderr+'\n')
         self.assertEqual(result.returncode, 0, f'{command[0]} exit={result.returncode}\n{result.stdout}{result.stderr}')
         return result
 
@@ -95,8 +111,10 @@ class StandaloneBootstrapTests(unittest.TestCase):
         runtime=game/'EnshroudedVRM/Runtime';runtime.mkdir(parents=True,exist_ok=True)
         include=os.environ['EVRM_VULKAN_INCLUDE_DIRECTORY']
         layer=runtime/'probe_layer.dll'
+        definition=self.folder/'probe.def'
+        definition.write_text('LIBRARY probe_layer\nEXPORTS\n vkGetInstanceProcAddr\n vkGetDeviceProcAddr\n vkNegotiateLoaderLayerInterfaceVersion\n')
         self.run_checked([self.compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-shared','-I'+include,
-                          ROOT/'tests/bootstrap_layer_probe.cpp','-o',layer])
+                          ROOT/'tests/bootstrap_layer_probe.cpp',definition,'-o',layer])
         manifest=json.loads(self.probe_manifest())
         path=runtime/'enshrouded_vrm_layer.json';marker=game/'marker.txt'
         env=self.clean_env();env['EVRM_PROBE_MARKER']=str(marker);env['VK_LOADER_DEBUG']='all'
@@ -151,6 +169,43 @@ class StandaloneBootstrapTests(unittest.TestCase):
             with self.assertRaises(ValueError):module._exports.export_inventory(bad)
         for target in ['powrprof','relative/owned','C:\\test\\provider.dll','C:\\test\\bad\nprovider']:
             with self.assertRaises(ValueError):module._exports.definition({'exports':[]},target)
+            with self.assertRaises(ValueError):module._exports.microsoft_export_arguments({'exports':[]},target)
+        with self.assertRaises(ValueError):
+            module._exports.microsoft_export_arguments({'exports':[]},'C:\\test\\comma,provider')
+
+    def test_owned_provider_whitespace_forwarder_targets_are_exact_and_callable(self):
+        module, _, _ = self.prepare()
+        directory = self.folder/'owned provider with spaces'; directory.mkdir()
+        provider = directory/'owned_provider.dll'
+        shutil.copyfile(self.folder/'owned_provider.dll', provider)
+        built = module.build_bootstrap(ROOT, self.folder/'whitespace-forwarders', Path(self.bootstrap_compiler),
+                                       provider, str(provider.with_suffix('')), fixture_manifest=self.probe_manifest())
+        inventory = module._exports.export_inventory(built['dll'])
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.LoadLibraryW.argtypes = [ctypes.c_wchar_p]; kernel.LoadLibraryW.restype = ctypes.c_void_p
+        kernel.FreeLibrary.argtypes = [ctypes.c_void_p]; kernel.FreeLibrary.restype = ctypes.c_int
+        kernel.GetProcAddress.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; kernel.GetProcAddress.restype = ctypes.c_void_p
+        owned = kernel.LoadLibraryW(str(provider)); self.assertTrue(owned)
+        proxy = kernel.LoadLibraryW(str(built['dll']))
+        try:
+            self.assertTrue(proxy)
+            for entry in inventory['exports']:
+                symbol = entry['names'][0] if entry['names'] else '#'+str(entry['ordinal'])
+                self.assertEqual(entry['forwarder'], str(provider.with_suffix(''))+'.'+symbol)
+                for name in [*entry['names'], entry['ordinal']]:
+                    argument = name if isinstance(name, int) else ctypes.cast(ctypes.c_char_p(name.encode('ascii')), ctypes.c_void_p)
+                    expected = kernel.GetProcAddress(owned, argument)
+                    self.assertTrue(expected)
+                    self.assertEqual(kernel.GetProcAddress(proxy, argument), expected)
+            address = kernel.GetProcAddress(proxy, ctypes.cast(ctypes.c_char_p(b'vkEnumerateInstanceVersion'), ctypes.c_void_p))
+            call = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.POINTER(ctypes.c_uint32), use_last_error=True)(address)
+            value = ctypes.c_uint32()
+            self.assertEqual(call(ctypes.byref(value)), 0xA321)
+            self.assertEqual(value.value, 0x12345678)
+            self.assertEqual(ctypes.get_last_error(), 0xA123)
+        finally:
+            if proxy: self.assertTrue(kernel.FreeLibrary(proxy))
+            self.assertTrue(kernel.FreeLibrary(owned))
 
     def test_startup_measurement(self):
         """Paired isolated startup cost, never a game-FPS/memory measurement."""
@@ -203,8 +258,8 @@ class StandaloneBootstrapTests(unittest.TestCase):
                           '-lshell32','-lcomdlg32','-ldbghelp','-ldinput8','-loleaut32','-lwldap32','-lbcrypt','-ladvapi32','-luser32','-lgdi32','-lole32','-lws2_32','-o',child])
         env=self.clean_env();env['EVRM_EXPECT_LAYER_PATH']=str(manifest)
         self.run_checked([child],env=env)
-        inspected=self.run_checked([Path(self.compiler).with_name('objdump.exe'),'-p',child]).stdout
-        names=[line.split('DLL Name:',1)[1].strip() for line in inspected.splitlines() if 'DLL Name:' in line]
+        inspected=self.run_checked([Path(self.compiler).with_name('dumpbin.exe'),'/NOLOGO','/DEPENDENTS',child]).stdout
+        names=[line.strip() for line in inspected.splitlines() if line.strip().lower().endswith('.dll')]
         self.assertGreaterEqual(len(names),12)
         destination=os.environ.get('EVRM_BOOTSTRAP_EVIDENCE_DIRECTORY')
         if destination:(Path(destination)/'bootstrap-system-dependencies.json').write_text(json.dumps({'ordinaryImports':names,'powerCalls':0,'earlyDiscoveryObserved':True},indent=2)+'\n',encoding='utf-8')
@@ -220,7 +275,10 @@ class StandaloneBootstrapTests(unittest.TestCase):
         version.GetFileVersionInfoW.argtypes=[wintypes.LPCWSTR,wintypes.DWORD,wintypes.DWORD,wintypes.LPVOID]
         self.assertTrue(version.GetFileVersionInfoW(str(built['dll']),0,size,data))
         version.VerQueryValueW.argtypes=[wintypes.LPCVOID,wintypes.LPCWSTR,ctypes.POINTER(wintypes.LPVOID),ctypes.POINTER(wintypes.UINT)]
-        for name,expected in [('CompanyName','lightnill'),('ProductName','EnshroudedVRM'),('OriginalFilename','vulkan-1.dll'),('FileDescription','EnshroudedVRM standalone bootstrap')]:
+        for name,expected in [('CompanyName','lightnill'),('ProductName','EnshroudedVRM'),('OriginalFilename','vulkan-1.dll'),
+                              ('FileDescription','EnshroudedVRM standalone bootstrap'),('InternalName','EnshroudedVRM.bootstrap'),
+                              ('FileVersion','0.2.0-standalone-dev'),('ProductVersion','0.2.0-standalone-dev'),
+                              ('LegalCopyright','Copyright (c) 2026 lightnill; third-party notices included')]:
             pointer=wintypes.LPVOID();length=wintypes.UINT()
             self.assertTrue(version.VerQueryValueW(data,'\\StringFileInfo\\040904b0\\'+name,ctypes.byref(pointer),ctypes.byref(length)))
             self.assertEqual(ctypes.wstring_at(pointer),expected)

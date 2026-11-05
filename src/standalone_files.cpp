@@ -34,7 +34,7 @@ bool local_standalone_path(const std::filesystem::path& path,bool allow_missing)
         return true;
     }catch(...){return false;}
 }
-StandaloneFile::StandaloneFile(const std::filesystem::path& path,bool directory) {
+StandaloneFile::StandaloneFile(const std::filesystem::path& path,bool directory,StandaloneReadPolicy policy) {
     need(local_standalone_path(path));const auto full=full_path(path);
     handle_=CreateFileW(full.c_str(),directory?FILE_READ_ATTRIBUTES:GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,
                         FILE_FLAG_OPEN_REPARSE_POINT | (directory?FILE_FLAG_BACKUP_SEMANTICS:FILE_FLAG_SEQUENTIAL_SCAN),nullptr);
@@ -46,7 +46,7 @@ StandaloneFile::StandaloneFile(const std::filesystem::path& path,bool directory)
         if(actual.substr(0,4)==L"\\\\?\\")actual.erase(0,4);
         need(GetFileInformationByHandle(handle_,&info) && GetFileType(handle_)==FILE_TYPE_DISK &&
              !(info.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT) && bool(info.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)==directory &&
-             (directory || info.nNumberOfLinks==1) && same_standalone_path(actual,full));
+             (directory || policy==StandaloneReadPolicy::ImmutablePackage || info.nNumberOfLinks==1) && same_standalone_path(actual,full));
     }catch(...){CloseHandle(handle_);handle_=INVALID_HANDLE_VALUE;throw;}
 }
 StandaloneFile::~StandaloneFile(){if(handle_!=INVALID_HANDLE_VALUE)CloseHandle(handle_);}

@@ -23,12 +23,12 @@ namespace evrm {
 // Diagnostic only. Neither a call path nor a matching buffer authorizes an
 // avatar replacement. This history carries no actor IDs, pointers or payloads.
 enum class NativePreviewTraceStage:std::uint8_t {Bindings=1,Inline=2,Submit=3};
-constexpr std::uint32_t native_preview_code_group_count=72878;
+constexpr std::uint32_t native_preview_code_group_count=72885;
 inline unsigned native_preview_trace_path(std::uint32_t group)noexcept {
-    if((group>=27451&&group<=27455))return 1;
-    if((group>=6484&&group<=6490))return 2;
-    if((group>=42953&&group<=42955))return 4;
-    if(group==40857||group==41258||(group>=41439&&group<=41445)||(group>=41800&&group<=41803)||group==42010||(group>=42036&&group<=42046))return 8;
+    if((group>=27458&&group<=27462))return 1;
+    if((group>=6491&&group<=6497))return 2;
+    if((group>=42960&&group<=42962))return 4;
+    if(group==40864||group==41265||(group>=41446&&group<=41452)||(group>=41807&&group<=41810)||group==42017||(group>=42043&&group<=42053))return 8;
     return 0;
 }
 struct NativePreviewTraceSample {

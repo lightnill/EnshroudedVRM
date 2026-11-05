@@ -1,5 +1,12 @@
 #define VK_NO_PROTOTYPES
 #define VK_USE_PLATFORM_WIN32_KHR
+#if defined(_MSC_VER)
+#include <vulkan/vulkan_core.h>
+// MSVC requires the export on the first declaration, before project headers
+// can include vk_layer.h's prototype (also present under VK_NO_PROTOTYPES).
+struct VkNegotiateLayerInterface;
+extern "C" __declspec(dllexport) VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface*);
+#endif
 #include "runtime_log.hpp"
 #include "gpu_probe.hpp"
 #include "graphics_state.hpp"

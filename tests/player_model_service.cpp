@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #if __has_include("../src/avatar_player_types.hpp")
 #include "avatar_fixture.hpp"
 #include "../src/avatar_service.hpp"

@@ -30,7 +30,7 @@
                 (i==1||i==8||i==9)?VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:(i==2||i==10)?VK_DESCRIPTOR_TYPE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             b.stageFlags=(i==4||i==5)?VK_SHADER_STAGE_VERTEX_BIT:(i==0||i==3)?VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT:VK_SHADER_STAGE_FRAGMENT_BIT;
         }
-        VkDescriptorSetLayoutCreateInfo dsl{};dsl.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;dsl.bindingCount=bindings.size();dsl.pBindings=bindings.data();
+        VkDescriptorSetLayoutCreateInfo dsl{};dsl.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;dsl.bindingCount=static_cast<std::uint32_t>(bindings.size());dsl.pBindings=bindings.data();
         checked(F(vkCreateDescriptorSetLayout)(context.device,&dsl,nullptr,&oit_set),"Mixed native OIT set layout");
         VkPipelineLayoutCreateInfo layout{};layout.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout.setLayoutCount=1;layout.pSetLayouts=&oit_set;
         checked(F(vkCreatePipelineLayout)(context.device,&layout,nullptr,&oit_layout),"Mixed native OIT layout");
@@ -122,7 +122,8 @@
         if(!volume_metadata_current(b)){decline("retained-metadata");return;}
         // Retain before recording; a failed recording cannot destroy resources
         // still referenced by this original primary.
-        if(!b.volume_snapshot->record(command,bound.pipeline.pipeline,restore->handle,bound.sets.size(),bound.sets.data(),x,y,z)){decline("snapshot-record");return;}
+        // NativeState accepts complete bound states with at most 32 descriptor sets.
+        if(!b.volume_snapshot->record(command,bound.pipeline.pipeline,restore->handle,static_cast<std::uint32_t>(bound.sets.size()),bound.sets.data(),x,y,z)){decline("snapshot-record");return;}
         b.snapshot_recorded=true;mixed_notice("mixed immediate full-Populate owned snapshot recorded","mixed-snapshot-ready");
     }
     void mixed_rendering(Recording& r,const VkRenderingInfo& info) {
@@ -171,7 +172,7 @@
         if(b.oit_pool||!b.volume_snapshot||!b.oit_calls.empty())throw std::runtime_error("Mixed OIT descriptors already constructed");
         const auto count=static_cast<std::uint32_t>(b.assets->avatar()->materials.size()+1);
         const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,4*count},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,2*count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,3*count},{VK_DESCRIPTOR_TYPE_SAMPLER,2*count}}};
-        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
+        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=static_cast<std::uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();
         checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&b.oit_pool),"Mixed OIT descriptor pool");
         std::vector<VkDescriptorSetLayout> layouts(count,oit_set);std::vector<VkDescriptorSet> sets(count);
         VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocation.descriptorPool=b.oit_pool;allocation.descriptorSetCount=count;allocation.pSetLayouts=layouts.data();
@@ -189,7 +190,7 @@
                 if(j==1||j==2||j>=8){w.descriptorType=(j==2||j==10)?VK_DESCRIPTOR_TYPE_SAMPLER:VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;w.pImageInfo=&images[j==1?0:j==2?1:j-6];}
                 else {w.descriptorType=(j==4||j==5)?VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;w.pBufferInfo=&buffers[j==0?0:j==3?1:j-2];}
             }
-            F(vkUpdateDescriptorSets)(context.device,writes.size(),writes.data(),0,nullptr);
+            F(vkUpdateDescriptorSets)(context.device,static_cast<std::uint32_t>(writes.size()),writes.data(),0,nullptr);
         }
         std::vector<VkDescriptorSet> surface(count);
         try{surface=make_surface_sets(b,sets,true);}catch(...){/* Base OIT remains valid when optional allocation fails. */}

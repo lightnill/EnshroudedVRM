@@ -1,4 +1,5 @@
 """Native deterministic analysis/stream fixtures; never records or opens a game."""
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import shutil
@@ -10,9 +11,9 @@ from native_voice_fixture import stage_voice_library
 
 class VoiceAnalysisTests(unittest.TestCase):
     def run_native(self, name, sources):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler or os.name != 'nt':
-            self.skipTest('Windows x64 GCC required')
+            self.skipTest('Windows x64 MSVC 14.44 required')
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-voice-analysis-', ignore_cleanup_errors=True) as folder:
             if 'voice_analyser.cpp' in sources:
@@ -23,7 +24,7 @@ class VoiceAnalysisTests(unittest.TestCase):
             command.extend(str(root / ('src/' + source)) for source in sources)
             if name == 'voice_capture_generation':
                 command.append('-Wl,--wrap=__imp_VirtualQuery')
-            result = subprocess.run(command + ['-o', str(binary)], capture_output=True, text=True, timeout=90)
+            result = run_compiler(command + ['-o', str(binary)], capture_output=True, text=True, timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=40)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

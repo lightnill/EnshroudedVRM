@@ -1,3 +1,4 @@
+#include "native_fixture_compat.hpp"
 // Actual verification over owned CPU bytes. No DLL, game or GPU is used.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -15,7 +16,7 @@
 #include <stdexcept>
 
 static std::size_t fail_after=std::numeric_limits<std::size_t>::max(),allocation_failures=0;
-__attribute__((noinline)) void* operator new(std::size_t n){
+EVRM_FIXTURE_NOINLINE void* operator new(std::size_t n){
     if(fail_after!=std::numeric_limits<std::size_t>::max()){
         if(!fail_after--){fail_after=std::numeric_limits<std::size_t>::max();++allocation_failures;throw std::bad_alloc();}
     }
@@ -23,10 +24,10 @@ __attribute__((noinline)) void* operator new(std::size_t n){
     throw std::bad_alloc();
 }
 void* operator new[](std::size_t n){return ::operator new(n);}
-__attribute__((noinline)) void operator delete(void* p)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete[](void* p)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete(void* p,std::size_t)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
 namespace {
 using U=std::uint64_t;
 void need(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
@@ -54,7 +55,7 @@ evrm::NativeOwnerCandidate candidate(const Memory& m,std::size_t count,std::size
     evrm::NativeOwnerCandidate c;c.image.base=0x140000000ULL;c.image.size=evrm::native_owner_profile::image_size;
     c.image.timestamp=evrm::native_owner_profile::image_timestamp;
     std::copy(std::begin(evrm::native_owner_profile::image_sha256),std::end(evrm::native_owner_profile::image_sha256),c.image.sha256.begin());
-    c.entity=c.entity_id=c.native_buffer=1;c.native_buffer_bytes=1024;c.models.push_back({1,2,3,4,5});
+    c.entity=1;c.entity_id=1;c.native_buffer=1;c.native_buffer_bytes=1024;c.models.push_back({1,2,3,4,5});
     std::vector<evrm::NativeOwnerGuard> guards;guards.reserve(count);
     for(std::size_t i=0;i<count;++i)guards.push_back({m.base+i*stride,std::vector<std::uint8_t>(width,42),evrm::NativeOwnerObservationPhase::census});
     if(reverse)std::reverse(guards.begin(),guards.end());

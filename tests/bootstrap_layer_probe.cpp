@@ -5,6 +5,14 @@
 #include <vulkan/vk_layer.h>
 #include <cstring>
 
+// MSVC requires export linkage to agree with the header declarations. Its
+// fixture build supplies the same three public names in a .def file.
+#ifdef _MSC_VER
+#define EVRM_PROBE_EXPORT
+#else
+#define EVRM_PROBE_EXPORT __declspec(dllexport)
+#endif
+
 static PFN_vkGetInstanceProcAddr next_instance = nullptr;
 static PFN_vkGetDeviceProcAddr next_device = nullptr;
 static VkInstance active_instance = VK_NULL_HANDLE;
@@ -36,17 +44,17 @@ static VKAPI_ATTR VkResult VKAPI_CALL create_device(VkPhysicalDevice physical, c
     const_cast<VkLayerDeviceCreateInfo*>(chain)->u.pLayerInfo=chain->u.pLayerInfo->pNext;
     const auto result=next(physical,info,allocator,device); if (result == VK_SUCCESS) marker('D'); return result;
 }
-extern "C" __declspec(dllexport) VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* name) {
+extern "C" EVRM_PROBE_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* name) {
     if (!name) return nullptr;
     if (!std::strcmp(name,"vkGetInstanceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&vkGetInstanceProcAddr);
     if (!std::strcmp(name,"vkCreateInstance")) return reinterpret_cast<PFN_vkVoidFunction>(&create_instance);
     if (!std::strcmp(name,"vkCreateDevice")) return reinterpret_cast<PFN_vkVoidFunction>(&create_device);
     return next_instance ? next_instance(instance,name) : nullptr;
 }
-extern "C" __declspec(dllexport) VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* name) {
+extern "C" EVRM_PROBE_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* name) {
     return next_device ? next_device(device,name) : nullptr;
 }
-extern "C" __declspec(dllexport) VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* info) {
+extern "C" EVRM_PROBE_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface* info) {
     if (!info || info->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT || info->loaderLayerInterfaceVersion < 2) return VK_ERROR_INITIALIZATION_FAILED;
     info->loaderLayerInterfaceVersion=2; info->pfnGetInstanceProcAddr=&vkGetInstanceProcAddr; info->pfnGetDeviceProcAddr=&vkGetDeviceProcAddr; info->pfnGetPhysicalDeviceProcAddr=nullptr; return VK_SUCCESS;
 }

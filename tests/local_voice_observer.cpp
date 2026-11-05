@@ -2,6 +2,7 @@
 #include "../src/local_voice_observation.hpp"
 #include "../src/local_voice_pe_identity.hpp"
 #include "../vendor/minhook/include/MinHook.h"
+#include "native_fixture_compat.hpp"
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -10,11 +11,22 @@ namespace {
 evrm::VoiceObservation observation;
 evrm::VoiceEncoderFunction original=nullptr;
 unsigned calls=0;
-[[gnu::noinline,gnu::noipa]] std::int64_t encoder(void*,evrm::VoiceByteSpan* output,const evrm::VoiceFloatSpan* input){
+#if defined(_MSC_VER)
+// The function is modified at runtime by the actual MinHook fixture. Avoid
+// interprocedural assumptions about its unchanged implementation and result.
+#pragma optimize("", off)
+EVRM_FIXTURE_NOINLINE
+#else
+[[gnu::noinline,gnu::noipa]]
+#endif
+std::int64_t encoder(void*,evrm::VoiceByteSpan* output,const evrm::VoiceFloatSpan* input){
     ++calls;
     if(output&&output->data&&output->capacity)output->data[0]=input&&input->count==480?42:19;
     return 7;
 }
+#if defined(_MSC_VER)
+#pragma optimize("", on)
+#endif
 std::int64_t detour(void* state,evrm::VoiceByteSpan* output,const evrm::VoiceFloatSpan* input){
     return evrm::observe_voice_encode(observation,state,output,input,original,true);
 }
@@ -40,7 +52,7 @@ int main(int argc,char** argv){
         std::puts("PASS observer admission returned without altering the process");return 0;
     }
     IMAGE_NT_HEADERS64 disk{};disk.Signature=IMAGE_NT_SIGNATURE;
-    disk.FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;disk.FileHeader.TimeDateStamp=1793700524;
+    disk.FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;disk.FileHeader.TimeDateStamp=1793791052;
     disk.OptionalHeader.Magic=IMAGE_NT_OPTIONAL_HDR64_MAGIC;disk.OptionalHeader.ImageBase=0x140000000ull;
     disk.OptionalHeader.SizeOfImage=44298240;
     constexpr std::uintptr_t actual_base=0x7ff6a0000000ull;

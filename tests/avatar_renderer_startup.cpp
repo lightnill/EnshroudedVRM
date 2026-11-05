@@ -13,7 +13,7 @@ using PFN_vkSetDeviceLoaderData=void*;using PFN_vkGetPhysicalDeviceMemoryPropert
 using PFN_vkGetPhysicalDeviceQueueFamilyProperties=void(*)(int,std::uint32_t*,std::uint32_t*);
 std::map<std::wstring,std::wstring> environment;
 std::wstring env(const wchar_t* key){return environment[key];}
-std::string narrow(const std::wstring& value){return {value.begin(),value.end()};}
+std::string narrow(const std::wstring& value){return std::filesystem::path(value).u8string();}
 struct Asset {unsigned vertex_count=3;std::vector<std::string> warnings;};
 struct PreparedAvatar {std::string name="Synthetic";std::shared_ptr<Asset> asset=std::make_shared<Asset>();};
 struct Result {std::shared_ptr<const PreparedAvatar> model;std::string error;explicit operator bool()const{return bool(model);}};

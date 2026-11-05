@@ -7,8 +7,11 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'portable'))
+from native_compiler import default_compiler, run_compiler
 
 
 class BootstrapSmallStackTests(unittest.TestCase):
@@ -16,7 +19,7 @@ class BootstrapSmallStackTests(unittest.TestCase):
     def setUpClass(cls):
         directory=os.environ.get('EVRM_APPROVED_BOOTSTRAP_DIRECTORY')
         approved=os.environ.get('EVRM_APPROVED_BOOTSTRAP_SHA256')
-        tools=os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY')
+        tools=os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY') or str(Path(default_compiler()).parent)
         if os.name!='nt' or not all((directory,approved,tools)):
             raise unittest.SkipTest('explicit approved prebuilt bootstrap and Microsoft tools required')
         cls.dll=Path(directory)/'vulkan-1.dll'
@@ -24,14 +27,19 @@ class BootstrapSmallStackTests(unittest.TestCase):
             raise AssertionError('prebuilt DLL differs from explicitly approved hash; execution refused')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
         cls.approved=approved
-        temporary=tempfile.TemporaryDirectory(prefix='evrm-small-stack-',ignore_cleanup_errors=True)
-        cls.addClassCleanup(temporary.cleanup)
-        cls.folder=Path(temporary.name)
+        destination=os.environ.get('EVRM_BOOTSTRAP_SMALL_STACK_DIRECTORY')
+        if destination:
+            cls.folder=Path(destination).resolve()
+            cls.folder.mkdir(parents=True,exist_ok=False)
+        else:
+            temporary=tempfile.TemporaryDirectory(prefix='evrm-small-stack-',ignore_cleanup_errors=True)
+            cls.addClassCleanup(temporary.cleanup)
+            cls.folder=Path(temporary.name)
         cls.child=cls.folder/'enshrouded.exe'
         command=[str(Path(tools)/'cl.exe'),'/nologo','/std:c++17','/O2','/MT','/EHsc','/utf-8','/W4','/WX',
                  str(ROOT/'tests/bootstrap_small_stack.cpp'),'/Fo'+str(cls.folder/'child.obj'),'/Fe'+str(cls.child),
                  '/link','/INCREMENTAL:NO','/STACK:1048576,4096']
-        compiled=subprocess.run(command,cwd=cls.folder,capture_output=True,text=True,timeout=60)
+        compiled=run_compiler(command,cwd=cls.folder,capture_output=True,text=True,timeout=60)
         if compiled.returncode:raise AssertionError(compiled.stdout+compiled.stderr)
         shutil.copyfile(cls.dll,cls.folder/'vulkan-1.dll')
         runtime=cls.folder/'EnshroudedVRM/Runtime';runtime.mkdir(parents=True)

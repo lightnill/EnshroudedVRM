@@ -3,8 +3,8 @@ EnshroudedVRM 0.4.0 — current bugs and incomplete features
 This implementation is still buggy and incomplete. It is not at the intended
 quality/stability level. There is no Preview suffix in the release name.
 
-Only Steam game build 26404966 is supported, executable SHA256
-ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618.
+Only Steam game build 26430625 is supported, executable SHA256
+5d9ef2f140b8ed49e30dbee655841b89d08baec20f799a1817e171a18a850c77.
 Keep 0.3.3 for old build 26320373. Do not mix files from different releases.
 
 SHADERS / IMPORTER

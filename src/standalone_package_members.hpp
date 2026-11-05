@@ -2,7 +2,7 @@
 namespace evrm {
 // Exact game-relative player payload. Manifest itself is deliberately separate.
 inline constexpr const char* standalone_package_members[] = {
-    "vulkan-1.dll",
+    "dinput8.dll",
     "EnshroudedVRM/Avatars/README.txt",
     "EnshroudedVRM/Avatars/vroid-sample.vrm",
     "EnshroudedVRM/BUILD-INFO.json",

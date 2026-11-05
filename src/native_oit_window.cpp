@@ -16,7 +16,7 @@ bool view(const NativeOitView& v,VkFormat format,VkExtent2D extent,bool depth)no
         v.type==VK_IMAGE_VIEW_TYPE_2D&&v.samples==VK_SAMPLE_COUNT_1_BIT&&
         v.extent.width==extent.width&&v.extent.height==extent.height&&v.extent.depth==1&&
         (v.usage&(depth?VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT:VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))&&
-        v.subresource.aspectMask==(depth?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT)&&
+        v.subresource.aspectMask==static_cast<VkImageAspectFlags>(depth?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT)&&
         !v.subresource.baseMipLevel&&v.subresource.levelCount==1&&!v.subresource.baseArrayLayer&&v.subresource.layerCount==1;
 }
 bool attachment(const VkRenderingAttachmentInfo& a,const NativeOitView& v)noexcept{

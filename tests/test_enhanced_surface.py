@@ -1,16 +1,17 @@
 """Synthetic importer/pose tests; never graphics, game, mod DLLs or live input."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes, os, shutil, subprocess, tempfile, unittest
 class EnhancedSurfaceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if not compiler:raise unittest.SkipTest('explicit native C++ compiler required')
         if os.name=='nt':ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
         cls.tmp=tempfile.TemporaryDirectory(prefix='evrm-surface-',ignore_cleanup_errors=True);cls.addClassCleanup(cls.tmp.cleanup)
         root=Path(__file__).resolve().parents[1];cls.binary=Path(cls.tmp.name)/'surface.exe'
         sources=['vrm_asset.cpp','native_avatar_pose.cpp','native_skinning.cpp','native_material_plan.cpp','mouth_deformation.cpp']
-        result=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests/enhanced_surface.cpp')]+[str(root/'src'/s) for s in sources]+['-o',str(cls.binary)],capture_output=True,text=True,timeout=180)
+        result=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests/enhanced_surface.cpp')]+[str(root/'src'/s) for s in sources]+['-o',str(cls.binary)],capture_output=True,text=True,timeout=180)
         if result.returncode:raise AssertionError(result.stdout+result.stderr)
     def run_mode(self,mode):
         result=subprocess.run([str(self.binary),mode],capture_output=True,text=True,timeout=30)

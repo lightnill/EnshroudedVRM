@@ -1,10 +1,10 @@
 """Guarded CPU-only tests of real NativeBackend surface integration; no GPU."""
+from native_fixture_compiler import default_compiler, run_compiler, native_dependencies
 import ctypes
 import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import shutil
 import struct
 import subprocess
@@ -14,12 +14,10 @@ import unittest
 
 class NativeSurfaceBackendTests(unittest.TestCase):
     def test_actual_backend_surface_integration(self):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         headers = os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if os.name != 'nt' or not compiler or not headers:
-            self.skipTest('Windows GCC and explicit Vulkan headers required')
-        # GCC make dependencies escape spaces, while POSIX shlex treats native
-        # Windows backslashes as escapes. Normalize the explicit include root.
+            self.skipTest('Windows MSVC 14.44 and explicit Vulkan headers required')
         headers = Path(headers).as_posix()
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode() | 0x8003)
         root = Path(__file__).resolve().parents[1]
@@ -31,19 +29,15 @@ class NativeSurfaceBackendTests(unittest.TestCase):
                    if p.name not in ('native_backend.cpp', 'native_state.cpp', 'native_visual_slot_write.cpp')]
         translation_units = [root / 'tests/native_surface_backend.cpp', *sources,
                              root / 'src/mouth_deformation.cpp']
-        dependencies = subprocess.run(
-            [compiler, '-std=c++17', '-MM', '-MT', 'dependencies',
+        dependencies, consumed = native_dependencies(
+            [compiler, '-std=c++17',
              '-DEVRM_NATIVE_BACKEND_TESTING', '-I' + headers,
              *[p.relative_to(root).as_posix() for p in translation_units]],
-            cwd=root, capture_output=True, text=True, timeout=60)
+            cwd=root, timeout=60)
         if evidence:
             (evidence / 'dependencies.txt').write_text(dependencies.stdout + dependencies.stderr)
         self.assertEqual(dependencies.returncode, 0, dependencies.stdout + dependencies.stderr)
-        consumed = {Path(__file__).resolve()}
-        for row in dependencies.stdout.replace('\\\n', ' ').splitlines():
-            for value in shlex.split(row.partition(': ')[2]):
-                path = Path(value)
-                consumed.add((root / path).resolve() if not path.is_absolute() else path.resolve())
+        consumed.add(Path(__file__).resolve())
         inputs = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(consumed)}
         if evidence:
             (evidence / 'dependencies.txt').write_text(dependencies.stdout + dependencies.stderr)
@@ -62,7 +56,7 @@ class NativeSurfaceBackendTests(unittest.TestCase):
                        '-Wno-subobject-linkage', '-DEVRM_NATIVE_BACKEND_TESTING', '-I' + headers,
                        str(root / 'tests/native_surface_backend.cpp'), *map(str, sources),
                        str(root / 'src/mouth_deformation.cpp'), '-lbcrypt', '-o', str(binary)]
-            built = subprocess.run(command, capture_output=True, text=True, timeout=300)
+            built = run_compiler(command, capture_output=True, text=True, timeout=300)
             if evidence:
                 (evidence / 'compile.command.json').write_text(json.dumps(command, indent=2))
                 (evidence / 'compile.txt').write_text(f'exit={built.returncode}\n' + built.stdout + built.stderr)

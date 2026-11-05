@@ -158,6 +158,30 @@ AvatarSettingsLoad read_avatar_preferences(const std::filesystem::path& path)noe
         result.preferences=std::move(prefs);result.status=AvatarSettingsStatus::Loaded;return result;
     }catch(...){return result;}
 }
+static bool rename_avatar_preferences(const std::filesystem::path& temporary,const std::filesystem::path& path,
+    std::filesystem::path& resolved,bool replace){
+    const auto flags=(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH;
+    if(MoveFileExW(temporary.c_str(),resolved.c_str(),flags))return true;
+    const auto error=GetLastError();
+    if(!replace||error!=ERROR_ACCESS_DENIED)return false;
+    // A live settings reader can briefly deny replacement. Keep the same
+    // closed, flushed owned temporary and bound this final operation to eight
+    // attempts. Permanent failures remain reported without a dirty-worker loop.
+    const auto retryable_target=[&]{
+        bool missing=false;if(!local_file(path,resolved,missing)||missing)return false;
+        const auto attributes=GetFileAttributesW(resolved.c_str());
+        return attributes!=INVALID_FILE_ATTRIBUTES&&
+            !(attributes&(FILE_ATTRIBUTE_READONLY|FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT));
+    };
+    if(!retryable_target())return false;
+    for(unsigned attempt=1;attempt<8;++attempt){
+        Sleep(10);
+        if(!retryable_target())return false;
+        if(MoveFileExW(temporary.c_str(),resolved.c_str(),flags))return true;
+        if(GetLastError()!=ERROR_ACCESS_DENIED)return false;
+    }
+    return false;
+}
 static bool commit_avatar_preferences(const std::filesystem::path& path,const AvatarPreferences& prefs,bool replace)noexcept {
     std::filesystem::path temporary;bool own=false;try{
         if(!valid_avatar_preferences(prefs))return false;
@@ -175,7 +199,7 @@ static bool commit_avatar_preferences(const std::filesystem::path& path,const Av
         if(!own)return false;
         DWORD written=0;const bool complete=WriteFile(file.value,bytes.data(),DWORD(bytes.size()),&written,nullptr)&&written==bytes.size()&&FlushFileBuffers(file.value);
         CloseHandle(file.value);file.value=INVALID_HANDLE_VALUE;
-        if(!complete||!local_file(path,resolved,missing)||!MoveFileExW(temporary.c_str(),resolved.c_str(),(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH)){
+        if(!complete||!local_file(path,resolved,missing)||!rename_avatar_preferences(temporary,path,resolved,replace)){
             DeleteFileW(temporary.c_str());return false;}
         return true;
     }catch(...){if(own)DeleteFileW(temporary.c_str());return false;}

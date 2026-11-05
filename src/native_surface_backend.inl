@@ -102,7 +102,8 @@
             bindings.push_back(b);
         }
         VkDescriptorSetLayoutCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.bindingCount=bindings.size();info.pBindings=bindings.data();VkDescriptorSetLayout out{};
+        // The fixed loop above adds at most 19 bindings.
+        info.bindingCount=static_cast<std::uint32_t>(bindings.size());info.pBindings=bindings.data();VkDescriptorSetLayout out{};
         checked(F(vkCreateDescriptorSetLayout)(context.device,&info,nullptr,&out),"Enhanced material set layout");return out;
     }
     VkPipelineLayout make_surface_layout(VkDescriptorSetLayout set) {
@@ -185,7 +186,7 @@
             const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,8*count},
                 {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6*count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,10*count},{VK_DESCRIPTOR_TYPE_SAMPLER,9*count}}};
             VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=2*count;
-            pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
+            pool.poolSizeCount=static_cast<std::uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();
             checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&b.surface_pool),"Enhanced material descriptor pool");
         }
         const auto vertex=surface_vertex_binding(b);if(!vertex.buffer||!vertex.range||vertex.range==VK_WHOLE_SIZE)throw std::runtime_error("Enhanced surface binding unavailable");
@@ -209,7 +210,7 @@
             // Copy before adding the optional bindings; every source is a
             // private immutable set retained by this same command bundle.
             F(vkUpdateDescriptorSets)(context.device,0,nullptr,copy_count,copies.data());
-            F(vkUpdateDescriptorSets)(context.device,writes.size(),writes.data(),0,nullptr);
+            F(vkUpdateDescriptorSets)(context.device,static_cast<std::uint32_t>(writes.size()),writes.data(),0,nullptr);
         }
         return out;
     }

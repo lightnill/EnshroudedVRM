@@ -82,7 +82,7 @@ ModMenuGpu::ModMenuGpu(VkInstance instance,VkPhysicalDevice physical,VkDevice de
         const VkAttachmentReference color{0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};VkSubpassDescription subpass{};subpass.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS;subpass.colorAttachmentCount=1;subpass.pColorAttachments=&color;
         const std::array<VkSubpassDependency,2> dependencies={{{VK_SUBPASS_EXTERNAL,0,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,0},
             {0,VK_SUBPASS_EXTERNAL,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,0,0}}};
-        auto pass=info<VkRenderPassCreateInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO);pass.attachmentCount=1;pass.pAttachments=&attachment;pass.subpassCount=1;pass.pSubpasses=&subpass;pass.dependencyCount=dependencies.size();pass.pDependencies=dependencies.data();
+        auto pass=info<VkRenderPassCreateInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO);pass.attachmentCount=1;pass.pAttachments=&attachment;pass.subpassCount=1;pass.pSubpasses=&subpass;pass.dependencyCount=static_cast<std::uint32_t>(dependencies.size());pass.pDependencies=dependencies.data();
         checked(state.fn<PFN_vkCreateRenderPass>("vkCreateRenderPass")(device,&pass,nullptr,&state.pass));
         state.images.resize(targets.size());state.slots.resize(std::max<std::size_t>(2,targets.size()));
         for(unsigned n=0;n<targets.size();++n){auto& image=state.images[n];auto view=info<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);view.image=targets[n];view.viewType=VK_IMAGE_VIEW_TYPE_2D;view.format=format;view.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
@@ -94,7 +94,8 @@ ModMenuGpu::ModMenuGpu(VkInstance instance,VkPhysicalDevice physical,VkDevice de
             auto fence=info<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);fence.flags=VK_FENCE_CREATE_SIGNALED_BIT;checked(state.fn<PFN_vkCreateFence>("vkCreateFence")(device,&fence,nullptr,&slot.fence));}
         state.gui=ImGui::CreateContext();configure_mod_menu(state.dpi,format==VK_FORMAT_R8G8B8A8_SRGB||format==VK_FORMAT_B8G8R8A8_SRGB);state.select();
         ImGui_ImplVulkan_InitInfo init{};init.ApiVersion=VK_API_VERSION_1_1;init.Instance=instance;init.PhysicalDevice=physical;init.Device=device;init.QueueFamily=family;init.Queue=queue;init.RenderPass=state.pass;
-        init.MinImageCount=2;init.ImageCount=state.slots.size();init.MSAASamples=VK_SAMPLE_COUNT_1_BIT;init.DescriptorPoolSize=3;init.CheckVkResultFn=&backend_result;
+        // Validated targets cap the frame slot vector at 16 entries.
+        init.MinImageCount=2;init.ImageCount=static_cast<std::uint32_t>(state.slots.size());init.MSAASamples=VK_SAMPLE_COUNT_1_BIT;init.DescriptorPoolSize=3;init.CheckVkResultFn=&backend_result;
         if(!ImGui_ImplVulkan_Init(&init))throw std::runtime_error("menu renderer unavailable");
         // The unmodified backend submits its own font upload, independently of
         // our frame slots. Only its successful completion return proves it safe.

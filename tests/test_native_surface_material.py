@@ -1,4 +1,5 @@
 """Actual material feature routing/constants; no graphics or game access."""
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import shutil
@@ -8,13 +9,13 @@ import unittest
 
 class NativeSurfaceMaterialTests(unittest.TestCase):
     def test_effective_selection_and_native_constants(self):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler:
-            self.skipTest('Set EVRM_TEST_COMPILER to local x64 GCC')
+            self.skipTest('Set EVRM_TEST_COMPILER to pinned x64 MSVC 14.44')
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-surface-policy-') as folder:
             binary = Path(folder) / 'surface_policy.exe'
-            result = subprocess.run([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static',
+            result = run_compiler([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static',
                                      str(root / 'tests/native_surface_material.cpp'), '-o', str(binary)],
                                     capture_output=True, text=True, timeout=180)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

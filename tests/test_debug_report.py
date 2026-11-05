@@ -1,27 +1,28 @@
 """Owned CPU report fixtures; no real hardware, game, DLL, GPU or uploads."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import binascii,json,os,shutil,struct,subprocess,tempfile,unittest,zipfile,zlib
 
 class DebugReportTests(unittest.TestCase):
     def test_gpu_contract(self):
-        root=Path(__file__).resolve().parents[1];compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++');headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
+        root=Path(__file__).resolve().parents[1];compiler=default_compiler();headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if not compiler or not headers:self.skipTest('Native compiler and Vulkan headers required')
         self.assertTrue((root/'src/debug_report_gpu.hpp').exists(),'Bounded screenshot GPU lifecycle is missing')
         with tempfile.TemporaryDirectory(prefix='evrm-report-gpu-',ignore_cleanup_errors=True) as directory:
             binary=Path(directory)/'report-gpu.exe'
-            build=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+headers,'-I'+str(root/'vendor/imgui'),
+            build=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+headers,'-I'+str(root/'vendor/imgui'),
                 str(root/'tests/debug_report_gpu.cpp'),str(root/'src/debug_report_gpu.cpp'),'-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(build.returncode,0,build.stdout+build.stderr)
             result=subprocess.run([str(binary)],capture_output=True,text=True,timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr);print(result.stdout.strip())
 
     def test_menu(self):
-        root=Path(__file__).resolve().parents[1];compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        root=Path(__file__).resolve().parents[1];compiler=default_compiler()
         if not compiler:self.skipTest('Native compiler required')
         self.assertIn('report_create',(root/'src/mod_menu.hpp').read_text(),'F8 report controls are missing')
         with tempfile.TemporaryDirectory(prefix='evrm-report-menu-',ignore_cleanup_errors=True) as directory:
             binary=Path(directory)/'report-menu.exe';imgui=root/'vendor/imgui'
-            build=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests/report_menu.cpp'),str(root/'src/mod_menu.cpp'),
+            build=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests/report_menu.cpp'),str(root/'src/mod_menu.cpp'),
                 *[str(imgui/name) for name in ('imgui.cpp','imgui_draw.cpp','imgui_widgets.cpp','imgui_tables.cpp')],'-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(build.returncode,0,build.stdout+build.stderr)
             result=subprocess.run([str(binary)],capture_output=True,text=True,timeout=30)
@@ -29,7 +30,7 @@ class DebugReportTests(unittest.TestCase):
 
     def test_service(self):
         root=Path(__file__).resolve().parents[1]
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++');headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
+        compiler=default_compiler();headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if not compiler or not headers:self.skipTest('Native compiler and Vulkan headers required')
         self.assertTrue((root/'src/debug_report_service.cpp').exists(),'Report worker and approval/file lifecycle are not implemented')
         with tempfile.TemporaryDirectory(prefix='evrm-report-service-',ignore_cleanup_errors=True) as directory:
@@ -37,7 +38,7 @@ class DebugReportTests(unittest.TestCase):
             command=[compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-DEVRM_DEBUG_REPORT_TESTING','-I'+headers,
                 str(root/'tests/debug_report_service.cpp'),*[str(root/'src'/name) for name in ('debug_report_service.cpp','debug_report_policy.cpp',
                     'debug_report_archive.cpp','debug_report_sources.cpp','standalone_files.cpp')],'-ladvapi32','-lbcrypt','-lshell32','-lole32','-luuid','-o',str(binary)]
-            build=subprocess.run(command,capture_output=True,text=True,timeout=180)
+            build=run_compiler(command,capture_output=True,text=True,timeout=180)
             self.assertEqual(build.returncode,0,build.stdout+build.stderr)
             result=subprocess.run([str(binary),directory],capture_output=True,text=True,timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -63,12 +64,12 @@ class DebugReportTests(unittest.TestCase):
 
     def test_sources(self):
         root=Path(__file__).resolve().parents[1]
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++');headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
+        compiler=default_compiler();headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if not compiler or not headers:self.skipTest('Native compiler and Vulkan headers required')
         self.assertTrue((root/'src/debug_report_sources.cpp').exists(),'Read-only report sources are not implemented')
         with tempfile.TemporaryDirectory(prefix='evrm-report-sources-',ignore_cleanup_errors=True) as directory:
             binary=Path(directory)/'report-sources.exe'
-            build=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+headers,
+            build=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static','-I'+headers,
                 str(root/'tests/debug_report_sources.cpp'),str(root/'src/debug_report_sources.cpp'),str(root/'src/debug_report_policy.cpp'),
                 str(root/'src/native_body_coverage.cpp'),str(root/'src/debug_report_archive.cpp'),'-ladvapi32','-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(build.returncode,0,build.stdout+build.stderr)
@@ -77,7 +78,7 @@ class DebugReportTests(unittest.TestCase):
 
     def test_policy_archive(self):
         root=Path(__file__).resolve().parents[1]
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if not compiler:self.skipTest('Native compiler required')
         required=('src/debug_report_policy.cpp','src/debug_report_archive.cpp','src/debug_report_log.hpp')
         self.assertTrue(all((root/name).is_file() for name in required),'Safe debug report exporter is not implemented')
@@ -85,7 +86,7 @@ class DebugReportTests(unittest.TestCase):
             binary=Path(directory)/'report-policy.exe'
             command=[compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests/debug_report_policy.cpp'),
                      str(root/'src/debug_report_policy.cpp'),str(root/'src/debug_report_archive.cpp'),'-o',str(binary)]
-            build=subprocess.run(command,capture_output=True,text=True,timeout=180)
+            build=run_compiler(command,capture_output=True,text=True,timeout=180)
             self.assertEqual(build.returncode,0,build.stdout+build.stderr)
             result=subprocess.run([str(binary),directory],capture_output=True,text=True,timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)

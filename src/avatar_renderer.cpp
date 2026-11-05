@@ -521,11 +521,11 @@ struct AvatarRenderer::Impl {
             {2,VK_DESCRIPTOR_TYPE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},
             {3,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},
             {4,VK_DESCRIPTOR_TYPE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr}}};
-        VkDescriptorSetLayoutCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;info.bindingCount=bindings.size();info.pBindings=bindings.data();
+        VkDescriptorSetLayoutCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;info.bindingCount=static_cast<uint32_t>(bindings.size());info.pBindings=bindings.data();
         check(V(vkCreateDescriptorSetLayout)(device,&info,nullptr,&descriptor_layout),"avatar descriptor layout");
         const uint32_t count=static_cast<uint32_t>(model->avatar.materials.size()+1);
         const std::array<VkDescriptorPoolSize,3> sizes{{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,count*2},{VK_DESCRIPTOR_TYPE_SAMPLER,count*2}}};
-        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();
+        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=static_cast<uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();
         check(V(vkCreateDescriptorPool)(device,&pool,nullptr,&descriptor_pool),"avatar descriptor pool");
         std::vector<VkDescriptorSetLayout> layouts(count,descriptor_layout);descriptor_sets.resize(count);
         VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocation.descriptorPool=descriptor_pool;allocation.descriptorSetCount=count;allocation.pSetLayouts=layouts.data();
@@ -540,7 +540,7 @@ struct AvatarRenderer::Impl {
                 {VK_NULL_HANDLE,scene_view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},{depth_sampler,VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED}}};
             std::array<VkWriteDescriptorSet,5> writes{};
             for(uint32_t b=0;b<5;++b){auto& w=writes[b];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=descriptor_sets[i];w.dstBinding=b;w.descriptorCount=1;w.descriptorType=bindings[b].descriptorType;if(b)w.pImageInfo=&images[b-1];else w.pBufferInfo=&buffer;}
-            V(vkUpdateDescriptorSets)(device,writes.size(),writes.data(),0,nullptr);
+            V(vkUpdateDescriptorSets)(device,static_cast<uint32_t>(writes.size()),writes.data(),0,nullptr);
         }
         const VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(MaterialConstants)};
         VkPipelineLayoutCreateInfo layout{};layout.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout.setLayoutCount=1;layout.pSetLayouts=&descriptor_layout;layout.pushConstantRangeCount=1;layout.pPushConstantRanges=&range;
@@ -559,7 +559,7 @@ struct AvatarRenderer::Impl {
             {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_FRAGMENT_BIT,fragment_shader,"ps_main",nullptr}}};
         const VkVertexInputBindingDescription binding{0,sizeof(GpuVertex),VK_VERTEX_INPUT_RATE_VERTEX};
         const std::array<VkVertexInputAttributeDescription,3> attrs{{{0,0,VK_FORMAT_R32G32B32_SFLOAT,0},{1,0,VK_FORMAT_R32G32B32_SFLOAT,12},{2,0,VK_FORMAT_R32G32_SFLOAT,24}}};
-        VkPipelineVertexInputStateCreateInfo input{};input.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;input.vertexBindingDescriptionCount=1;input.pVertexBindingDescriptions=&binding;input.vertexAttributeDescriptionCount=attrs.size();input.pVertexAttributeDescriptions=attrs.data();
+        VkPipelineVertexInputStateCreateInfo input{};input.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;input.vertexBindingDescriptionCount=1;input.pVertexBindingDescriptions=&binding;input.vertexAttributeDescriptionCount=static_cast<uint32_t>(attrs.size());input.pVertexAttributeDescriptions=attrs.data();
         VkPipelineInputAssemblyStateCreateInfo assembly{};assembly.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineViewportStateCreateInfo viewport{};viewport.sType=VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;viewport.viewportCount=1;viewport.scissorCount=1;
         VkPipelineRasterizationStateCreateInfo raster{};raster.sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;raster.polygonMode=VK_POLYGON_MODE_FILL;raster.cullMode=VK_CULL_MODE_NONE;raster.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE;raster.lineWidth=1;
@@ -567,8 +567,8 @@ struct AvatarRenderer::Impl {
         VkPipelineDepthStencilStateCreateInfo depth{};depth.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;depth.depthTestEnable=VK_TRUE;depth.depthWriteEnable=transparent?VK_FALSE:VK_TRUE;depth.depthCompareOp=VK_COMPARE_OP_GREATER_OR_EQUAL;
         VkPipelineColorBlendAttachmentState attachment{};attachment.colorWriteMask=15;attachment.blendEnable=transparent?VK_TRUE:VK_FALSE;attachment.srcColorBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;attachment.dstColorBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;attachment.colorBlendOp=VK_BLEND_OP_ADD;attachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_ONE;attachment.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;attachment.alphaBlendOp=VK_BLEND_OP_ADD;
         VkPipelineColorBlendStateCreateInfo color{};color.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;color.attachmentCount=1;color.pAttachments=&attachment;
-        const std::array<VkDynamicState,2> states{VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR};VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=states.size();dynamic.pDynamicStates=states.data();
-        VkGraphicsPipelineCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;info.stageCount=stages.size();info.pStages=stages.data();info.pVertexInputState=&input;info.pInputAssemblyState=&assembly;info.pViewportState=&viewport;info.pRasterizationState=&raster;info.pMultisampleState=&multisample;info.pDepthStencilState=&depth;info.pColorBlendState=&color;info.pDynamicState=&dynamic;info.layout=pipeline_layout;info.renderPass=renderpass;
+        const std::array<VkDynamicState,2> states{VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR};VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=static_cast<uint32_t>(states.size());dynamic.pDynamicStates=states.data();
+        VkGraphicsPipelineCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;info.stageCount=static_cast<uint32_t>(stages.size());info.pStages=stages.data();info.pVertexInputState=&input;info.pInputAssemblyState=&assembly;info.pViewportState=&viewport;info.pRasterizationState=&raster;info.pMultisampleState=&multisample;info.pDepthStencilState=&depth;info.pColorBlendState=&color;info.pDynamicState=&dynamic;info.layout=pipeline_layout;info.renderPass=renderpass;
         VkPipeline pipeline{};check(V(vkCreateGraphicsPipelines)(device,VK_NULL_HANDLE,1,&info,nullptr,&pipeline),"avatar graphics pipeline");return pipeline;
     }
     void destroy_target() {
@@ -593,11 +593,11 @@ struct AvatarRenderer::Impl {
         attachments[1].format=VK_FORMAT_D32_SFLOAT;attachments[1].samples=VK_SAMPLE_COUNT_1_BIT;attachments[1].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;attachments[1].storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;attachments[1].stencilLoadOp=VK_ATTACHMENT_LOAD_OP_DONT_CARE;attachments[1].stencilStoreOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;attachments[1].initialLayout=VK_IMAGE_LAYOUT_UNDEFINED;attachments[1].finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         const VkAttachmentReference color{0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},depth{1,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         VkSubpassDescription subpass{};subpass.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS;subpass.colorAttachmentCount=1;subpass.pColorAttachments=&color;subpass.pDepthStencilAttachment=&depth;
-        VkRenderPassCreateInfo pass{};pass.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;pass.attachmentCount=attachments.size();pass.pAttachments=attachments.data();pass.subpassCount=1;pass.pSubpasses=&subpass;
+        VkRenderPassCreateInfo pass{};pass.sType=VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;pass.attachmentCount=static_cast<uint32_t>(attachments.size());pass.pAttachments=attachments.data();pass.subpassCount=1;pass.pSubpasses=&subpass;
         check(V(vkCreateRenderPass)(device,&pass,nullptr,&renderpass),"avatar render pass");
         for(auto image:swapchain.images) {
             const auto view=create_view(image,swapchain.format,VK_IMAGE_ASPECT_COLOR_BIT);swapchain_views.push_back(view);
-            const std::array<VkImageView,2> views{view,self_depth.view};VkFramebufferCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;info.renderPass=renderpass;info.attachmentCount=views.size();info.pAttachments=views.data();info.width=extent.width;info.height=extent.height;info.layers=1;
+            const std::array<VkImageView,2> views{view,self_depth.view};VkFramebufferCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;info.renderPass=renderpass;info.attachmentCount=static_cast<uint32_t>(views.size());info.pAttachments=views.data();info.width=extent.width;info.height=extent.height;info.layers=1;
             VkFramebuffer framebuffer{};check(V(vkCreateFramebuffer)(device,&info,nullptr,&framebuffer),"avatar framebuffer");framebuffers.push_back(framebuffer);
         }
         opaque=make_pipeline(false);blend=make_pipeline(true);current_swapchain=swapchain.swapchain;current_swapchain_generation=swapchain.generation;
@@ -654,7 +654,7 @@ struct AvatarRenderer::Impl {
         const auto image_index=present.pImageIndices[0];
         image_barrier(swapchain.images.at(image_index),VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_IMAGE_ASPECT_COLOR_BIT);
         std::array<VkClearValue,2> clears{};clears[1].depthStencil.depth=0;
-        VkRenderPassBeginInfo begin{};begin.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;begin.renderPass=renderpass;begin.framebuffer=framebuffers.at(image_index);begin.renderArea={{0,0},extent};begin.clearValueCount=clears.size();begin.pClearValues=clears.data();
+        VkRenderPassBeginInfo begin{};begin.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;begin.renderPass=renderpass;begin.framebuffer=framebuffers.at(image_index);begin.renderArea={{0,0},extent};begin.clearValueCount=static_cast<uint32_t>(clears.size());begin.pClearValues=clears.data();
         V(vkCmdBeginRenderPass)(command,&begin,VK_SUBPASS_CONTENTS_INLINE);
         const VkViewport viewport{0,0,static_cast<float>(extent.width),static_cast<float>(extent.height),0,1};const VkRect2D scissor{{0,0},extent};
         V(vkCmdSetViewport)(command,0,1,&viewport);V(vkCmdSetScissor)(command,0,1,&scissor);

@@ -1,0 +1,124 @@
+{
+  "passed": true,
+  "version": "0.5.0",
+  "archiveSha256": "4a47adfeb5c0709fba778d831416ca7a34e2dd894eb1efb4cf5e277c1c9fe900",
+  "members": 52,
+  "manifestEntries": 50,
+  "dlls": {
+    "EnshroudedVRM/Runtime/OVRLipSync.dll": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+    "EnshroudedVRM/Runtime/enshrouded_vrm_runtime.dll": "529158d6fe2897192a7719bb0764415273efd5310a97607015e2c1116d3ec551",
+    "dinput8.dll": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386"
+  },
+  "memberHashes": {
+    "EnshroudedVRM/Avatars/README.txt": "92c41eeb0873af857ff6995fbb2d36acab86636fffd24f8873c4fcf94b521d09",
+    "EnshroudedVRM/Avatars/vroid-sample.vrm": "da1e68ca997415de3ff55ba1a8468257c523c6d5db65d193f4110e37861bc098",
+    "EnshroudedVRM/BUILD-INFO.json": "87bb835d1e3f77b35bb7f656e9e0f6d0e73e7b1b8b5e4673aca877523027df44",
+    "EnshroudedVRM/Compatibility/catalog.json": "2aeeb6350c8674b2559a07dc25b228e87b85612f26ecd92c3cc29c34adbf0af5",
+    "EnshroudedVRM/Compatibility/profile.json": "8b9c519399efcdc4a8f9a7caa1f1a4725ae13fe7cb29bc65ef31081ad5910bd3",
+    "EnshroudedVRM/KNOWN-ISSUES.txt": "75169d1d2fa55b5d1900f111c07aee8a56baa6620d9bcb36154bdb48c786be13",
+    "EnshroudedVRM/LICENSE": "c8bcc4c0c6954eb01800e0569421e644c57f93376a92182bb18c62537e35bcb1",
+    "EnshroudedVRM/MOD-SETTINGS.txt": "7442484997c6efa9987366bc24ba535bb3237f1ee94ac34fd205ca6b2fbc1d6e",
+    "EnshroudedVRM/README.txt": "d22238deba6d5a089d995018c2146b0ad4b635d8a17ebcb680bbd60e14b3e54e",
+    "EnshroudedVRM/RELEASE-NOTES.md": "cf017ee65cd6549b5bbe174d981e1d7d60561cae52be3a226976625a9550c0bf",
+    "EnshroudedVRM/Runtime/OVRLipSync.dll": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+    "EnshroudedVRM/Runtime/enshrouded_vrm_layer.json": "866cf4ae14d244808f52f42872c98e04338e71ae895e3ae82d0ee395e8ff04a9",
+    "EnshroudedVRM/Runtime/enshrouded_vrm_runtime.dll": "529158d6fe2897192a7719bb0764415273efd5310a97607015e2c1116d3ec551",
+    "EnshroudedVRM/Runtime/shaders/avatar.frag.spv": "704fdc4847962217d246760ad3117263e59f5c1e5e93a98d1546a4179899c5bb",
+    "EnshroudedVRM/Runtime/shaders/avatar.vert.spv": "f35c23585ef3baf3b01dbe7bce4c73a2af844f73c198a3f4d4779994466c718a",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.pull.gbuffer.spv": "1b327877445b6e17cd0a6e9838373c8bc7b22f12991c154e764abb5bef850e33",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.pull.oit.spv": "eacf601bb032086c95867a0f33985a4ee30a2c37ee84eed8f1786c094bd9c8a3",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.pull.vert.spv": "16c0709e1a3e5e1801b8e43cc0821a37d38b0d74af7b6087fb1477baba03072b",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.pull.visibility.spv": "29338d2b9632841ba81c766172ba496e0b55785ac0ec16fed12f7f34d86900dd",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.shadow.frag.spv": "4e66ffdd9056442ecaf63a8f26ddffdcd4f4e94313b312470295819a46898977",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.shadow.vert.spv": "dad8cc89dd79ae76a9d4531821f80c0cda4ed2bd241e4f97c825f3c7834647a5",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.surface.gbuffer.spv": "79538df59f085a40a57aabaa3a76b3387312ca497eec539ddf7c625b907c04ed",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.surface.oit.spv": "e1197c35714e8064ae76ed8faf3a5efae16de8f0bed05248fb1506cac97451ab",
+    "EnshroudedVRM/Runtime/shaders/avatar_native.surface.vert.spv": "9c277196fba72c79ddb8103ee41a1bdac1289bddee4850b10369bbeda54aa51a",
+    "EnshroudedVRM/Runtime/shaders/debug_report_capture.comp.spv": "f0faabc4ef0682f9c1e41a6782184d848cdc6670e6320f793ef98bafc0125f00",
+    "EnshroudedVRM/Runtime/shaders/native_menu_prepare.comp.spv": "91a24b1aae443d60f399240eb51d198673dd29edeb903ab837ba8d4174a9416c",
+    "EnshroudedVRM/Runtime/shaders/native_menu_prepare.surface.comp.spv": "d14fa065057dec06774d37815dd583586e76c5f6b7f69768538b609c15611f72",
+    "EnshroudedVRM/Runtime/shaders/native_player_commit.comp.spv": "861427ee74e1773c9b3a629224bbb0ca81433ebd1e322bdd2a575e692a4b8373",
+    "EnshroudedVRM/Runtime/shaders/native_prepare.comp.spv": "6fe27f740d2509ffbd2536df8b1e4c7e2675de1313429d0e6c181d3cf8417356",
+    "EnshroudedVRM/Runtime/shaders/native_prepare.surface.comp.spv": "27dee1041b1bc2b6d7c2fd87b5e1e77dde748b46c905b97afdf298ac4beff403",
+    "EnshroudedVRM/Runtime/shaders/native_skinning.comp.spv": "e038aa2e119d3e2f82fc881df50ec0102f9d0fa2fc474684e93763e22a2fa619",
+    "EnshroudedVRM/Runtime/shaders/native_skinning.finalize.spv": "e8675edd8de96e5ae7a0594ae2bed29aa6650f5cce932bf5edfb7f9d6c7082fd",
+    "EnshroudedVRM/Runtime/shaders/native_skinning.surface.comp.spv": "644f61fc7933bb51e7990e93a41e04f35f3aabf11668eaef8bbf9d0aac604c23",
+    "EnshroudedVRM/Runtime/shaders/native_volume_snapshot.comp.spv": "31305bfdccb504f29b719e08d06aa4557c2402bbd5da3b63b9da36bfaf938fd5",
+    "EnshroudedVRM/SECURITY.md": "b1bd0c14beb2dd985ef9fe54ad3fd0bc5fb80fbec951e1a21ee91f09ff926090",
+    "EnshroudedVRM/THIRD_PARTY_NOTICES.md": "78522a7b268744cec7bfe762fb5a411edeedc37637bd1b475199686d3c74ff4c",
+    "EnshroudedVRM/notices/Dear-ImGui-fonts.txt": "6aaa921092f06c31d3569d2437ab4f69c67f31bd49feca55914ae379201e2957",
+    "EnshroudedVRM/notices/GCC-RUNTIME-EXCEPTION.txt": "90077ba306ee9d8ed966cab1b4abd69b6e728acf08777283cc50283cd9503fa6",
+    "EnshroudedVRM/notices/GPL-3.0.txt": "81cbae84a29ce7e770bf2bc7b178e50bda0ce8de6067aba661b0bc7b05b562f8",
+    "EnshroudedVRM/notices/LGPL-2.1.txt": "090f8eb6ba63e72887c1f89b009fb1656cfda02d83b6e9805b20468520a5d77f",
+    "EnshroudedVRM/notices/MikkTSpace.txt": "8486c3ee89b526b9a44dddb07a5c88de45ef4ad3c0a3ead593fc6e1cffb62545",
+    "EnshroudedVRM/notices/MinGW-w64-runtime.txt": "8211dccca73dd4078d50ce7fa535b329f1c13edf6b54aa590131549f880ca0b8",
+    "EnshroudedVRM/notices/MinHook-BSD.txt": "d5c2224982b0b95a16b098a561335fa93f3eaf4d0aa964b7843edb986df78dc8",
+    "EnshroudedVRM/notices/Oculus-LipSync.txt": "860d2843070e9cf4a75b27d6efb3b3952be96fd0d3c72c840187becd95da7b03",
+    "EnshroudedVRM/notices/ShroudForge-MIT.txt": "6e92f324737f2638f7ca8440aaa08c45897d4c32ea07c68a853ea46d560f4a0b",
+    "EnshroudedVRM/notices/TinyGLTF-MIT.txt": "95d94609b88df9d8d162e01b3f985c226c8d612b003ef85de74c5f45a6f5327b",
+    "EnshroudedVRM/notices/Vulkan-Headers-MIT.txt": "aeaee01d2c00f0a9bef734ea415aaec662d1ed615970bf50eeb6ebeb2897b9f7",
+    "EnshroudedVRM/notices/nlohmann-json-MIT.txt": "417d1dc998f6ee3d40db4e38ae909ee6c28259d36e733fb118ec84acba775c39",
+    "EnshroudedVRM/notices/stb-image-MIT.txt": "4be6a99e816a7e197fcad539240c09713d4c887967eb81a07e52b47ecc33f873",
+    "EnshroudedVRM/release-manifest.json": "62e80ed75d9421384a467b4e0fce5f50526aac0d5c786a8e056253fbbaacb8d0",
+    "LEIA-ME-PT-BR.txt": "a05bf74924683f00b541689fbf9b045a59701578707c154c2022539623261ad9",
+    "dinput8.dll": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386"
+  },
+  "shadersValidated": 21,
+  "unchangedShaders": true,
+  "personalModels": 0,
+  "privateHelpers": 0,
+  "sourcePinCount": 325,
+  "nativeVersionComparison": {
+    "runtime": {
+      "previousSha256": "1e17ec7d7d05bcfeb214f0b1978cc59552c40f19702dd31a04fb20a69cf6316e",
+      "sha256": "529158d6fe2897192a7719bb0764415273efd5310a97607015e2c1116d3ec551",
+      "changedSections": [
+        ".rdata",
+        ".rsrc"
+      ],
+      "versionAndGeneratedLinkerIdentityOnly": true,
+      "normalizedRdataSha256": "c7e66a165a50649a3ebf13457b073de9f655ea1179e88d71a821dca8db76ae41"
+    },
+    "bootstrap": {
+      "previousSha256": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386",
+      "sha256": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386",
+      "changedSections": [],
+      "versionAndGeneratedLinkerIdentityOnly": true,
+      "normalizedRdataSha256": "d86c23e491b71616f4106879d0b77189798769d680ee543b2b05087178901174"
+    }
+  },
+  "deterministicRuntime": true,
+  "deterministicBootstrap": true,
+  "deterministicArchive": true,
+  "releaseChecks": {
+    "inputBootstrap": {
+      "run": 28,
+      "failures": 0,
+      "context": "Normal Windows user; restricted account file-admission limitations recorded privately."
+    },
+    "package": {
+      "run": 23,
+      "failures": 0
+    },
+    "nativeAndRuntime": {
+      "run": 19,
+      "failures": 0,
+      "includes": "Two actual runtime/system Vulkan checks, compiler adapter, clock scaling and scoped memory containment."
+    }
+  },
+  "implementationAcceptance": {
+    "sourceCommit": "1e8dd139db28636fdfe7c61083bd979dbb2e355c",
+    "nativeImplementationCommit": "f373bf6",
+    "previousRuntimeSha256": "1e17ec7d7d05bcfeb214f0b1978cc59552c40f19702dd31a04fb20a69cf6316e",
+    "previousBootstrapSha256": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386",
+    "checks": [
+      "Desktop and laptop normal Steam startup, F8 and model/native switching",
+      "Real Vortex install/replace/enable/disable/purge/re-enable",
+      "Existing EML 0.2.0 dbghelp.dll coexistence",
+      "Optional BuildingTools input chain initialization; its features self-disabled on this game build, including without EnshroudedVRM",
+      "Two client-local player VRMs simultaneously, equipment, host restart/client reconnect and disconnect cleanup"
+    ],
+    "scope": "Manual acceptance used the preceding exact candidate. 0.5.0 changes only native version resources and generated linker identity/resource-size metadata; executable code, other data and 21 shader modules match. Release checks/scans apply to the new files. This is limited coverage, not a stability, FPS or arbitrary-loader guarantee."
+  },
+  "privacy": "No personal models, raw logs/reports/screenshots, account identifiers, State, installation keys, game executable/assets, speech audio or development helpers are published. One explicitly authorized public VRoid sample is unchanged."
+}

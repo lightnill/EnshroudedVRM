@@ -48,7 +48,7 @@ int main(int argc,char** argv){try{
         }else if(mode=="selected-alias"){
             put(f.table,slots[0]*8,second);memory.alias_header=0;memory.second_id=load<std::uint32_t>(f.keys,slots[1]*4);
             need(memory.second_id!=first_id,"pointer alias needs distinct observed IDs");
-        }else if(mode=="empty")std::fill(f.occupancy.begin(),f.occupancy.end(),0);
+        }else if(mode=="empty")std::fill(f.occupancy.begin(),f.occupancy.end(),std::uint8_t(0));
         else need(false,"unknown scenario");
         const bool captured=evrm::capture_native_owner(memory,f.identity,selected,why,limits);
         need(!captured&&selected.guards.empty()&&selected.models.empty()&&!selected.equipment,"invalid census exposed ownership/equipment evidence");

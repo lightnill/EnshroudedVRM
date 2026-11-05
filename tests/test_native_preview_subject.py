@@ -1,9 +1,10 @@
 """Owned CPU preview subject ordering; no game, graphics driver or DLL loading."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes,os,shutil,subprocess,tempfile,unittest
 class PreviewSubjectTests(unittest.TestCase):
     def native(self,name,sources=()):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if os.name!='nt' or not compiler:self.skipTest('explicit Windows compiler required')
         root=Path(__file__).resolve().parents[1]
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
@@ -22,7 +23,7 @@ class PreviewSubjectTests(unittest.TestCase):
                 state=(root/'src/native_state.cpp').read_text();begin=state.index('NativeBufferBinding::operator bool()');end=state.index('struct NativeState::Impl',begin)
                 (Path(folder)/'native_preview_binding.inc').write_text(state[begin:end])
                 self.assertTrue(headers,'explicit Vulkan headers required');extra=['-I'+folder,'-I'+headers]
-            built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests'/(name+'.cpp')),
+            built=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests'/(name+'.cpp')),
                                   *extra,*[str(root/'src'/p) for p in sources],'-o',str(exe)],capture_output=True,text=True,timeout=180)
             self.assertEqual(built.returncode,0,built.stdout+built.stderr)
             ran=subprocess.run([str(exe)],capture_output=True,text=True,timeout=30)

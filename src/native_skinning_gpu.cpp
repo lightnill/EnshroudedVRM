@@ -82,7 +82,7 @@ std::shared_ptr<SkinDescriptors> descriptors(const std::shared_ptr<SkinContext>&
     require(!c->uncertain(),"Skin descriptor ownership");
     for(const auto& entry:cache)if(entry.use_count()==1&&entry->layout==layout)return entry;
     auto out=std::make_shared<SkinDescriptors>();out->c=c;out->layout=layout;
-    const std::array<VkDescriptorPoolSize,2> sizes{{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,storage},{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1}}};auto pi=info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);pi.maxSets=1;pi.poolSizeCount=sizes.size();pi.pPoolSizes=sizes.data();checked(c->fn<PFN_vkCreateDescriptorPool>("vkCreateDescriptorPool")(c->device,&pi,nullptr,&out->pool),"Skin pool");
+    const std::array<VkDescriptorPoolSize,2> sizes{{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,storage},{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1}}};auto pi=info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);pi.maxSets=1;pi.poolSizeCount=static_cast<std::uint32_t>(sizes.size());pi.pPoolSizes=sizes.data();checked(c->fn<PFN_vkCreateDescriptorPool>("vkCreateDescriptorPool")(c->device,&pi,nullptr,&out->pool),"Skin pool");
     auto ai=info<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);ai.descriptorPool=out->pool;ai.descriptorSetCount=1;ai.pSetLayouts=&layout;checked(c->fn<PFN_vkAllocateDescriptorSets>("vkAllocateDescriptorSets")(c->device,&ai,&out->set),"Skin set");
     if(cache.size()<32)try{cache.push_back(out);}catch(...){}
     return out;
@@ -121,6 +121,11 @@ struct NativeSkinGpuGeometry::Impl {
     std::shared_ptr<void> owner;std::shared_ptr<const NativeSkinAsset> source;std::shared_ptr<SkinBuffer> output,surface;
     std::shared_ptr<SkinSurfaceCacheLease> surface_cache;
 };
+#if defined(_MSC_VER)
+#pragma warning(push)
+// The shader control block intentionally gives this private frame 16-byte alignment.
+#pragma warning(disable:4324)
+#endif
 struct NativeSkinGpuFrame::Impl {
     std::shared_ptr<void> owner;std::shared_ptr<SkinContext> c;std::shared_ptr<NativeSkinGpuAsset> asset;
     std::shared_ptr<SkinBuffer> palettes,batches,palette_staging,batch_staging,status,uniform;
@@ -134,6 +139,9 @@ struct NativeSkinGpuFrame::Impl {
     static_assert(sizeof(Control)==64&&offsetof(Control,weights0)==32&&offsetof(Control,weights1)==48,"Mouth skin control ABI");
     VkDescriptorSet set{};Control control;bool recorded=false,surface=false;
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 NativeSkinGpuAsset::NativeSkinGpuAsset(std::shared_ptr<Impl> p):impl(std::move(p)){}
 NativeSkinGpuAsset::~NativeSkinGpuAsset()=default;
 VkDescriptorBufferInfo NativeSkinGpuAsset::indices()const noexcept{return impl->indices->binding();}
@@ -151,7 +159,7 @@ NativeSkinningGpu::NativeSkinningGpu(VkDevice device,PFN_vkGetDeviceProcAddr get
     auto state=std::make_shared<Impl>();state->directory=directory;state->c=std::make_shared<SkinContext>();auto c=state->c;c->device=device;c->get=get;c->memory=memory;c->limits=limits;c->quarantine=quarantine;
     require(device&&get&&!c->uncertain()&&limits.maxComputeWorkGroupInvocations>=64&&limits.maxComputeWorkGroupSize[0]>=64&&limits.maxPerStageDescriptorStorageBuffers>=7&&limits.maxDescriptorSetStorageBuffers>=7&&limits.maxPerStageDescriptorUniformBuffers>=1&&limits.maxDescriptorSetUniformBuffers>=1,"Skin compute limits unsupported");
     std::array<VkDescriptorSetLayoutBinding,8> bindings{};for(unsigned i=0;i<8;++i)bindings[i]={i,i==7?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
-    auto si=info<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);si.bindingCount=bindings.size();si.pBindings=bindings.data();checked(c->fn<PFN_vkCreateDescriptorSetLayout>("vkCreateDescriptorSetLayout")(device,&si,nullptr,&state->set),"Skin descriptor layout");
+    auto si=info<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);si.bindingCount=static_cast<std::uint32_t>(bindings.size());si.pBindings=bindings.data();checked(c->fn<PFN_vkCreateDescriptorSetLayout>("vkCreateDescriptorSetLayout")(device,&si,nullptr,&state->set),"Skin descriptor layout");
     auto li=info<VkPipelineLayoutCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);li.setLayoutCount=1;li.pSetLayouts=&state->set;checked(c->fn<PFN_vkCreatePipelineLayout>("vkCreatePipelineLayout")(device,&li,nullptr,&state->layout),"Skin pipeline layout");
     const std::array<const char*,2> names{"cs_skin","cs_finalize"};const std::array<const char*,2> files{"native_skinning.comp.spv","native_skinning.finalize.spv"};
     for(unsigned i=0;i<2;++i){state->modules[i]=shader(c,directory/files[i]);auto pi=info<VkComputePipelineCreateInfo>(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);pi.layout=state->layout;pi.stage=info<VkPipelineShaderStageCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);pi.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;pi.stage.module=state->modules[i];pi.stage.pName=names[i];checked(c->fn<PFN_vkCreateComputePipelines>("vkCreateComputePipelines")(device,VK_NULL_HANDLE,1,&pi,nullptr,&state->pipelines[i]),"Skin pipeline");}
@@ -164,7 +172,7 @@ void NativeSkinningGpu::prepare_surface(){
     // Publish only a complete pipeline pair; a failed preparation can be retried.
     auto out=std::make_shared<SurfacePipelines>();out->c=c;
     std::array<VkDescriptorSetLayoutBinding,10> bindings{};for(unsigned i=0;i<10;++i)bindings[i]={i,i==7?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
-    auto si=info<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);si.bindingCount=bindings.size();si.pBindings=bindings.data();checked(c->fn<PFN_vkCreateDescriptorSetLayout>("vkCreateDescriptorSetLayout")(c->device,&si,nullptr,&out->set),"Surface skin descriptor layout");
+    auto si=info<VkDescriptorSetLayoutCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);si.bindingCount=static_cast<std::uint32_t>(bindings.size());si.pBindings=bindings.data();checked(c->fn<PFN_vkCreateDescriptorSetLayout>("vkCreateDescriptorSetLayout")(c->device,&si,nullptr,&out->set),"Surface skin descriptor layout");
     auto li=info<VkPipelineLayoutCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);li.setLayoutCount=1;li.pSetLayouts=&out->set;checked(c->fn<PFN_vkCreatePipelineLayout>("vkCreatePipelineLayout")(c->device,&li,nullptr,&out->layout),"Surface skin pipeline layout");
     out->module=shader(c,impl->directory/"native_skinning.surface.comp.spv");
     const std::array<const char*,2> names{"cs_skin","cs_finalize"};

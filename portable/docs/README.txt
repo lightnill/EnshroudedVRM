@@ -6,7 +6,7 @@ Play Enshrouded as your VRM avatar. By **lightnill**.
 
 **0.4.0 is still buggy and incomplete.** This is a feature release, not a claim of stability. The shaders are still being refined: reflections, matcaps, transparency and low-light shading can look wrong. **Lip sync/visemes for other players are not implemented.** Brief native-character fallbacks and loading or frame-time spikes can still occur.
 
-Supports Enshrouded Steam build **26404966** only. Keep **0.3.3** for the previous build **26320373**; packages are not interchangeable across game updates.
+Supports Enshrouded Steam build **26430625** only. Keep **0.3.3** for the previous build **26320373**; packages are not interchangeable across game updates.
 
 ## New in 0.4.0
 

@@ -2,6 +2,7 @@
 
 No game, real graphics device, hooks, uploads, or external process reads.
 """
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes
 import os
@@ -12,11 +13,11 @@ import unittest
 
 class NativePlayerBackendTests(unittest.TestCase):
     def test_owned_backend_coordinator(self):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         headers = os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         dxc = os.environ.get('EVRM_SHADER_COMPILER') or shutil.which('dxc')
         if os.name != 'nt' or not compiler or not headers or not dxc:
-            self.skipTest('Windows GCC, explicit Vulkan headers and DXC required')
+            self.skipTest('Windows MSVC 14.44, explicit Vulkan headers and DXC required')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode() | 0x8003)
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-player-backend-', ignore_cleanup_errors=True) as directory:
@@ -37,7 +38,7 @@ class NativePlayerBackendTests(unittest.TestCase):
                        str(root / 'tests/native_player_backend.cpp'),
                        *[str(p) for p in sources], str(root / 'src/mouth_deformation.cpp'),
                        '-lbcrypt', '-o', str(binary)]
-            built = subprocess.run(command, capture_output=True, text=True, timeout=300)
+            built = run_compiler(command, capture_output=True, text=True, timeout=300)
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
             env = os.environ.copy()
             log = folder / 'backend.log'

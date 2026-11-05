@@ -1,4 +1,5 @@
 """Real Windows PowerShell5.1 launcher integration, using synthetic files only."""
+from native_fixture_compiler import default_compiler, run_compiler
 import hashlib
 import json
 import os
@@ -11,13 +12,29 @@ import tempfile
 import time
 import unittest
 
-child_binary = Path(sys.argv[1]).resolve()
-sys.argv = sys.argv[:1]+sys.argv[2:]
+child_binary = None
+if __name__ == '__main__' and len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
+    child_binary = Path(sys.argv[1]).resolve()
+    sys.argv = sys.argv[:1]+sys.argv[2:]
 script_source = Path(__file__).resolve().parents[1]/'portable/script'
 powershell = Path(os.environ['SystemRoot'])/'System32/WindowsPowerShell/v1.0/powershell.exe'
 script_names = ['Launch-EnshroudedVRM.cmd','Launch-EnshroudedVRM.ps1','launcher_core.psm1']
 
 class ScriptLaunchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        global child_binary
+        if child_binary is None:
+            fixture = tempfile.TemporaryDirectory(prefix='evrm-launcher-child-')
+            cls.addClassCleanup(fixture.cleanup)
+            child_binary = Path(fixture.name) / 'portable_child.exe'
+            source = Path(__file__).resolve().parent / 'portable_child.cpp'
+            result = run_compiler([default_compiler(), '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
+                                   '-static', '-municode', '-mwindows', str(source), '-o', str(child_binary)],
+                                  capture_output=True, text=True, timeout=45)
+            if result.returncode:
+                raise AssertionError(result.stdout + result.stderr)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

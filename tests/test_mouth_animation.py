@@ -1,4 +1,5 @@
 """Deterministic VRM mouth fixtures; no game, network or microphone."""
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import shutil
@@ -9,9 +10,9 @@ import unittest
 
 class MouthAnimationTests(unittest.TestCase):
     def run_native(self, name, sources):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler or os.name != 'nt':
-            self.skipTest('Windows x64 GCC required')
+            self.skipTest('Windows x64 MSVC 14.44 required')
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-mouth-', ignore_cleanup_errors=True) as folder:
             binary = Path(folder) / (name + '.exe')
@@ -27,7 +28,7 @@ class MouthAnimationTests(unittest.TestCase):
                                              str(root / 'shaders/native_skinning.hlsl'), '-Fo', str(Path(folder) / output)],
                                             capture_output=True, text=True, timeout=60)
                     self.assertEqual(shader.returncode, 0, shader.stdout + shader.stderr)
-            result = subprocess.run(command + ['-o', str(binary)], capture_output=True, text=True, timeout=180)
+            result = run_compiler(command + ['-o', str(binary)], capture_output=True, text=True, timeout=180)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             arguments = [str(binary)]
             if name == 'mouth_import' and os.environ.get('EVRM_TEST_AVATAR'):

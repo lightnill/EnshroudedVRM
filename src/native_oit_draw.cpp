@@ -41,14 +41,14 @@ VkPipeline make_oit_pipeline(VkDevice device,PFN_vkCreateGraphicsPipelines creat
     for(unsigned i:{0u,4u}){auto& a=attachments[i];a.colorWriteMask=i?VkColorComponentFlags(VK_COLOR_COMPONENT_R_BIT):15u;a.blendEnable=VK_TRUE;
         a.srcColorBlendFactor=a.srcAlphaBlendFactor=i?VK_BLEND_FACTOR_ZERO:VK_BLEND_FACTOR_ONE;
         a.dstColorBlendFactor=a.dstAlphaBlendFactor=i?VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:VK_BLEND_FACTOR_ONE;}
-    VkPipelineColorBlendStateCreateInfo blend{};blend.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;blend.attachmentCount=attachments.size();blend.pAttachments=attachments.data();
+    VkPipelineColorBlendStateCreateInfo blend{};blend.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;blend.attachmentCount=static_cast<std::uint32_t>(attachments.size());blend.pAttachments=attachments.data();
     const std::array<VkDynamicState,5> states={VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR,VK_DYNAMIC_STATE_STENCIL_REFERENCE,VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK};
-    VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=states.size();dynamic.pDynamicStates=states.data();
+    VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=static_cast<std::uint32_t>(states.size());dynamic.pDynamicStates=states.data();
     const std::array<VkFormat,5> formats={VK_FORMAT_R16G16B16A16_SFLOAT,VK_FORMAT_R8_UNORM,VK_FORMAT_R8_UNORM,VK_FORMAT_R8_UNORM,VK_FORMAT_R16_UNORM};
     VkPipelineRenderingCreateInfo rendering{};rendering.sType=VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;rendering.depthAttachmentFormat=VK_FORMAT_D32_SFLOAT;
-    rendering.colorAttachmentCount=formats.size();rendering.pColorAttachmentFormats=formats.data();
+    rendering.colorAttachmentCount=static_cast<std::uint32_t>(formats.size());rendering.pColorAttachmentFormats=formats.data();
     VkGraphicsPipelineCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;info.pNext=&rendering;
-    info.stageCount=stages.size();info.pStages=stages.data();info.pVertexInputState=&vertex;info.pInputAssemblyState=&assembly;
+    info.stageCount=static_cast<std::uint32_t>(stages.size());info.pStages=stages.data();info.pVertexInputState=&vertex;info.pInputAssemblyState=&assembly;
     info.pViewportState=&viewport;info.pRasterizationState=&raster;info.pMultisampleState=&multisample;info.pDepthStencilState=&depth;
     info.pColorBlendState=&blend;info.pDynamicState=&dynamic;info.layout=layout;
     VkPipeline target{};

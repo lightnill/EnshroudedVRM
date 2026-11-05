@@ -1,4 +1,5 @@
 """Attested player ownership against owned CPU memory; no game or GPU access."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import os
 import shutil
@@ -11,14 +12,14 @@ class NativePlayerIdentityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[1]
-        cls.compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        cls.compiler = default_compiler()
         if os.name != 'nt' or not cls.compiler or not Path(cls.compiler).is_file():
-            raise unittest.SkipTest('Windows GCC required')
+            raise unittest.SkipTest('Windows MSVC 14.44 required')
         cls.folder = tempfile.TemporaryDirectory(prefix='evrm-player-identity-', ignore_cleanup_errors=True)
         cls.binary = Path(cls.folder.name) / 'native_player_identity.exe'
         command = [cls.compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static',
                    str(cls.root/'tests/native_player_identity.cpp'), str(cls.root/'src/native_owner.cpp'), '-o', str(cls.binary)]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        result = run_compiler(command, capture_output=True, text=True, timeout=180)
         if result.returncode:
             raise AssertionError(result.stdout + result.stderr)
 

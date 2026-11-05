@@ -32,49 +32,49 @@ int main(){try{
     NativePreviewStamp observed;
     auto execute=[&](U a,U b,U c,U d){require(a==11&&b==22&&c==0xb00000&&d==44,"worker arguments changed");++executions;observed=thread.working;};
     auto render=[&](U a,U b,U c,U d,U p){require(a==context.renderer&&b==12&&c==13&&d==14&&p==packet,"renderer arguments changed");++renders;require(calls.allocate(allocate,10,20,30)==0xb00000,"allocator return changed");};
-    calls.request(request,app,99,88,actor.image+0xbadb75);
+    calls.request(request,app,99,88,actor.image+0xbadc55);
     require(calls.copy(copy,packet,slot,0x8d4)==packet,"copy return changed");
-    calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);
+    calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);
     calls.execute(execute,11,22,0xb00000,44);
     require(observed.local(),"actual native forwarding path did not carry local subject");
     require(!thread.rendering.request&&!thread.working.request,"scoped subject leaked after original returned");
     require(requests==1&&copies==1&&renders==1&&allocations==1&&executions==1&&publications==1,"original forwarding duplicated");
     // Native first-writer-wins: rejected survivor request must preserve local.
-    calls.request(request,app,99,88,actor.image+0xc47418);calls.copy(copy,packet,slot,0x8d4);
-    calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    calls.request(request,app,99,88,actor.image+0xc474f8);calls.copy(copy,packet,slot,0x8d4);
+    calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(observed.local(),"rejected competing request relabeled the accepted slot");
-    memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xc47418);
-    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xc474f8);
+    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(observed.subject==NativePreviewSubject::other&&!observed.local(),"accepted survivor inherited local authority");
     // Reset, publish unknown, same bytes: no appearance/image inference.
     memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0x12345);
-    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(!observed.local(),"unknown caller with identical payload became local");
     // A native copy interleaved with a republish must not inherit an old tag.
-    memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xbadb75);
-    auto interleaved=[&](U d,U s,U n)->U{auto result=copy(d,s,n);memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xc47418);return result;};
-    calls.copy(interleaved,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xbadc55);
+    auto interleaved=[&](U d,U s,U n)->U{auto result=copy(d,s,n);memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xc474f8);return result;};
+    calls.copy(interleaved,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(!observed.request,"copy crossing reset/republish retained prior local label");
-    memory.put(slot+0x8d0,static_cast<unsigned char>(0));memory.put(actor.selector+4,static_cast<std::uint32_t>(20));calls.request(request,app,99,88,actor.image+0xbadb75);
-    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    memory.put(slot+0x8d0,static_cast<unsigned char>(0));memory.put(actor.selector+4,static_cast<std::uint32_t>(20));calls.request(request,app,99,88,actor.image+0xbadc55);
+    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(!observed.local(),"changed native local selector retained old actor proposal");
-    memory.put(actor.selector+4,actor.id);memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xbadb75);
+    memory.put(actor.selector+4,actor.id);memory.put(slot+0x8d0,static_cast<unsigned char>(0));calls.request(request,app,99,88,actor.image+0xbadc55);
     calls.copy(copy,packet,slot,0x8d4);
-    bool threw=false;try{calls.render([&](U,U,U,U,U){require(thread.rendering.local(),"local renderer scope unavailable before throw");throw std::runtime_error("owned original throw");},context.renderer,12,13,14,packet,actor.image+0x861d29);}catch(const std::runtime_error&){threw=true;}
+    bool threw=false;try{calls.render([&](U,U,U,U,U){require(thread.rendering.local(),"local renderer scope unavailable before throw");throw std::runtime_error("owned original throw");},context.renderer,12,13,14,packet,actor.image+0x861e09);}catch(const std::runtime_error&){threw=true;}
     require(threw&&!thread.rendering.request&&!thread.packet&&!thread.copied.request,"throwing renderer leaked a scope or reusable packet lease");
-    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);
+    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);
     threw=false;try{calls.execute([&](U,U,U,U){require(thread.working.local(),"local worker scope unavailable before throw");throw std::runtime_error("owned worker throw");},11,22,0xb00000,44);}catch(const std::runtime_error&){threw=true;}
     require(threw&&!thread.working.request,"throwing original worker leaked local authority");
     calls.execute(execute,11,22,0xb00000,44);require(!observed.request,"throwing original worker left replay authority");
     // The native reset may occur after an entry observer read pending=1 but
     // before ced430 checks it. Only its actual accepted copy proves writing.
-    calls.request([&](U a,U p,U color){memory.put(slot+0x8d0,static_cast<unsigned char>(0));request(a,p,color);},app,99,88,actor.image+0xc47418);
-    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    calls.request([&](U a,U p,U color){memory.put(slot+0x8d0,static_cast<unsigned char>(0));request(a,p,color);},app,99,88,actor.image+0xc474f8);
+    calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(!observed.local(),"native reset between entry observation and accepted copy relabeled a survivor as local");
     memory.put(slot+0x8d0,static_cast<unsigned char>(0));threw=false;
-    try{calls.request([&](U,U p,U){calls.accepted_copy([](U,U,U)->U{throw std::runtime_error("owned publication throw");},slot,p,0x8d0);},app,99,88,actor.image+0xbadb75);}catch(const std::runtime_error&){threw=true;}
+    try{calls.request([&](U,U p,U){calls.accepted_copy([](U,U,U)->U{throw std::runtime_error("owned publication throw");},slot,p,0x8d0);},app,99,88,actor.image+0xbadc55);}catch(const std::runtime_error&){threw=true;}
     require(threw&&!thread.proposed.source.epoch&&!thread.request_payload&&!subjects.copy_proposal(context.epoch).request,"throwing publication retained a proposal or writer permit");
-    calls.request(request,app,99,88,actor.image+0xbadb75);calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861d29);calls.execute(execute,11,22,0xb00000,44);
+    calls.request(request,app,99,88,actor.image+0xbadc55);calls.copy(copy,packet,slot,0x8d4);calls.render(render,context.renderer,12,13,14,packet,actor.image+0x861e09);calls.execute(execute,11,22,0xb00000,44);
     require(observed.local(),"throwing publication left the writer count or request scope stuck");
     const auto old_world=observed;subjects.allocated(0xc00000,old_world);unsigned destroyed=0,created=0;
     require(calls.main_destroy([&](U main,U flags)->U{require(main==actor.main&&flags==7,"main destructor arguments changed");++destroyed;require(!subjects.current(old_world)&&!subjects.source().epoch,"old preview authority survived inside native main destruction");return main;},actor.main,7)==actor.main,"main destructor return changed");

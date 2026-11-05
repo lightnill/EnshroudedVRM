@@ -1,12 +1,19 @@
-# EnshroudedVRM 0.4.0 — guia em português (Brasil)
+# EnshroudedVRM 0.5.0 — guia em português (Brasil)
 
 Jogue Enshrouded com seu avatar VRM. Mod de **lightnill**.
 
-Esta versão funciona com a compilação Steam **26404966** do jogo. A versão **0.3.3** continua disponível para a compilação anterior **26320373**. Não misture arquivos dessas versões.
+Esta versão funciona com a compilação Steam **26430625** do jogo. A versão **0.3.3** continua disponível para a compilação anterior **26320373**. Não misture arquivos dessas versões.
 
 **A implementação ainda tem bugs e está incompleta.** Os shaders precisam de mais refinamento: reflexos, matcaps, transparência e iluminação fraca podem apresentar resultados incorretos. **A animação da boca por voz de outros jogadores ainda não funciona.** Ainda podem ocorrer travadas e retornos breves ao personagem original.
 
-## Novidades da 0.4.0
+## Novidades da 0.5.0
+
+- Inicialização por **dinput8.dll**, sem o antigo proxy Vulkan. Inicie normalmente pela Steam.
+- O mesmo ZIP serve para instalação manual e Vortex. Um carregador anterior pode ser preservado como **dinput8.chainload.dll**.
+- Pode coexistir com o **dbghelp.dll** do EML. O mod inicia de forma independente; ainda não é um plugin hospedado diretamente pelo EML.
+- Loader, runtime e testes nativos compilados com **Visual Studio 2022 / MSVC 14.44**. Compatível com a compilação Steam **26430625**.
+
+## Recursos de jogadores e materiais incluídos
 
 - **Modelos por jogador em F8:** escolha You ou Player N e atribua um VRM local. Outros jogadores começam sem substituição. As escolhas são lembradas por conta neste computador, inclusive após reconexão ou troca de personagem.
 - **Importador mais completo:** normal maps glTF e mapas/máscaras padrão de matcap/rim do MToon em VRM0/VRM1, com transformações UV suportadas e tangentes geradas. PNGs de 16 bits são convertidos para RGBA8. Isso não reproduz todos os shaders personalizados do Unity nem todos os tipos de máscara.
@@ -16,18 +23,19 @@ Esta versão funciona com a compilação Steam **26404966** do jogo. A versão *
 
 ## Instalação, passo a passo
 
-1. Baixe **EnshroudedVRM-0.4.0.zip**, o pacote completo para jogadores. No GitHub, escolha esse arquivo na seção **Assets**. Os arquivos **Source code (zip)** e **Source code (tar.gz)** são o código-fonte e não são o mod pronto para instalar.
+1. Baixe **EnshroudedVRM-0.5.0.zip**, o pacote completo para jogadores. No GitHub, escolha esse arquivo na seção **Assets**. Os arquivos **Source code (zip)** e **Source code (tar.gz)** são o código-fonte e não são o mod pronto para instalar.
 2. **Feche o jogo.** Na biblioteca da Steam, clique com o botão direito em Enshrouded e abra **Gerenciar > Explorar arquivos locais** (em inglês: **Manage > Browse local files**). Encontre a pasta que contém **enshrouded.exe**.
-3. Extraia o ZIP para uma pasta temporária. Copie **vulkan-1.dll** e a pasta inteira **EnshroudedVRM** para a mesma pasta de **enshrouded.exe**. Não coloque os arquivos dentro de outra pasta chamada EnshroudedVRM e não copie apenas os arquivos de Runtime.
-4. Se já existir um **vulkan-1.dll de outro mod**, pare: não substitua, renomeie nem tente combinar os dois. Se estiver atualizando uma instalação conhecida deste mod, substitua todos os arquivos do pacote com o jogo fechado e preserve seus VRMs pessoais.
+3. Faça backup dos seus VRMs e configurações e desative/remova o pacote anterior do EnshroudedVRM. Remova o antigo **vulkan-1.dll** somente se ele pertencer ao EnshroudedVRM. Preserve DLLs de outros mods. Se outro mod já usar **dinput8.dll**, guarde esse arquivo como **dinput8.chainload.dll** na mesma pasta antes de instalar o novo. Não substitua um chainload já existente nem renomeie um arquivo de origem desconhecida. Substitua diretamente um dinput8.dll antigo do próprio EnshroudedVRM; não o encadeie. O **dbghelp.dll** de uma instalação EML existente pode permanecer.
+4. A versão 0.5.0 usa **dinput8.dll**. Extraia **EnshroudedVRM-0.5.0.zip** e copie o novo **dinput8.dll** e a pasta inteira **EnshroudedVRM** para a pasta de **enshrouded.exe**, sem duplicar o nível de pastas. Substitua o pacote completo e preserve seus VRMs pessoais; não é necessário manter arquivos de versões antigas.
 5. Inicie o jogo **normalmente pela Steam**. Não é necessário executar um launcher, arquivo .exe adicional, .bat/.cmd, PowerShell ou outro carregador de mods. Não é necessário alterar a política de execução do PowerShell, instalar Python ou executar como administrador.
-6. Pressione **F8** para abrir as configurações. Em alguns notebooks, pode ser necessário **Fn + F8**. Escolha **Browse...** ou um modelo da lista e selecione um arquivo **.vrm** válido. O personagem original continua aparecendo até que um modelo seja selecionado e carregado. O exemplo **vroid-sample.vrm** é opcional; não é escolhido automaticamente.
+6. Pressione **F8** para abrir as configurações. Em alguns notebooks, pode ser necessário **Fn + F8**. Escolha **You**, desative **No model replacement**, e use **Browse...** ou um modelo da lista e selecione um arquivo **.vrm** válido. O personagem original continua aparecendo até que um modelo seja selecionado e carregado. O exemplo **vroid-sample.vrm** é opcional; não é escolhido automaticamente.
 
 A estrutura deve ficar assim:
 
     Enshrouded/
       enshrouded.exe                 (já pertence ao jogo)
-      vulkan-1.dll                    (fornecido pelo mod)
+      dinput8.dll                     (fornecido pelo mod)
+      dinput8.chainload.dll            (opcional: carregador anterior preservado)
       EnshroudedVRM/
         Runtime/
         Compatibility/
@@ -36,6 +44,10 @@ A estrutura deve ficar assim:
         README.txt
 
 LEIA-ME-PT-BR.txt é uma documentação adicional na raiz do ZIP; pode ser guardado onde preferir. Não substitua arquivos do Windows e não copie DLLs de sites aleatórios.
+
+No **Vortex**, gerencie Enshrouded com a extensão do jogo instalada. Use **Install From File**, selecione o ZIP completo, ative (**Enable**) e implante (**Deploy**) com o jogo fechado. Confirme que dinput8.dll está ao lado de enshrouded.exe. Preserve todos os arquivos do pacote, incluindo os avisos de licença. A implantação, a coexistência com EML e o modo multijogador foram verificados no desktop e notebook para a implementação desta versão. Os resultados e comparações dos arquivos 0.5.0 estão em validation/0.5.0.
+
+O carregador opcional é iniciado uma vez no ponto de inicialização verificado do jogo suportado. Quando esse ponto é alcançado, o resultado fica em **%LOCALAPPDATA%\EnshroudedVRM\State\Logs\input-bootstrap-*.log**. A ausência desse arquivo, sozinha, não identifica a causa de um problema.
 
 ## Configurar o avatar e os materiais
 
@@ -64,10 +76,10 @@ Não use os scripts de inicialização das versões antigas depois de instalar o
 
 ## Se algo não funcionar
 
-- **F8 não abre:** confirme que vulkan-1.dll está ao lado de enshrouded.exe e que a pasta não ficou duplicada. Tente Fn + F8 em notebooks. Confira se o jogo está na compilação compatível e se outro mod já usa vulkan-1.dll.
+- **F8 não abre:** confirme que dinput8.dll está ao lado de enshrouded.exe e que a pasta não ficou duplicada. Tente Fn + F8 em notebooks. Confira se o jogo está na compilação compatível e se o carregador anterior foi preservado corretamente.
 - **Só aparece o personagem original:** escolha um .vrm válido em F8 e desative No model replacement. Depois de uma atualização do jogo, uma versão incompatível pode recusar a substituição de propósito. Não remova nem desative as verificações de compatibilidade.
 - **A boca não se move:** ative o recurso de voz e confira a fonte. Para testar offline, escolha Local microphone e o dispositivo correto. Para Game voice, use uma sessão com voz ativa e confira o mute/push-to-talk do jogo.
-- **Aparece um erro de PowerShell:** provavelmente você está usando um pacote ou launcher antigo. A instalação 0.4.0 inicia pela Steam e não exige liberar scripts.
+- **Aparece um erro de PowerShell:** provavelmente você está usando um pacote ou launcher antigo. A instalação 0.5.0 inicia pela Steam e não exige liberar scripts.
 - **Travadas ou modelo piscando:** anote o que estava acontecendo, o modelo usado e a configuração de neblina. Em F8, crie um relatório de depuração para ajudar a investigar. Não há garantia de FPS igual em todos os modelos ou computadores.
 - **Antivírus bloqueou um arquivo:** não desative a proteção. Confira a origem do download e os resultados de verificação publicados para os hashes exatos. Um resultado sem detecções não é uma garantia absoluta de segurança.
 
@@ -83,10 +95,13 @@ A fonte de voz salva representa a seleção naquele momento; o relatório ainda 
 
 ## Remover o mod
 
-Com o jogo fechado, remova apenas o vulkan-1.dll e os arquivos fornecidos por este pacote. Guarde antes seus VRMs pessoais. As configurações na pasta do usuário permanecem. O mod não substitui o executável nem os arquivos de dados do jogo.
+Com o jogo fechado, remova apenas o dinput8.dll e os arquivos fornecidos por este pacote. Se preservou outro carregador como dinput8.chainload.dll, restaure o nome dinput8.dll somente depois de remover o arquivo deste pacote e confirmar que o destino está livre. No Vortex, desative e limpe a implantação deste pacote primeiro. Guarde antes seus VRMs pessoais. As configurações na pasta do usuário permanecem. O mod não substitui o executável nem os arquivos de dados do jogo.
 
 ## Limites e licenças
 
-A substituição é local ao seu cliente. Duas substituições simultâneas foram verificadas no desktop e no notebook na compilação suportada, mas isso não garante estabilidade nem FPS. Há retornos breves ao personagem nativo, atrasos iniciais e picos de tempo de quadro. Um relatório do notebook não conseguiu coletar as configurações gráficas. Reflexos e iluminação fraca ainda precisam de ajustes. Shaders personalizados do Unity, outlines, animação UV, máscaras adicionais de brilho/rugosidade, MToon completo, ajuste da armadura nativa e lip sync remoto ainda não são suportados integralmente. A prévia do inventário continua sendo local; sobreviventes não devem receber o modelo do jogador.
+A substituição é local ao seu cliente. Cobertura histórica (bootstrap Vulkan, compilação 26404966): duas substituições simultâneas foram verificadas no desktop e no notebook. A implementação da 0.5.0 passou por testes de inicialização Steam, F8, Vortex, EML, dois jogadores, equipamentos, reconexão e desconexão. Os binários da versão receberam novas verificações e comparações; os testes não garantem estabilidade nem FPS. Há retornos breves ao personagem nativo, atrasos iniciais e picos de tempo de quadro. Um relatório do notebook não conseguiu coletar as configurações gráficas. Reflexos e iluminação fraca ainda precisam de ajustes. Shaders personalizados do Unity, outlines, animação UV, máscaras adicionais de brilho/rugosidade, MToon completo, ajuste da armadura nativa e lip sync remoto ainda não são suportados integralmente. A prévia do inventário continua sendo local; sobreviventes não devem receber o modelo do jogador.
 
 O código original usa a licença MIT. O Oculus LipSync e o modelo de exemplo têm termos separados, descritos nos avisos do pacote e nas permissões do VRM. Mod não oficial, sem vínculo ou endosso da Keen Games.
+
+
+O carregador dinput8.dll foi preservado com os mesmos bytes do candidato testado e mantém sua identificação independente 0.4.0-input-test. O pacote e o runtime são 0.5.0; não é necessário manter arquivos de uma instalação antiga. Os relatórios de verificação correspondem aos hashes exatos publicados.

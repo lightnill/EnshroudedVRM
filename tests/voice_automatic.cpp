@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "../src/voice_automatic.hpp"
 #include <windows.h>
 #include <array>

@@ -11,10 +11,10 @@ struct PlayersFixture:Fixture {
         reg(p::serviceLayout::mapCapacityOffset,U(4));reg(p::serviceLayout::mapCountOffset,std::uint32_t(3));
         const char* names[]={"RenderScene","LocalPlayerData","BasicPlayerInfos"};const U pointers[]={address(scene),address(local_player),address(infos)};
         for(unsigned i=0;i<3;++i){U slot=hash(names[i])&3;while((service_bits[slot/8]>>(slot%8))&1)slot=(slot+1)&3;
-            service_bits[slot/8]|=1u<<(slot%8);put(service_keys,slot*4,hash(names[i]));put<std::uint16_t>(service_values,slot*2,i);
+            service_bits[slot/8]|=1u<<(slot%8);put(service_keys,slot*4,hash(names[i]));put<std::uint16_t>(service_values,slot*2,static_cast<std::uint16_t>(i));
             put(services,i*232,text(names[i]));put<U>(services,i*232+8,std::strlen(names[i]));put(services,i*232+160,hash(names[i]));put(services,i*232+168,pointers[i]);put(services,i*232+176,pointers[i]);}
-        for(U system:{game_26404966_fixture::systems,game_26404966_fixture::systems+2*game_26404966_fixture::system_stride})
-            for(U binding:{game_26404966_fixture::normal_bindings,game_26404966_fixture::alternate_bindings})reg(system+binding,address(infos));
+        for(U system:{game_26430625_fixture::systems,game_26430625_fixture::systems+2*game_26430625_fixture::system_stride})
+            for(U binding:{game_26430625_fixture::normal_bindings,game_26430625_fixture::alternate_bindings})reg(system+binding,address(infos));
         player[0]=7;put<std::uint16_t>(player,p::ecsReadLayout::componentOffsets+4,0);put<std::uint16_t>(player,p::ecsReadLayout::componentStrides+4,96);
         for(unsigned i=0;i<count;++i){
             put<std::uint32_t>(infos,i*160,i+1);put<std::uint32_t>(infos,i*160+4,64+i);put<U>(infos,i*160+8,0xf00d0000ULL+i+1);
@@ -107,8 +107,8 @@ int main(int argc,char** argv){try{
     else if(mode=="missing-selector")put<std::uint32_t>(f.local_player,4,0);
     else if(mode=="missing-state")f.player[0]=3;
     else if(mode=="unsupported")f.identity.sha256[0]^=1;
-    else if(mode=="producer")f.image[0x3aeab9]^=1;
-    else if(mode=="service-binding")f.reg(game_26404966_fixture::systems+game_26404966_fixture::normal_bindings,address(f.local_player));
+    else if(mode=="producer")f.image[0x3aeb99]^=1;
+    else if(mode=="service-binding")f.reg(game_26430625_fixture::systems+game_26430625_fixture::normal_bindings,address(f.local_player));
     else if(mode=="guard-account"||mode=="guard-connection"||mode=="guard-generation"||mode=="guard-handle"){
         if(mode=="guard-account")f.infos[168]^=1;else if(mode=="guard-connection")f.infos[164]^=64;else if(mode=="guard-generation")f.entities[84]^=1;else f.player_storage[1600]^=1;
         need(!evrm::revalidate_native_owner(f.memory,b,why,limits)&&b.guards.empty(),"mutable association escaped submission guard");

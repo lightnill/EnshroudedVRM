@@ -1,16 +1,17 @@
 """Performance contracts and correctness; no flaky elapsed-time thresholds."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes, hashlib, os, shutil, subprocess, tempfile, unittest
 
 class PerformanceContracts(unittest.TestCase):
     def native(self,name,sources=(),flags=()):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if not compiler or os.name!='nt':self.skipTest('Windows native compiler required')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
         root=Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-performance-',ignore_cleanup_errors=True) as folder:
             binary=Path(folder)/(name+'.exe')
-            result=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests'/(name+'.cpp')),
+            result=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(root/'tests'/(name+'.cpp')),
                 *[str(root/'src'/s) for s in sources],*flags,'-o',str(binary)],capture_output=True,text=True,timeout=180)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             result=subprocess.run([str(binary),folder],capture_output=True,text=True,timeout=60)

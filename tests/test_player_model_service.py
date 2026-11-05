@@ -1,21 +1,22 @@
 """Actual worker/selection/settings behavior using owned models and files."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import os,shutil,subprocess,tempfile,unittest,ctypes
 class PlayerModelServiceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if os.name!='nt' or not compiler:raise unittest.SkipTest('Windows compiler required')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
         cls.root=Path(__file__).resolve().parents[1];cls.folder=tempfile.TemporaryDirectory(prefix='evrm-player-models-',ignore_cleanup_errors=True);cls.addClassCleanup(cls.folder.cleanup);cls.exe=Path(cls.folder.name)/'player-models.exe'
         sources=[];flags=[]
         if (cls.root/'src/avatar_player_types.hpp').exists():
-            sources=['player_assignments.cpp','avatar_model.cpp','avatar_settings.cpp','vrm_asset.cpp','retarget.cpp','native_avatar_pose.cpp','native_skinning.cpp','native_material_plan.cpp','mouth_deformation.cpp'];flags=['-DEVRM_PLAYER_SAVE_FIXTURE','-municode','-lole32','-luuid','-lbcrypt']
+            sources=['player_assignments.cpp','avatar_model.cpp','avatar_settings.cpp','vrm_asset.cpp','retarget.cpp','native_avatar_pose.cpp','native_skinning.cpp','native_material_plan.cpp','mouth_deformation.cpp'];flags=['-DEVRM_PLAYER_SAVE_FIXTURE','-municode','-lole32','-luuid','-lbcrypt','-luser32']
         cls.report_headers=os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if cls.report_headers:
             sources.extend(('debug_report_sources.cpp','debug_report_policy.cpp','native_body_coverage.cpp'))
             flags.extend(('-DEVRM_PLAYER_REPORT_PRIVACY','-I'+cls.report_headers,'-ladvapi32'))
-        built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(cls.root/'tests/player_model_service.cpp'),*[str(cls.root/'src'/name) for name in sources],*flags,'-o',str(cls.exe)],capture_output=True,text=True,timeout=240)
+        built=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(cls.root/'tests/player_model_service.cpp'),*[str(cls.root/'src'/name) for name in sources],*flags,'-o',str(cls.exe)],capture_output=True,text=True,timeout=240)
         if built.returncode:raise RuntimeError(built.stdout+built.stderr)
     def run_case(self,mode):
         with tempfile.TemporaryDirectory(prefix='evrm-player-model-state-',ignore_cleanup_errors=True) as folder:

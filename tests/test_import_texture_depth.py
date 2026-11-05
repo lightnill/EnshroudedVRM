@@ -1,4 +1,5 @@
 """Real PNG/GLB decode, no game, GPU, microphone, DLL loading or file dialogs."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes
 import os
@@ -12,7 +13,7 @@ import zlib
 class ImportTextureDepthTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if not compiler:raise unittest.SkipTest('explicit native C++ compiler required')
         if os.name=='nt':ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
         cls.temporary=tempfile.TemporaryDirectory(prefix='evrm-texture-depth-',ignore_cleanup_errors=True)
@@ -23,7 +24,7 @@ class ImportTextureDepthTests(unittest.TestCase):
         def chunk(kind,payload):return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload))
         cls.wide_png.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',8193,1,8,6,0,0,0))+
                                 chunk(b'IDAT',zlib.compress(b'\0'+b'\x11\x22\x33\xff'*8193))+chunk(b'IEND',b''))
-        built=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',
+        built=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',
                               '-include',str(root/'tests/texture_alloc_hooks.hpp'),
                               '-DSTBI_MALLOC=texture_fixture_malloc','-DSTBI_REALLOC=texture_fixture_realloc','-DSTBI_FREE=texture_fixture_free',
                               str(root/'tests/import_texture_depth.cpp'),

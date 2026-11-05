@@ -1,3 +1,4 @@
+#include "native_fixture_compat.hpp"
 #include "../src/retarget.hpp"
 #include <cmath>
 #include <cstdlib>
@@ -8,12 +9,12 @@
 #include <stdexcept>
 
 namespace {bool count_allocations=false;std::size_t allocations=0,allocation_bytes=0;}
-[[gnu::noinline]] void* operator new(std::size_t size){if(count_allocations){++allocations;allocation_bytes+=size;}if(auto* p=std::malloc(size?size:1))return p;throw std::bad_alloc();}
-[[gnu::noinline]] void* operator new[](std::size_t size){return ::operator new(size);}
-[[gnu::noinline]] void operator delete(void* p)noexcept{std::free(p);}
-[[gnu::noinline]] void operator delete[](void* p)noexcept{std::free(p);}
-[[gnu::noinline]] void operator delete(void* p,std::size_t)noexcept{std::free(p);}
-[[gnu::noinline]] void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void* operator new(std::size_t size){if(count_allocations){++allocations;allocation_bytes+=size;}if(auto* p=std::malloc(size?size:1))return p;throw std::bad_alloc();}
+EVRM_FIXTURE_NOINLINE void* operator new[](std::size_t size){return ::operator new(size);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
 
 using M=vrm::Matrix;
 const M identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};

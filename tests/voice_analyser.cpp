@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -44,13 +45,16 @@ std::uint64_t cpu_time(){FILETIME creation{},exit{},kernel{},user{};
 }
 }
 int main(){
+    // Keep the many independent, long-lived analyser states off the fixture's
+    // main-thread stack. MSVC reserves less default stack than the GCC fixture.
+
     const auto legacy_profiles=evrm::default_voice_profiles();
-    evrm::VoiceAnalysisTuning tuning;evrm::VoiceVowelAnalyser quiet;
+    evrm::VoiceAnalysisTuning tuning;auto quiet_storage=std::make_unique<evrm::VoiceVowelAnalyser>();auto& quiet=*quiet_storage;
     evrm::VoicePcmBlock blank;blank.epoch=1;
     for(unsigned n=0;n<30;++n){blank.sequence=n;blank.timestamp_us=(n+1)*10000;const auto out=quiet.consume(blank,tuning);
         need(out.epoch==blank.epoch&&out.timestamp_us==blank.timestamp_us,"analysis lost source metadata");
         need(total(out)==0&&out.activity!=evrm::VoiceActivity::Talking,"silence animated the mouth");}
-    for(unsigned label=0;label<5;++label){auto audio=vowel(label);evrm::VoiceVowelAnalyser analyser(&legacy_profiles);evrm::MouthSnapshot out;
+    for(unsigned label=0;label<5;++label){auto audio=vowel(label);auto analyser_storage=std::make_unique<evrm::VoiceVowelAnalyser>(&legacy_profiles);auto& analyser=*analyser_storage;evrm::MouthSnapshot out;
         bool early=false;
         for(unsigned n=0;n<audio.size();++n){out=analyser.consume(audio[n],tuning);total(out);if(n<10&&total(out)>.005)early=true;}
         std::printf("synthetic vowel %u dominant=%u total=%.3f\n",label,dominant(out),total(out));
@@ -58,7 +62,7 @@ int main(){
         need(total(out)>.4&&out.activity==evrm::VoiceActivity::Talking,"voiced input stayed neutral");
         need(dominant(out)==label,"synthetic vowel channel confused or swapped");
     }
-    auto audio=vowel(0);evrm::VoiceVowelAnalyser analyser(&legacy_profiles);evrm::MouthSnapshot out;
+    auto audio=vowel(0);auto analyser_storage=std::make_unique<evrm::VoiceVowelAnalyser>(&legacy_profiles);auto& analyser=*analyser_storage;evrm::MouthSnapshot out;
     // Classification ambiguity must not average incompatible authored poses
     // back into a closed mouth. Voice level controls amount; the selected vowel
     // controls pose, with temporal crossfade preserving bounded weights.
@@ -66,7 +70,7 @@ int main(){
     for(const auto& block:audio)reference_feature=reference.consume(block.samples);
     evrm::VoiceProfiles ambiguous;ambiguous.count=5;
     for(unsigned n=0;n<5;++n){ambiguous.data[n].vowel=std::uint8_t(n);ambiguous.data[n].mfcc=reference_feature.mfcc;}
-    evrm::VoiceVowelAnalyser uncertain(&ambiguous);
+    auto uncertain_storage=std::make_unique<evrm::VoiceVowelAnalyser>(&ambiguous);auto& uncertain=*uncertain_storage;
     for(const auto& block:audio)out=uncertain.consume(block,{1,20});
     vrm::Vertex mouth_vertex;mouth_vertex.normal={0,0,1};vrm::MouthDeltaRecord shape;
     shape.position[0][1]=-.01f;for(unsigned n=1;n<5;++n)shape.position[n][1]=.0025f;
@@ -86,7 +90,7 @@ int main(){
     changed.timestamp_us=4200000;changed.samples.back()=std::numeric_limits<float>::quiet_NaN();
     need(total(analyser.consume(changed,tuning))==0,"invalid sample retained old mouth weights");
 
-    evrm::VoiceVowelAnalyser noise;evrm::VoiceFeatureExtractor noise_features;std::uint32_t seed=0x12345678;
+    auto noise_storage=std::make_unique<evrm::VoiceVowelAnalyser>();auto& noise=*noise_storage;evrm::VoiceFeatureExtractor noise_features;std::uint32_t seed=0x12345678;
     double minimum_flatness=1,maximum_flatness=0;
     for(unsigned n=0;n<100;++n){evrm::VoicePcmBlock block;block.epoch=1;block.sequence=n;block.timestamp_us=(n+1)*10000;
         for(auto& sample:block.samples){seed=seed*1664525u+1013904223u;sample=float((double(seed>>8)/16777216*2-1)*.2);}
@@ -95,7 +99,7 @@ int main(){
         out=noise.consume(block,{});total(out);}
     std::printf("synthetic white noise flatness=%.3f..%.3f mouth=%.3f\n",minimum_flatness,maximum_flatness,total(out));
     need(total(out)<.01&&out.activity!=evrm::VoiceActivity::Talking,"wide-band noise drove sustained speech weights");
-    evrm::VoiceVowelAnalyser low_volume(&legacy_profiles);
+    auto low_volume_storage=std::make_unique<evrm::VoiceVowelAnalyser>(&legacy_profiles);auto& low_volume=*low_volume_storage;
     double tail_mean=0,tail_square=0;
     for(std::size_t n=audio.size()-4;n<audio.size();++n)for(float value:audio[n].samples)tail_mean+=value;
     tail_mean/=1920;
@@ -110,18 +114,18 @@ int main(){
     for(auto block:audio){for(auto& sample:block.samples)sample*=quiet_scale;out=low_volume.consume(block,tuning);}
     need(total(out)>.02,"higher sensitivity did not admit quiet voice");
     evrm::VoiceProfiles invalid;invalid.count=1;invalid.data[0].mfcc[0]=std::numeric_limits<double>::infinity();
-    evrm::VoiceVowelAnalyser fallback(&invalid);tuning.sensitivity=std::numeric_limits<float>::quiet_NaN();tuning.smoothing_ms=0;
+    auto fallback_storage=std::make_unique<evrm::VoiceVowelAnalyser>(&invalid);auto& fallback=*fallback_storage;tuning.sensitivity=std::numeric_limits<float>::quiet_NaN();tuning.smoothing_ms=0;
     for(const auto& block:audio)out=fallback.consume(block,tuning);
     total(out);need(fallback.diagnostics().valid&&fallback.diagnostics().activation>.4,"invalid optional profiles/tuning broke gate defaults");
 
-    evrm::VoiceVowelAnalyser benchmark;evrm::VoiceClock clock;constexpr unsigned frames=2500;
+    auto benchmark_storage=std::make_unique<evrm::VoiceVowelAnalyser>();auto& benchmark=*benchmark_storage;evrm::VoiceClock clock;constexpr unsigned frames=2500;
     const auto cpu_start=cpu_time(),start=clock.ticks();
     for(unsigned n=0;n<frames;++n){auto& block=audio[n%audio.size()];block.epoch=7;block.sequence=n;block.timestamp_us=(n+1)*10000;benchmark.consume(block,{});}
     const auto elapsed=evrm::counter_duration_ns(start,clock.ticks(),clock.frequency()),cpu=cpu_time()-cpu_start;
     const double cpu_ms_per_second=double(cpu)*.0001/(frames*.01);
     std::printf("synthetic active analysis cpu-ms/audio-second=%.3f wall-ns/block=%.1f (not gameplay)\n",cpu_ms_per_second,double(elapsed)/frames);
     need(cpu_ms_per_second<=20,"isolated active analysis exceeds initial one-core budget");
-    evrm::VoiceVowelAnalyser silent_benchmark;const auto silent_cpu=cpu_time(),silent_start=clock.ticks();
+    auto silent_benchmark_storage=std::make_unique<evrm::VoiceVowelAnalyser>();auto& silent_benchmark=*silent_benchmark_storage;const auto silent_cpu=cpu_time(),silent_start=clock.ticks();
     for(unsigned n=0;n<frames;++n){blank.epoch=7;blank.sequence=n;blank.timestamp_us=(n+1)*10000;silent_benchmark.consume(blank,{});}
     const auto silent_elapsed=evrm::counter_duration_ns(silent_start,clock.ticks(),clock.frequency());
     const double silent_cpu_ms=double(cpu_time()-silent_cpu)*.0001/(frames*.01);

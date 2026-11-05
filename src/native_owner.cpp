@@ -255,9 +255,9 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate,bool 
     const char* ui_services[]={"BasicPlayerInfos","CharacterPresetRegistry","LocalPlayerData","g38_items::ItemRegistry","G38UiPlayData"};
     struct System {U descriptor,function;const char* name;const char* const* names;unsigned reads,writes,ordinal,owner;};
     const System contracts[]={
-        {0x1dfe7e0,0x3891e0,"render_equipment_models_ag2",equipment_services,5,1,5,0},
-        {0x1dfe0f0,0x388c20,"local_player_hide",hide_services,2,0,1,1},
-        {0x1dfe340,0x388d80,"local_player_ui_render_setup",ui_services,4,1,2,1}};
+        {0x1dfe7e0,0x3892c0,"render_equipment_models_ag2",equipment_services,5,1,5,0},
+        {0x1dfe0f0,0x388d00,"local_player_hide",hide_services,2,0,1,1},
+        {0x1dfe340,0x388e60,"local_player_ui_render_setup",ui_services,4,1,2,1}};
     for(const auto& contract:contracts){const U descriptor=add(image.image.base,contract.descriptor),function=add(image.image.base,contract.function);
         need(image.inside(descriptor,0xC0)&&image.code(function),"system metadata/function outside pinned image");const auto desc=m.span(descriptor,0xC0);
         need(image.text(get<U>(desc,0),get<U>(desc,8),128,true)==contract.name&&get<U>(desc,16)==function,"original system full name/function mismatch");
@@ -269,7 +269,7 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate,bool 
     for(unsigned i=0;i<3;++i){const auto& contract=contracts[i];const U row=system_rows[i];need(row,"original owner system missing");need(m.scalar(add(row,0x28))==add(image.image.base,contract.function),"system function mismatch");
         need(m.scalar<std::uint8_t>(add(row,s::systemNormalCountOffset))==contract.reads+contract.writes&&m.scalar<std::uint8_t>(add(row,s::systemAlternateCountOffset))==contract.reads+contract.writes,"system service counts mismatch");
         for(U bindings:{s::systemNormalBindingsOffset,s::systemAlternateBindingsOffset})need(m.scalar(add(row,bindings+contract.ordinal*8))==resolved[contract.owner],"original owner service binding mismatch");}
-    constexpr std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};const U predicate_address=add(image.image.base,0x3bb660);need(image.code(predicate_address),"local predicate outside code");
+    constexpr std::uint8_t predicate[]={0x39,0x4a,0x04,0x0f,0x94,0xc0,0xc3};const U predicate_address=add(image.image.base,0x3bb740);need(image.code(predicate_address),"local predicate outside code");
     const auto code=m.span(predicate_address,sizeof predicate);need(std::memcmp(code.data(),predicate,sizeof predicate)==0,"original local predicate mismatch");
     candidate.render_scene=resolved[0];candidate.local_player_data=resolved[1];
     if(players){
@@ -293,7 +293,7 @@ void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& h
     auto wrapper=m.span(add(c.writer,8),12);U owner=get<U>(wrapper,0);auto index=get<std::uint32_t>(wrapper,8);need(index<=65535&&range(owner,0x290),"current writer resource wrapper invalid");
     U table=m.scalar(add(owner,0x268)),count=m.scalar(add(owner,0x270)),dims=m.scalar(add(owner,0x280)),dimension_count=m.scalar(add(owner,0x288));need(count&&count<=65535&&dimension_count==count&&index<count&&range(table,count*8)&&range(dims,count*16),"resource table dimensions/bounds mismatch");
     U device=m.scalar(add(owner,8));need(range(device,0x280),"resource GPU device invalid");U interface=m.scalar(add(device,0x278));need(range(interface,8),"GPU backend interface invalid");U vtable=m.scalar(interface);need(image.inside(add(image.image.base,0x1dc6cf0),0x68)&&vtable==add(image.image.base,0x1dc6cf0),"GPU backend vtable mismatch");
-    U thunk=m.scalar(add(vtable,0x60));need(thunk==add(image.image.base,0xfd30b0)&&image.code(thunk),"GPU buffer constructor thunk mismatch");c.resource_object=m.scalar(add(table,U(index)*8));auto dimension=m.span(add(dims,U(index)*16),16),prefix=m.span(c.resource_object,32);U size=get<U>(prefix,8),buffer=get<U>(prefix,24);auto usage=get<std::uint32_t>(prefix,16);
+    U thunk=m.scalar(add(vtable,0x60));need(thunk==add(image.image.base,0xfd3190)&&image.code(thunk),"GPU buffer constructor thunk mismatch");c.resource_object=m.scalar(add(table,U(index)*8));auto dimension=m.span(add(dims,U(index)*16),16),prefix=m.span(c.resource_object,32);U size=get<U>(prefix,8),buffer=get<U>(prefix,24);auto usage=get<std::uint32_t>(prefix,16);
     need(get<std::uint32_t>(prefix,0)==0x50001,"native buffer object tag mismatch");need(size==total&&size==get<U>(dimension,0)&&usage==0x13&&usage==get<std::uint32_t>(dimension,8),"native buffer size/usage mismatch");need(buffer,"native buffer is zero");c.native_buffer=buffer;c.native_buffer_bytes=size;
 }
 void models_and_buffer(Reader& m,Image& image,const Bytes& equipment,NativeOwnerCandidate& c){

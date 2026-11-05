@@ -231,7 +231,7 @@ NativeAvatarPose make_native_avatar_pose(const vrm::Avatar& avatar,const vrm::Re
                             double dot=0;for(int c=0;c<3;++c)dot+=tangent[c]*(normal[c]/length);
                             for(int c=0;c<3;++c)tangent[c]-=dot*(normal[c]/length);
                             const auto tangent_length=std::hypot(tangent[0],tangent[1],tangent[2]);
-                            std::fill(std::begin(side.tangent),std::end(side.tangent),0);
+                            std::fill(std::begin(side.tangent),std::end(side.tangent),0.f);
                             if(sign!=0&&std::isfinite(tangent_length)&&tangent_length>0){
                                 for(int c=0;c<3;++c)side.tangent[c]=output_float(tangent[c]/tangent_length);
                                 const double det=transform[0]*(transform[5]*transform[10]-transform[9]*transform[6])-

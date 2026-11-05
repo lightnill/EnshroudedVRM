@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "../src/native_player_commit.hpp"
 #include <algorithm>
 #include <array>

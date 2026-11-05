@@ -1,3 +1,4 @@
+#include "native_fixture_compat.hpp"
 #include "../src/native_owner.hpp"
 #include "../src/native_owner_profile.hpp"
 #include <algorithm>
@@ -8,12 +9,12 @@
 #include <new>
 
 static std::atomic<std::size_t> allocated{0};
-__attribute__((noinline)) void* operator new(std::size_t n){if(void* p=std::malloc(n?n:1)){++allocated;return p;}throw std::bad_alloc();}
+EVRM_FIXTURE_NOINLINE void* operator new(std::size_t n){if(void* p=std::malloc(n?n:1)){++allocated;return p;}throw std::bad_alloc();}
 void* operator new[](std::size_t n){return ::operator new(n);}
-__attribute__((noinline)) void operator delete(void* p)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete[](void* p)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete(void* p,std::size_t)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAILED: %s at %d\n",#x,__LINE__);return 1;}}while(false)
 namespace {
 constexpr std::size_t count=6500,width=52,stride=64;
@@ -41,7 +42,7 @@ evrm::NativeOwnerCandidate fixture(){
     evrm::NativeOwnerCandidate c;c.image.base=0x140000000ULL;c.image.size=evrm::native_owner_profile::image_size;
     c.image.timestamp=evrm::native_owner_profile::image_timestamp;
     std::copy(std::begin(evrm::native_owner_profile::image_sha256),std::end(evrm::native_owner_profile::image_sha256),c.image.sha256.begin());
-    c.entity=c.entity_id=c.native_buffer=1;c.native_buffer_bytes=1024;c.models.push_back({1,2,3,4,5});
+    c.entity=1;c.entity_id=1;c.native_buffer=1;c.native_buffer_bytes=1024;c.models.push_back({1,2,3,4,5});
     std::vector<evrm::NativeOwnerGuard> guards;guards.reserve(count);
     for(std::size_t i=0;i<count;++i)guards.push_back({0x10000+i*stride,std::vector<std::uint8_t>(width,42),evrm::NativeOwnerObservationPhase::census});
     c.guards=std::move(guards);return c;

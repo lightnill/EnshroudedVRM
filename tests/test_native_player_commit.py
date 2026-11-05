@@ -1,4 +1,5 @@
 """CPU-only contract and compiled shader checks for common player admission."""
+from native_fixture_compiler import default_compiler, run_compiler
 import ctypes
 import os
 from pathlib import Path
@@ -14,7 +15,7 @@ SOURCE = Path(__file__).resolve().parents[1]
 class NativePlayerCommitTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        cls.compiler = default_compiler()
         cls.headers = os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         cls.dxc = os.environ.get('EVRM_SHADER_COMPILER') or shutil.which('dxc')
         cls.validator = os.environ.get('EVRM_SPIRV_VALIDATOR') or shutil.which('spirv-val')
@@ -22,7 +23,7 @@ class NativePlayerCommitTests(unittest.TestCase):
                 or not (Path(cls.headers) / 'vulkan/vulkan.h').is_file()
                 or any(not tool or not shutil.which(tool)
                        for tool in (cls.compiler, cls.dxc, cls.validator))):
-            raise unittest.SkipTest('Windows GCC, explicit Vulkan headers, DXC and spirv-val required')
+            raise unittest.SkipTest('Windows MSVC 14.44, explicit Vulkan headers, DXC and spirv-val required')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode() | 0x8003)
 
     def test_owned_vulkan_commands_lifetime_and_common_permits(self):
@@ -31,7 +32,7 @@ class NativePlayerCommitTests(unittest.TestCase):
             command = [self.compiler, '-std=c++17', '-O2', '-static', '-Wall', '-Wextra', '-Werror', '-pedantic',
                        '-I' + self.headers, str(SOURCE / 'tests/native_player_commit.cpp'),
                        str(SOURCE / 'src/native_player_commit.cpp'), '-o', str(output)]
-            built = subprocess.run(command, capture_output=True, text=True, timeout=120)
+            built = run_compiler(command, capture_output=True, text=True, timeout=120)
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
             shader = Path(folder) / 'native_player_commit.comp.spv'
             compiled = subprocess.run([self.dxc, '-spirv', '-fspv-target-env=vulkan1.1', '-WX',

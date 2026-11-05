@@ -3,6 +3,7 @@
 #include <windows.h>
 #include "../src/standalone_startup.hpp"
 #include "../src/standalone_settings.hpp"
+#include "../src/standalone_files.hpp"
 #include "../src/standalone_package_members.hpp"
 #include "../src/native_owner_profile.hpp"
 #include "../src/sha256.hpp"
@@ -69,7 +70,7 @@ static int diagnostic_tests(const fs::path& root,const std::wstring& mode) {
 }
 static int context_tests(const fs::path& root) {
     auto input=package(root);const auto trusted=proof();
-    CHECK(std::size(standalone_package_members)>=35);
+    static_assert(std::size(standalone_package_members)>=35,"complete standalone package contract");
     auto value=evaluate_runtime_startup(input,&trusted);CHECK(value.ready());CHECK(value.owner.sha256==trusted.sha256);
     CHECK(value.state_directory==input.user_data_directory/L"EnshroudedVRM/State");
     CHECK(value.avatars_directory==input.executable_path.parent_path()/L"EnshroudedVRM/Avatars");
@@ -93,7 +94,29 @@ static int context_tests(const fs::path& root) {
     const auto member=mod/L"Compatibility/profile.json";const auto original_member=bytes(member);
     put(member,"mutated");CHECK(!evaluate_runtime_startup(input,&trusted).ready());put(member,original_member);
     fs::remove(member);CHECK(!evaluate_runtime_startup(input,&trusted).ready());put(member,original_member);
-    const auto link=root/L"linked-profile.json";fs::create_hard_link(member,link);CHECK(!evaluate_runtime_startup(input,&trusted).ready());fs::remove(link);
+    const auto link=root/L"linked-profile.json";fs::create_hard_link(member,link);
+    value=evaluate_runtime_startup(input,&trusted);CHECK(value.ready());
+    const auto linked_write=CreateFileW(link.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,0,nullptr);
+    CHECK(linked_write==INVALID_HANDLE_VALUE);
+    bool unique_refused=false;try{detail::StandaloneFile unique(link);}catch(...){unique_refused=true;}CHECK(unique_refused);
+    value={};put(link,"changed through staging alias");CHECK(!evaluate_runtime_startup(input,&trusted).ready());
+    put(link,original_member);fs::remove(link);
+    // A real hardlink deployment gives every immutable package member, plus
+    // its manifest, a staging alias. All aliases must stay unwritable during
+    // the retained validation lease.
+    const auto staging=root/L"owned-staging";fs::create_directories(staging);
+    std::vector<fs::path> aliases;
+    for(const auto name:standalone_package_members) {
+        auto alias=staging/std::to_wstring(aliases.size());fs::create_hard_link(input.executable_path.parent_path()/fs::u8path(name),alias);aliases.push_back(alias);
+    }
+    const auto manifest_alias=staging/L"manifest";fs::create_hard_link(manifest,manifest_alias);aliases.push_back(manifest_alias);
+    value=evaluate_runtime_startup(input,&trusted);CHECK(value.ready());CHECK(value.verified_files==std::size(standalone_package_members));
+    for(const auto& alias:aliases) {
+        const auto write=CreateFileW(alias.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,0,nullptr);
+        CHECK(write==INVALID_HANDLE_VALUE);
+    }
+    value={};put(manifest_alias,"invalid manifest through staging");CHECK(!evaluate_runtime_startup(input,&trusted).ready());put(manifest_alias,original);
+    for(const auto& alias:aliases)fs::remove(alias);
     for(const auto bad_path:{"../outside.json","EnshroudedVRM/State/private.json","EnshroudedVRM/Runtime/../bad.json","enshrouded.exe","EnshroudedVRM/Avatars/private.vrm","EnshroudedVRM/Runtime/runtime.dll:stream"}) {
         auto bad=json;bad["files"][0]["path"]=bad_path;put(manifest,bad.dump());CHECK(!evaluate_runtime_startup(input,&trusted).ready());
     }
@@ -147,7 +170,19 @@ static int readonly_tests(const fs::path& root) {
 }
 int wmain(int argc,wchar_t** argv) {
     SetErrorMode(GetErrorMode()|0x8003);if(argc!=3)return 2;
-    try {const auto mode=std::wstring(argv[2]);if(mode==L"context")return context_tests(argv[1]);if(mode==L"migration")return migration_tests(argv[1]);if(mode==L"readonly")return readonly_tests(argv[1]);if(mode.rfind(L"diagnostic-",0)==0)return diagnostic_tests(argv[1],mode);}
+    try {
+        const auto mode=std::wstring(argv[2]);
+        if(mode==L"prepare-reparse"){package(argv[1]);return 0;}
+        if(mode==L"check-reparse") {
+            const fs::path root=argv[1];RuntimeStartupInput input;
+            input.executable_path=root/L"game/enshrouded.exe";
+            input.module_path=root/L"game/EnshroudedVRM/Runtime/enshrouded_vrm_runtime.dll";
+            input.user_data_directory=root/L"private";const auto trusted=proof();
+            CHECK(!evaluate_runtime_startup(input,&trusted).ready());CHECK(!fs::exists(input.user_data_directory));
+            std::cout<<"package reparse parent declined without creating state\n";return 0;
+        }
+        if(mode==L"context")return context_tests(argv[1]);if(mode==L"migration")return migration_tests(argv[1]);if(mode==L"readonly")return readonly_tests(argv[1]);if(mode.rfind(L"diagnostic-",0)==0)return diagnostic_tests(argv[1],mode);
+    }
     catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 3;}
     return 4;
 }

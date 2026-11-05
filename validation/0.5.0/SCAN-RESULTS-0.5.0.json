@@ -1,0 +1,125 @@
+{
+  "schema": "enshrouded-vrm-release-scans-v1",
+  "version": "0.5.0",
+  "files": {
+    "playerArchive": {
+      "sha256": "4a47adfeb5c0709fba778d831416ca7a34e2dd894eb1efb4cf5e277c1c9fe900",
+      "analysisDate": "2026-11-05T01:34:26Z",
+      "retrievedAt": "2026-11-05T01:36:56.953241+00:00",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 66,
+        "harmless": 0,
+        "timeout": 2,
+        "confirmed-timeout": 0,
+        "failure": 0,
+        "type-unsupported": 7
+      },
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "timeout",
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "reportUrl": "https://www.virustotal.com/gui/file/4a47adfeb5c0709fba778d831416ca7a34e2dd894eb1efb4cf5e277c1c9fe900",
+      "detections": []
+    },
+    "dinput8.dll": {
+      "sha256": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386",
+      "analysisDate": "2026-11-04T21:05:23Z",
+      "retrievedAt": "2026-11-05T01:28:46.442911+00:00",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 56,
+        "harmless": 0,
+        "timeout": 13,
+        "confirmed-timeout": 1,
+        "failure": 1,
+        "type-unsupported": 4
+      },
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "confirmed-timeout",
+          "failure",
+          "timeout",
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "reportUrl": "https://www.virustotal.com/gui/file/0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386",
+      "detections": []
+    },
+    "runtime": {
+      "sha256": "529158d6fe2897192a7719bb0764415273efd5310a97607015e2c1116d3ec551",
+      "analysisDate": "2026-11-05T01:08:08+00:00",
+      "retrievedAt": "2026-11-05T01:11:27.353508+00:00",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 71,
+        "harmless": 0,
+        "timeout": 0,
+        "confirmed-timeout": 0,
+        "failure": 0,
+        "type-unsupported": 4
+      },
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "reportUrl": "https://www.virustotal.com/gui/file/529158d6fe2897192a7719bb0764415273efd5310a97607015e2c1116d3ec551",
+      "detections": []
+    },
+    "OVRLipSync.dll": {
+      "sha256": "f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "analysisDate": "2026-11-04T14:13:32Z",
+      "retrievedAt": "2026-11-05T01:01:46.962902+00:00",
+      "stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 55,
+        "harmless": 0,
+        "timeout": 14,
+        "confirmed-timeout": 1,
+        "failure": 1,
+        "type-unsupported": 4
+      },
+      "coverage": {
+        "engines": 75,
+        "categories": [
+          "confirmed-timeout",
+          "failure",
+          "timeout",
+          "type-unsupported",
+          "undetected"
+        ]
+      },
+      "reportUrl": "https://www.virustotal.com/gui/file/f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7",
+      "detections": []
+    }
+  },
+  "retainedLoader": {
+    "sha256": "0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386",
+    "resourceVersion": "0.4.0-input-test",
+    "rebuiltTwiceToExactAcceptedBytes": true
+  },
+  "bitdefender": {
+    "exactFileScans": 53,
+    "remainingIssues": 0,
+    "unscannedObjects": 0,
+    "scope": "Final ZIP and each of its 52 extracted members; no exclusions or quarantine/deletion actions."
+  },
+  "limitations": [
+    "VirusTotal warned that this archive exceeds its 3 MB / single-contained-file inner-file inspection limit. Archive results do not establish individual coverage of every member.",
+    "All three shipped DLLs have individual exact-hash reports. Timed-out, failed and unsupported engines are coverage gaps, not passing detections.",
+    "Zero detections do not guarantee safety; engine timeouts, failures and unsupported file types remain coverage gaps."
+  ]
+}

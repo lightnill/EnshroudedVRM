@@ -1,3 +1,4 @@
+#include "native_fixture_compat.hpp"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -8,7 +9,7 @@
 using U=std::uintptr_t;using Function=U(*)(U,U,U);
 unsigned native_calls=0,observed_calls=0;U caller=0;
 U original(U a,U b,U c){++native_calls;return a+3*b+7*c;}
-U observed(U a,U b,U c){++observed_calls;caller=reinterpret_cast<U>(__builtin_extract_return_addr(__builtin_return_address(0)));return original(a,b,c);}
+U observed(U a,U b,U c){++observed_calls;caller=reinterpret_cast<U>(EVRM_FIXTURE_RETURN_ADDRESS());return original(a,b,c);}
 void require(bool v,const char* why){if(!v)throw std::runtime_error(why);}
 int main(){try{
     auto* page=static_cast<unsigned char*>(VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));require(page,"owned code allocation failed");

@@ -8,6 +8,11 @@ struct VoicePcmBlock {
     std::uint64_t epoch=0,sequence=0,timestamp_us=0;
 };
 // Multiple bounded producers, exactly one consumer. No sample pointer is kept.
+#if defined(_MSC_VER)
+#pragma warning(push)
+// Padding is intentional: producer and consumer counters occupy separate cache lines.
+#pragma warning(disable:4324)
+#endif
 class VoiceBlockQueue {
 public:
     static constexpr std::size_t capacity=16;
@@ -22,6 +27,9 @@ private:
     alignas(64) std::uint64_t tail_=0;
     std::atomic<std::uint64_t> dropped_{0};
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 enum class VoiceActivity:std::uint8_t {Off,Waiting,Talking,Quiet,UnsupportedSource};
 struct MouthSnapshot {
     vrm::MouthWeights weights{};

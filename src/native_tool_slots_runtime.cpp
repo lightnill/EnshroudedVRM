@@ -241,7 +241,16 @@ bool test_install_native_tool_slots(const NativeToolSlotTarget&t,std::shared_ptr
 }
 void test_clear_native_tool_slots()noexcept {clear_locked(&test_owner);}
 void test_invoke_native_tool_slot_success(void*a)noexcept {success_callback(a);}
-void test_with_native_tool_snapshot_lock(void(*task)(void*),void* context){std::_Sp_locker lock(&snapshot);task(context);}
+void test_with_native_tool_snapshot_lock(void(*task)(void*),void* context){
+ // Deliberately hold the implementation's real C++17 shared_ptr atomic lock.
+ // This seam proves that the native callback does not wait for that lock.
+#ifdef _MSC_VER
+ std::_Shared_ptr_spin_lock lock;
+#else
+ std::_Sp_locker lock(&snapshot);
+#endif
+ task(context);
+}
 void test_observe_native_tool_slot_writes(void(*observer)(U,std::size_t))noexcept {write_observer=observer;}
 #endif
 }

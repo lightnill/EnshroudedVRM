@@ -24,10 +24,10 @@ static void run(T& cache,PlayersFixture& f,const std::string& mode){
  if(mode=="header")put<std::uint32_t>(f.entities,80,9);
  if(mode=="local-header")put<std::uint32_t>(f.entities,16,9);
  if(mode=="local-pointer")put<U>(f.table,actor_slot(f,1)*8,1);
- if(mode=="probe-bound"){std::fill(f.occupancy.begin(),f.occupancy.end(),255);std::fill(f.keys.begin(),f.keys.end(),255);}
+ if(mode=="probe-bound"){std::fill(f.occupancy.begin(),f.occupancy.end(),std::uint8_t(255));std::fill(f.keys.begin(),f.keys.end(),std::uint8_t(255));}
  if(mode=="absent-corrupt-third"){absent_actor(f,2);put<std::uint32_t>(f.entities,144,9);}
  if(mode=="pointer")put<U>(f.table,actor_slot(f,2)*8,1);
- if(mode=="capacity")put<U>(f.execution,game_26404966_fixture::entity_manager_offset+p::ecsReadLayout::entityManagerCount,3);
+ if(mode=="capacity")put<U>(f.execution,game_26430625_fixture::entity_manager_offset+p::ecsReadLayout::entityManagerCount,3);
  if(mode=="stride")put<std::uint16_t>(remote_layout,p::ecsReadLayout::componentStrides+2,787);
  if(mode=="component")remote_layout[0]=3;
  if(mode=="missing-input")remote_layout[0]=6;

@@ -1,4 +1,5 @@
 """Native menu/settings/input fixtures; no game, microphone or global input."""
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import shutil
@@ -10,9 +11,9 @@ from native_voice_fixture import stage_voice_library
 
 class ModMenuTests(unittest.TestCase):
     def run_native(self, name, sources, flags=()):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler or os.name != 'nt':
-            self.skipTest('Windows x64 GCC required')
+            self.skipTest('Windows x64 MSVC 14.44 required')
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-menu-', ignore_cleanup_errors=True) as folder:
             if 'voice_analyser.cpp' in sources:
@@ -26,6 +27,8 @@ class ModMenuTests(unittest.TestCase):
                 command.append('-I' + os.environ['EVRM_VULKAN_INCLUDE_DIRECTORY'])
             if name in ('mod_menu_gpu', 'mod_overlay', 'mod_overlay_faults'):
                 command.append('-I' + str(root / 'vendor/imgui'))
+                command.extend([str(root / 'src/debug_report_gpu.cpp'),
+                                str(root / 'tests/report_service_fixture.cpp')])
             if name in ('mod_menu', 'avatar_menu', 'mod_menu_gpu', 'mod_overlay', 'mod_overlay_faults'):
                 upstream_sources = ['imgui.cpp', 'imgui_draw.cpp', 'imgui_widgets.cpp', 'imgui_tables.cpp']
                 if name in ('mod_menu_gpu', 'mod_overlay', 'mod_overlay_faults'):
@@ -35,13 +38,13 @@ class ModMenuTests(unittest.TestCase):
                     build_flags = ['-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES', '-I' + str(root / 'vendor/imgui')]
                     if name in ('mod_menu_gpu', 'mod_overlay', 'mod_overlay_faults'):
                         build_flags += ['-I' + os.environ['EVRM_VULKAN_INCLUDE_DIRECTORY']]
-                    built = subprocess.run([compiler, '-std=c++17', '-O2', '-c', *build_flags, str(root / 'vendor/imgui' / upstream),
+                    built = run_compiler([compiler, '-std=c++17', '-O2', '-c', *build_flags, str(root / 'vendor/imgui' / upstream),
                                             '-o', str(obj)], capture_output=True, text=True, timeout=90)
                     self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
                     command.append(str(obj))
             if name in ('mod_settings', 'mod_settings_service', 'mod_menu_gpu'):
                 command.append('-municode')
-            result = subprocess.run(command + list(flags) + ['-o', str(binary)], capture_output=True, text=True, timeout=180)
+            result = run_compiler(command + list(flags) + ['-o', str(binary)], capture_output=True, text=True, timeout=180)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             if name == 'mod_overlay_faults':
                 for scenario in ('reset', 'font', 'recovery'):

@@ -1,4 +1,5 @@
 """Production graphics lifecycle checks with fake callbacks; no GPU or game."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes
 import os
@@ -11,10 +12,10 @@ import unittest
 class GraphicsLifecycleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        cls.compiler = default_compiler()
         cls.headers = os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         if os.name != 'nt' or not cls.compiler or not cls.headers:
-            raise unittest.SkipTest('Windows GCC and explicit Vulkan headers required')
+            raise unittest.SkipTest('Windows MSVC 14.44 and explicit Vulkan headers required')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode() | 0x8003)
         cls.root = Path(__file__).resolve().parents[1]
 
@@ -56,14 +57,14 @@ class GraphicsLifecycleTests(unittest.TestCase):
                 for upstream in ('imgui.cpp', 'imgui_draw.cpp', 'imgui_widgets.cpp', 'imgui_tables.cpp',
                                  'backends/imgui_impl_vulkan.cpp'):
                     obj = Path(folder) / (Path(upstream).stem + '.o')
-                    built = subprocess.run([self.compiler, '-std=c++17', '-O2', '-c',
+                    built = run_compiler([self.compiler, '-std=c++17', '-O2', '-c',
                                             '-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES',
                                             '-I' + self.headers, '-I' + str(imgui_root),
                                             str(imgui_root / upstream), '-o', str(obj)],
                                            capture_output=True, text=True, timeout=90)
                     self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
                     command.append(str(obj))
-            built = subprocess.run(command + ['-o', str(binary)],
+            built = run_compiler(command + ['-o', str(binary)],
                                    capture_output=True, text=True, timeout=180)
             self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
             for scenario in scenarios:

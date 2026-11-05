@@ -11,10 +11,10 @@ struct PlayersFixture:Fixture {
         reg(p::serviceLayout::mapCapacityOffset,U(4));reg(p::serviceLayout::mapCountOffset,std::uint32_t(3));
         const char* names[]={"RenderScene","LocalPlayerData","BasicPlayerInfos"};const U pointers[]={address(scene),address(local_player),address(infos)};
         for(unsigned i=0;i<3;++i){U slot=hash(names[i])&3;while((service_bits[slot/8]>>(slot%8))&1)slot=(slot+1)&3;
-            service_bits[slot/8]|=1u<<(slot%8);put(service_keys,slot*4,hash(names[i]));put<std::uint16_t>(service_values,slot*2,i);
+            service_bits[slot/8]|=1u<<(slot%8);put(service_keys,slot*4,hash(names[i]));put<std::uint16_t>(service_values,slot*2,static_cast<std::uint16_t>(i));
             put(services,i*232,text(names[i]));put<U>(services,i*232+8,std::strlen(names[i]));put(services,i*232+160,hash(names[i]));put(services,i*232+168,pointers[i]);put(services,i*232+176,pointers[i]);}
-        for(U system:{game_26404966_fixture::systems,game_26404966_fixture::systems+2*game_26404966_fixture::system_stride})
-            for(U binding:{game_26404966_fixture::normal_bindings,game_26404966_fixture::alternate_bindings})reg(system+binding,address(infos));
+        for(U system:{game_26430625_fixture::systems,game_26430625_fixture::systems+2*game_26430625_fixture::system_stride})
+            for(U binding:{game_26430625_fixture::normal_bindings,game_26430625_fixture::alternate_bindings})reg(system+binding,address(infos));
         player[0]=7;put<std::uint16_t>(player,p::ecsReadLayout::componentOffsets+4,0);put<std::uint16_t>(player,p::ecsReadLayout::componentStrides+4,96);
         for(unsigned i=0;i<count;++i){
             put<std::uint32_t>(infos,i*160,i+1);put<std::uint32_t>(infos,i*160+4,64+i);put<U>(infos,i*160+8,0xf00d0000ULL+i+1);

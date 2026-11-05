@@ -29,9 +29,9 @@ int main(int argc,char** argv){try{
         else if(mode=="missing-equipment")f.player[0]=1;
         else if(mode=="header")put<std::uint32_t>(f.entities,16,99);
         else if(mode=="binding")f.reg(p::serviceLayout::systemsOffset+p::serviceLayout::systemStride+p::serviceLayout::systemNormalBindingsOffset+8,address(f.scene));
-        else if(mode=="predicate")f.image[0x3bb660]^=1;
+        else if(mode=="predicate")f.image[0x3bb740]^=1;
         else if(mode=="service-alias")put(f.services,232+176,address(f.scene));
-        else if(mode=="empty")std::fill(f.occupancy.begin(),f.occupancy.end(),0);
+        else if(mode=="empty")std::fill(f.occupancy.begin(),f.occupancy.end(),std::uint8_t(0));
         else if(mode=="missing-key")put<std::uint32_t>(f.local_player,4,100000);
         else if(mode=="racing"){f.memory.mutate_on=address(f.local_player)+4;f.memory.mutation=f.local_player.data()+4;}
         else need(false,"unknown selector scenario");

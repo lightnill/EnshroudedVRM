@@ -6,14 +6,15 @@
 #include "../src/local_voice_observation.hpp"
 #include "../src/debug_report_log.hpp"
 #include "game_26320373_fixture.hpp"
+#include "game_26404966_fixture.hpp"
 
 int main(int argc,char** argv){try{
     SetErrorMode(GetErrorMode()|0x8003);need(argc==2,"scenario required");const std::string mode=argv[1];
-    namespace game=game_26404966_fixture;
+    namespace game=game_26430625_fixture;
     if(mode=="report"){
-        const auto valid=evrm::debug_report_safe_event("preview-ownership.sample stage=1 path-mask=0 group-0=72878");
-        need(valid.find("group-0=72878")!=std::string::npos,"new last code ordinal was dropped from private report");
-        need(evrm::debug_report_safe_event("preview-ownership.sample stage=1 path-mask=0 group-0=72879").empty(),"out-of-table ordinal entered report");
+        const auto valid=evrm::debug_report_safe_event("preview-ownership.sample stage=1 path-mask=0 group-0=72885");
+        need(valid.find("group-0=72885")!=std::string::npos,"new last code ordinal was dropped from private report");
+        need(evrm::debug_report_safe_event("preview-ownership.sample stage=1 path-mask=0 group-0=72886").empty(),"out-of-table ordinal entered report");
         need(evrm::debug_report_safe_event("preview-ownership.sample stage=1 path-mask=0 group-0=0x140000000").empty(),"raw code address entered report");
     }else if(mode=="voice"){
         evrm::VoiceSourceIdentity source;source.file_sha256=game::image_sha256;
@@ -24,8 +25,8 @@ int main(int argc,char** argv){try{
         source.encoder_call={{0xe8,0x9f,0xab,0xc6,0xff}};
         need(!evrm::local_voice_identity_supported(source),"previous voice call admitted");
         source.encoder_call={{0xe8,0xbf,0xab,0xc6,0xff}};
-        source.file_sha256=game_26320373_fixture::image_sha256;source.timestamp=game_26320373_fixture::image_timestamp;
-        source.image_bytes=static_cast<std::uint32_t>(game_26320373_fixture::image_size);
+        source.file_sha256=game_26404966_fixture::image_sha256;source.timestamp=game_26404966_fixture::image_timestamp;
+        source.image_bytes=static_cast<std::uint32_t>(game_26404966_fixture::image_size);
         need(!evrm::local_voice_identity_supported(source),"previous voice image admitted");
     }else{
         Fixture f;evrm::NativeOwnerCandidate owner;std::string why;evrm::NativeOwnerLimits limits;limits.max_milliseconds=40;
@@ -38,8 +39,8 @@ int main(int argc,char** argv){try{
                 f.reg(game::systems+0x1b10,std::uint8_t(6));
             }
             if(mode=="old-image"){
-                f.identity.size=game_26320373_fixture::image_size;f.identity.timestamp=game_26320373_fixture::image_timestamp;
-                f.identity.sha256=game_26320373_fixture::image_sha256;
+                f.identity.size=game_26404966_fixture::image_size;f.identity.timestamp=game_26404966_fixture::image_timestamp;
+                f.identity.sha256=game_26404966_fixture::image_sha256;
                 put(f.image,136,f.identity.timestamp);put<std::uint32_t>(f.image,208,static_cast<std::uint32_t>(f.identity.size));
                 put<std::uint32_t>(f.image,224,static_cast<std::uint32_t>(f.identity.size));
             }
@@ -95,11 +96,11 @@ int main(int argc,char** argv){try{
             need(seen.subject==NativePreviewSubject::other&&!seen.local(),"new survivor preview acquired local identity");
             f.client[game::client_slot+0x8d0]=0;calls.request(request,app,source,88,f.identity.base+game_26320373_fixture::inventory_return);consume();
             need(!seen.local(),"old game caller acquired new game authority");
-            for(const U other:{0xbf14efULL,0xc0dfe1ULL,0xc47418ULL,0xc6cd89ULL,0xc70e45ULL}){
+            for(const U other:{0xbf15cfULL,0xc0e0c1ULL,0xc474f8ULL,0xc6ce69ULL,0xc70f25ULL}){
                 f.client[game::client_slot+0x8d0]=0;calls.request(request,app,source,88,f.identity.base+other);consume();
                 need(seen.subject==NativePreviewSubject::other&&!seen.local(),"noninventory producer acquired local identity");
             }
         }else need(false,"unknown scenario");
     }
-    std::printf("PASS game26404966 %s\n",mode.c_str());return 0;
-}catch(const std::exception& e){std::fprintf(stderr,"FAIL game26404966: %s\n",e.what());return 1;}}
+    std::printf("PASS game26430625 %s\n",mode.c_str());return 0;
+}catch(const std::exception& e){std::fprintf(stderr,"FAIL game26430625: %s\n",e.what());return 1;}}

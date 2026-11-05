@@ -1,4 +1,5 @@
 """Exercise neighbouring hair sections using synthetic skinned strips only."""
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import shutil
@@ -9,13 +10,13 @@ import unittest
 
 class SpringCohesionTests(unittest.TestCase):
     def test_shared_hair_motion(self):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler:
-            self.skipTest('Set EVRM_TEST_COMPILER to a local x64 GCC compiler')
+            self.skipTest('Set EVRM_TEST_COMPILER to a pinned x64 MSVC 14.44 compiler')
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-spring-cohesion-') as folder:
             binary = Path(folder) / 'spring_cohesion.exe'
-            build = subprocess.run([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
+            build = run_compiler([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                                     '-static', str(root / 'tests/spring_cohesion.cpp'),
                                     str(root / 'src/spring_bones.cpp'), '-o', str(binary)],
                                    capture_output=True, text=True, timeout=120)

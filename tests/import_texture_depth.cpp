@@ -1,3 +1,4 @@
+#include "native_fixture_compat.hpp"
 // Whole-GLB import checks; encoded 16-bit input reaches the real image decoder.
 #include "../src/vrm_asset.hpp"
 #include "avatar_fixture.hpp"
@@ -55,13 +56,13 @@ void* texture_fixture_realloc(void* pointer,std::size_t bytes){
     return replacement;
 }
 void texture_fixture_free(void* pointer){allocation_control::forget(pointer);std::free(pointer);}
-[[gnu::noinline]] void* operator new(std::size_t bytes){
+EVRM_FIXTURE_NOINLINE void* operator new(std::size_t bytes){
     if(allocation_control::reject_vector_eight&&bytes==8){allocation_control::reject_vector_eight=false;throw std::bad_alloc();}
     if(auto* pointer=std::malloc(bytes?bytes:1))return pointer;
     throw std::bad_alloc();
 }
-[[gnu::noinline]] void operator delete(void* pointer)noexcept{std::free(pointer);}
-[[gnu::noinline]] void operator delete(void* pointer,std::size_t)noexcept{std::free(pointer);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* pointer)noexcept{std::free(pointer);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* pointer,std::size_t)noexcept{std::free(pointer);}
 namespace {
 void require(bool condition,const std::string& message){if(!condition)throw std::runtime_error(message);}
 std::uint32_t word(const Bytes& data,std::size_t offset){std::uint32_t value;std::memcpy(&value,data.data()+offset,4);return value;}

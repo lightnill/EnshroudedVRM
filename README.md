@@ -1,16 +1,21 @@
-# EnshroudedVRM 0.4.0
-
-**ZIP packaging correction (November 3, 2026):** the current 0.4.0 download uses the fixed release timestamp and Windows archive attributes. All 52 file contents, including every DLL, shader and the sample, are unchanged. A clean laptop install using 7-Zip worked; the original startup cause remains unconfirmed because old files were also removed. Close the game, extract to an empty temporary folder, then copy the complete package beside enshrouded.exe. Preserve personal models/settings and other mods. See validation/0.4.0/archive-metadata-correction.json for provenance and updated checksums.
+# EnshroudedVRM 0.5.0
 
 Play Enshrouded as your VRM avatar. By **lightnill**.
 
 [Português (Brasil): instalação e ajuda](README.pt-BR.md). The player ZIP also includes **LEIA-ME-PT-BR.txt**.
 
-**0.4.0 is still buggy and incomplete.** This is a feature release, not a claim of stability. The shaders are still being refined: reflections, matcaps, transparency and low-light shading can look wrong. **Lip sync/visemes for other players are not implemented.** Brief native-character fallbacks and loading or frame-time spikes can still occur.
+**This mod is still buggy and incomplete.** This is a feature release, not a claim of stability. The shaders are still being refined: reflections, matcaps, transparency and low-light shading can look wrong. **Lip sync/visemes for other players are not implemented.** Brief native-character fallbacks and loading or frame-time spikes can still occur.
 
-Supports Enshrouded Steam build **26404966** only. Keep **0.3.3** for the previous build **26320373**; packages are not interchangeable across game updates.
+Supports Enshrouded Steam build **26430625** only. Older releases remain available for older game builds; packages are not interchangeable across game updates.
 
-## New in 0.4.0
+## New in 0.5.0
+
+- New **dinput8.dll** startup replaces the game-local Vulkan proxy. Launch normally through Steam.
+- One complete ZIP supports **manual installation and Vortex**. An existing input loader can be preserved as **dinput8.chainload.dll**.
+- Coexists with an existing **EML dbghelp.dll** installation. This release starts independently; direct hosting as an EML plugin is not included.
+- Loader, runtime and native tests now use **Visual Studio 2022 / MSVC 14.44**, with improved startup diagnostics and compatibility with Steam build **26430625**.
+
+## Included player and material features
 
 - **Per-player VRMs in F8:** select You or a connected Player N and assign a local model. Other players default to no replacement. Choices are remembered per account on this PC, including across characters and reconnects. Different players can use different VRMs simultaneously.
 - **Broader importer/material support:** standard glTF normal maps and supported VRM0/VRM1 MToon matcap/rim maps and masks, with supported UV transforms and generated tangents. Embedded 16-bit PNGs are decoded into the existing RGBA8 render format. This does not reproduce custom Unity shaders or every possible mask workflow.
@@ -21,22 +26,27 @@ Supports Enshrouded Steam build **26404966** only. Keep **0.3.3** for the previo
 
 ## Install and play
 
-1. Download **EnshroudedVRM-0.4.0.zip** from the [0.4.0 release](https://github.com/lightnill/EnshroudedVRM/releases/tag/v0.4.0). GitHub's Source code archives are for developers, not the player package.
+1. Download **EnshroudedVRM-0.5.0.zip** from Nexus or the GitHub release Assets. Source code archives are for developers.
 2. Close Enshrouded. In Steam, choose **Manage > Browse local files** and find **enshrouded.exe**.
-3. If another mod owns a **vulkan-1.dll** beside the game, stop: do not overwrite, rename or chain it. For an existing EnshroudedVRM installation, replace the complete package with the game closed and preserve your own VRMs.
-4. Extract the ZIP and copy **vulkan-1.dll** and the entire **EnshroudedVRM** folder beside **enshrouded.exe**. Avoid a duplicated folder level. The Portuguese guide at the ZIP root is optional documentation.
+3. Back up your own VRMs and settings. Disable/remove the previous EnshroudedVRM package before installing this one. Remove the old game-local **vulkan-1.dll** only if it is confirmed to belong to EnshroudedVRM. Keep DLLs owned by other mods. This release replaces the complete VRM package; it does not need files from older releases.
+4. If another mod already owns **dinput8.dll**, preserve that file as **dinput8.chainload.dll** in the same game folder before installing 0.5.0. Do not overwrite an existing chainload file or rename an unidentified DLL. Replace an older EnshroudedVRM dinput8.dll directly; do not chain it. Then extract the complete ZIP and copy the new **dinput8.dll** and the entire **EnshroudedVRM** folder beside **enshrouded.exe**. Avoid a duplicated folder level. The Portuguese guide at the ZIP root is optional documentation.
 5. Launch normally through Steam and press **F8** (or **Fn + F8** on some laptops). Choose a player, disable **No model replacement**, and use **Browse...** or the model list. The original character stays visible until the model is ready.
 
 No launcher EXE, batch file, PowerShell startup script, Python, administrator access or separate mod loader is required. Do not use the older script launcher with this package.
 
     Enshrouded/
       enshrouded.exe
-      vulkan-1.dll
+      dinput8.dll
+      dinput8.chainload.dll  (optional: an existing input loader you preserved)
       EnshroudedVRM/
         Runtime/
         Compatibility/
         Avatars/
         release-manifest.json
+
+For Vortex, manage Enshrouded with its game extension installed. Choose **Install From File**, select the complete ZIP, then **Enable** and **Deploy** with the game closed. Verify that dinput8.dll is beside enshrouded.exe. Keep the complete package together, including its notices. Existing EML installations using **dbghelp.dll** can remain in place; the VRM runtime starts through its own input bootstrap in this release. Vortex deployment, EML coexistence and desktop/laptop multiplayer were checked on the implementation used for 0.5.0; see validation/0.5.0 for the release-byte comparisons and check scope.
+
+The optional chain file is loaded once at the supported game's verified startup point. Missing optional input exports use Windows input. An unsupported game or failed chain admission keeps the Windows input path. Deferred chain results, when that startup point is reached, are recorded in **%LOCALAPPDATA%\EnshroudedVRM\State\Logs\input-bootstrap-*.log**. An absent log alone does not identify a failure.
 
 ## Player models and appearance
 
@@ -72,14 +82,17 @@ Screenshots are off for each new report. If enabled, inspect the exact game-imag
 
 ## Current limits and validation
 
-Desktop and laptop checks on the supported game build confirmed world avatars, equipment and simultaneous two-player replacements. Desktop checks also covered F8, inventory/survivor previews, reload and local game-voice lip sync. This is limited manual coverage, not a stability or performance guarantee. Short fallbacks, initial preparation delays and frame spikes remain. The laptop report omitted graphics settings, so those runs are not a matched performance comparison.
+Historical coverage (Vulkan bootstrap, game build 26404966): desktop and laptop checks confirmed world avatars, equipment and simultaneous two-player replacements. Desktop checks also covered F8, inventory/survivor previews, reload and local game-voice lip sync. This is limited manual coverage, not a stability or performance guarantee. Short fallbacks, initial preparation delays and frame spikes remain. The laptop report omitted graphics settings, so those runs are not a matched performance comparison.
 
 Enhanced rendering approximates supported materials in Enshrouded's lighting. Full Unity/MToon rendering, custom shaders, outlines, UV animation, extra gloss/roughness-mask models and remote lip sync remain incomplete or unsupported. Reflective surfaces can remain too bright in dim scenes; some nighttime underlighting also exists on the original character. See [known issues](KNOWN-ISSUES.txt).
 
-The current bootstrap has validated the default **C:\Windows** system-loader location on Windows x64. Other Windows-directory layouts are unsupported; another loader loaded first can bypass it. Unsupported game versions deliberately keep the native path. Do not disable antivirus or compatibility checks to force loading.
+This bootstrap targets the default **C:\Windows** system-input location on Windows x64. Other Windows-directory layouts are unsupported. Its owned tests include system Vulkan loaded before the input bootstrap; the exact release hashes and validation scope are recorded under validation/0.5.0. Unsupported game versions deliberately keep the native path. Do not disable antivirus or compatibility checks to force loading.
 
 ## Remove / developer information
 
-Close the game and remove only this package's vulkan-1.dll and mod files, preserving personal VRMs. User-folder settings remain. The mod does not replace the game's executable/data files.
+Close the game and remove only this package's dinput8.dll and mod files, preserving personal VRMs. If you preserved another loader as dinput8.chainload.dll, restore its original dinput8.dll name only after this package's input DLL is removed and the destination is free. When using Vortex, disable/purge this package before restoring the previous loader. User-folder settings remain. The mod does not replace the game's executable/data files.
 
-See [release notes](RELEASE-NOTES.md), [building](BUILDING.md), [security](SECURITY.md), [notices](THIRD_PARTY_NOTICES.md), and exact-file verification under **validation/0.4.0**. Runtime/release version is **0.4.0**; the retained Microsoft-built bootstrap keeps its independently versioned, previously tested bytes. This unofficial mod is not endorsed by Keen Games.
+See [release notes](RELEASE-NOTES.md), [building](BUILDING.md), [security](SECURITY.md), [notices](THIRD_PARTY_NOTICES.md), and exact-file verification under **validation/0.5.0**. Validation of 0.5.0 distinguishes the tested implementation from the freshly versioned release bytes. The implementation passed desktop/laptop Steam startup, F8, Vortex, EML coexistence, two-player model/equipment, reconnect and disconnect checks. Version-only native comparisons and fresh scans bind the release bytes to that implementation. BuildingTools initialized when chained but disabled its own features on this game build, including when tested without EnshroudedVRM. This unofficial mod is not endorsed by Keen Games.
+
+
+The input loader is retained byte for byte from the tested candidate (SHA-256 0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386). It keeps its independently versioned 0.4.0-input-test resource metadata. The package and runtime are version 0.5.0; no files from an older installation are required. Exact-hash scan reports and coverage gaps accompany this release.

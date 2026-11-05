@@ -43,12 +43,12 @@ VkPipeline make_draw_pipeline(VkDevice device,PFN_vkCreateGraphicsPipelines crea
     for(auto& attachment:attachments)attachment.colorWriteMask=VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|VK_COLOR_COMPONENT_B_BIT|VK_COLOR_COMPONENT_A_BIT;
     VkPipelineColorBlendStateCreateInfo blend{};blend.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;blend.pAttachments=attachments.data();
     const std::array<VkDynamicState,5> states={VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR,VK_DYNAMIC_STATE_STENCIL_REFERENCE,VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK};
-    VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=states.size();dynamic.pDynamicStates=states.data();
+    VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=static_cast<std::uint32_t>(states.size());dynamic.pDynamicStates=states.data();
     const std::array<VkFormat,6> gformats={VK_FORMAT_R8G8B8A8_SRGB,VK_FORMAT_A2B10G10R10_UNORM_PACK32,VK_FORMAT_R8G8B8A8_UINT,VK_FORMAT_R32_UINT,VK_FORMAT_R16G16_SNORM,VK_FORMAT_R8_UNORM};
     const std::array<VkFormat,2> vformats={VK_FORMAT_R32_UINT,VK_FORMAT_R32G32_UINT};
     VkPipelineRenderingCreateInfo rendering{};rendering.sType=VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;rendering.depthAttachmentFormat=VK_FORMAT_D32_SFLOAT;
     VkGraphicsPipelineCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;info.pNext=&rendering;
-    info.stageCount=stages.size();info.pStages=stages.data();info.pVertexInputState=&vertex;info.pInputAssemblyState=&assembly;
+    info.stageCount=static_cast<std::uint32_t>(stages.size());info.pStages=stages.data();info.pVertexInputState=&vertex;info.pInputAssemblyState=&assembly;
     info.pViewportState=&viewport;info.pRasterizationState=&raster;info.pMultisampleState=&multisample;info.pDepthStencilState=&depth;
     info.pColorBlendState=&blend;info.pDynamicState=&dynamic;info.layout=layout;
     stages[1].module=fragment_shader;stages[1].pName=gbuffer?"ps_gbuffer":"ps_visibility";
@@ -137,9 +137,9 @@ NativeShadowDrawPipeline::NativeShadowDrawPipeline(VkDevice device,PFN_vkGetDevi
     VkPipelineDepthStencilStateCreateInfo depth{};depth.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;depth.depthTestEnable=depth.depthWriteEnable=VK_TRUE;depth.depthCompareOp=VK_COMPARE_OP_GREATER;
     VkPipelineColorBlendStateCreateInfo blend{};blend.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     const std::array<VkDynamicState,5> states{{VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR,VK_DYNAMIC_STATE_STENCIL_REFERENCE,VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK}};
-    VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=states.size();dynamic.pDynamicStates=states.data();
+    VkPipelineDynamicStateCreateInfo dynamic{};dynamic.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;dynamic.dynamicStateCount=static_cast<std::uint32_t>(states.size());dynamic.pDynamicStates=states.data();
     VkPipelineRenderingCreateInfo rendering{};rendering.sType=VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;rendering.depthAttachmentFormat=VK_FORMAT_D32_SFLOAT;
-    VkGraphicsPipelineCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;info.pNext=&rendering;info.stageCount=stages.size();info.pStages=stages.data();info.layout=layout;
+    VkGraphicsPipelineCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;info.pNext=&rendering;info.stageCount=static_cast<std::uint32_t>(stages.size());info.pStages=stages.data();info.layout=layout;
     info.pVertexInputState=&vi;info.pInputAssemblyState=&ia;info.pViewportState=&vp;info.pRasterizationState=&raster;info.pMultisampleState=&ms;info.pDepthStencilState=&depth;info.pColorBlendState=&blend;info.pDynamicState=&dynamic;
     if(create(device,VK_NULL_HANDLE,1,&info,nullptr,&impl->pipeline)!=VK_SUCCESS||!impl->pipeline)throw std::runtime_error("Native shadow draw pipeline creation failed");
 }

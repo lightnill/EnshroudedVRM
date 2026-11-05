@@ -1,3 +1,4 @@
+#include "native_fixture_compat.hpp"
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -29,12 +30,12 @@ using NativeSubmitStageScope=BasicNativeSubmitStageScope<>;using NativeSubmitCal
 }
 #endif
 static std::atomic<std::size_t> allocated{0};
-__attribute__((noinline)) void* operator new(std::size_t n){if(void* p=std::malloc(n?n:1)){++allocated;return p;}throw std::bad_alloc();}
+EVRM_FIXTURE_NOINLINE void* operator new(std::size_t n){if(void* p=std::malloc(n?n:1)){++allocated;return p;}throw std::bad_alloc();}
 void* operator new[](std::size_t n){return ::operator new(n);}
-__attribute__((noinline)) void operator delete(void* p)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete[](void* p)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete(void* p,std::size_t)noexcept{std::free(p);}
-__attribute__((noinline)) void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+EVRM_FIXTURE_NOINLINE void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
 namespace {
 using namespace evrm;using Stage=NativeSubmitStage;
 void need(bool value,const char* why){if(!value)throw std::runtime_error(why);}

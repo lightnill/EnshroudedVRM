@@ -37,16 +37,16 @@ Source: https://github.com/KhronosGroup/Vulkan-Headers
 
 ## Statically linked compiler/runtime components
 
-The accepted VRM runtime DLL is built with GCC 16.2.0 from w64devkit. GCC's runtime components are under GPLv3
-with the GCC Runtime Library Exception 3.1; this eligible GCC compilation permits
-the independent project modules to retain MIT terms. The full GPL and exception
-texts are in notices/GPL-3.0.txt and notices/GCC-RUNTIME-EXCEPTION.txt.
+The 0.5.0 loader and VRM runtime are built for x64 with Visual Studio 2022,
+MSVC toolset 14.44.35207 (compiler 19.44.35229.0) and Windows SDK 10.0.28000.0.
+The project uses the static Microsoft C/C++ runtime (/MT). Exact native hashes,
+tool identities and validation results are recorded in the separate build receipt.
 
-MinGW-w64/Winpthreads and other runtime notices are copied unmodified from the
-toolchain in notices/MinGW-w64-runtime.txt; retain all included attributions and
-conditions. notices/LGPL-2.1.txt is included for the Wine header/IDL notice in
-that runtime notice bundle. No compiler binaries, game extraction tool or external
-modding framework binary is included.
+Earlier builds used GCC 16.2.0 from w64devkit. Their retained license texts are
+notices/GPL-3.0.txt, notices/GCC-RUNTIME-EXCEPTION.txt,
+notices/MinGW-w64-runtime.txt and notices/LGPL-2.1.txt. The original attributions
+and conditions remain unmodified. No compiler binaries, game extraction tool or
+external modding framework binary is included.
 
 ## MinHook and Hacker Disassembler Engine
 

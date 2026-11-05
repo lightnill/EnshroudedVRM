@@ -54,7 +54,7 @@ NativePlayerCommit::NativePlayerCommit(VkDevice device,PFN_vkGetDeviceProcAddr g
     COMMIT_FUNCTIONS(LOAD)
 #undef LOAD
     const std::array<VkDescriptorSetLayoutBinding,2> bindings={{{0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}}};
-    VkDescriptorSetLayoutCreateInfo dsl{};dsl.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;dsl.bindingCount=bindings.size();dsl.pBindings=bindings.data();
+    VkDescriptorSetLayoutCreateInfo dsl{};dsl.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;dsl.bindingCount=static_cast<std::uint32_t>(bindings.size());dsl.pBindings=bindings.data();
     checked(p.vkCreateDescriptorSetLayout(device,&dsl,nullptr,&p.dsl),"Player commit descriptor layout");
     const VkPushConstantRange mode={VK_SHADER_STAGE_COMPUTE_BIT,0,4};
     VkPipelineLayoutCreateInfo layout{};layout.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout.setLayoutCount=1;layout.pSetLayouts=&p.dsl;layout.pushConstantRangeCount=1;layout.pPushConstantRanges=&mode;

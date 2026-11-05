@@ -106,7 +106,7 @@ struct TargetFixture final:evrm::NativeOwnerMemory {
         type(0,"keen::ecs::AnimationGraphSlotComponent",1760,0);type(1,"keen::ecs::RenderTransform",176,1760);put(o.entity_layout,std::uint8_t(3));
         put(o.registry+s::systemCountOffset,std::uint16_t(1));const U row=o.registry+s::systemsOffset,descriptor=o.image.base+0x2000,name=o.image.base+0x6000;
         const std::string label="update_animation_graph_slots_2";std::memcpy(reinterpret_cast<void*>(name),label.data(),label.size());
-        put(row,descriptor);put(row+40,o.image.base+0x31c2d0);put(descriptor,name);put(descriptor+8,U(label.size()));put(descriptor+16,o.image.base+0x31c2d0);
+        put(row,descriptor);put(row+40,o.image.base+0x31c3b0);put(descriptor,name);put(descriptor+8,U(label.size()));put(descriptor+16,o.image.base+0x31c3b0);
         o.account=0xabcdef;o.connection=65;o.player_infos=allocate(16*160);o.player_record=o.player_infos+160;
         put(o.player_record,o.entity_id);put(o.player_record+4,o.connection);put(o.player_record+8,o.account);
         const auto*record=reinterpret_cast<const unsigned char*>(o.player_record);o.guards=std::vector<evrm::NativeOwnerGuard>{{o.player_record,{record,record+16}}};

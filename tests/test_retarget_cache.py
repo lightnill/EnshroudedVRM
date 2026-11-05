@@ -1,4 +1,5 @@
 """Compile immutable retarget preparation tests with synthetic rigs only."""
+from native_fixture_compiler import default_compiler, run_compiler
 import os
 from pathlib import Path
 import shutil
@@ -9,9 +10,9 @@ import unittest
 
 class RetargetCacheTests(unittest.TestCase):
     def test_rejected_view_preserves_history(self):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler:
-            self.skipTest('Set EVRM_TEST_COMPILER to a local x64 GCC compiler')
+            self.skipTest('Set EVRM_TEST_COMPILER to a pinned x64 MSVC 14.44 compiler')
         root = Path(__file__).resolve().parents[1]
         renderer = (root / 'src/avatar_renderer.cpp').read_text(encoding='utf-8')
         start = renderer.index('    ViewMotion& motion(')
@@ -20,7 +21,7 @@ class RetargetCacheTests(unittest.TestCase):
             generated = Path(folder)
             (generated / 'renderer_pose_methods.inc').write_text(renderer[start:end], encoding='utf-8')
             binary = generated / 'retarget_views.exe'
-            build = subprocess.run([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
+            build = run_compiler([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                                     '-static', '-I' + str(generated), str(root / 'tests/retarget_views.cpp'),
                                     str(root / 'src/retarget.cpp'), str(root / 'src/vrm_asset.cpp'),
                                     '-o', str(binary)], capture_output=True, text=True, timeout=180)
@@ -30,13 +31,13 @@ class RetargetCacheTests(unittest.TestCase):
             print(run.stdout.strip())
 
     def test_repeated_pose_preparation(self):
-        compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler = default_compiler()
         if not compiler:
-            self.skipTest('Set EVRM_TEST_COMPILER to a local x64 GCC compiler')
+            self.skipTest('Set EVRM_TEST_COMPILER to a pinned x64 MSVC 14.44 compiler')
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='evrm-retarget-cache-') as folder:
             binary = Path(folder) / 'retarget_cache.exe'
-            build = subprocess.run([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
+            build = run_compiler([compiler, '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                                     '-static', str(root / 'tests/retarget_cache.cpp'),
                                     str(root / 'src/retarget.cpp'), str(root / 'src/vrm_asset.cpp'),
                                     '-o', str(binary)], capture_output=True, text=True, timeout=180)

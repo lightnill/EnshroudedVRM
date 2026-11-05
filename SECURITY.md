@@ -1,11 +1,16 @@
-EnshroudedVRM 0.4.0 contains native DLLs, including an unsigned project
-bootstrap named vulkan-1.dll. Its version metadata identifies EnshroudedVRM and
-lightnill. It forwards Vulkan graphics API entry points to the actual system library;
-it is not a redistributed Microsoft DLL. The bootstrap is built with Microsoft
-C++ tools and uses native PE forwarding to C:\Windows\system32\vulkan-1 on this
-release. Nondefault Windows-directory layouts are unsupported. An
-already-loaded system loader can bypass it. No loader-lock resolver, worker,
-entry-point patch or helper process is added.
+EnshroudedVRM 0.5.0 contains unsigned native DLLs. The original project
+bootstrap is named dinput8.dll and its metadata identifies EnshroudedVRM and
+lightnill. It forwards the six input exports to the genuine Windows input DLL,
+or to an explicitly preserved dinput8.chainload.dll after admission. It is not
+a redistributed Microsoft DLL. The supported system provider location is
+C:\Windows\System32\dinput8.dll on Windows x64; other Windows-directory layouts
+are unsupported. Existing EML dbghelp.dll can coexist independently.
+
+The bounded loader arranges this process's Vulkan layer during process attach.
+Optional chaining runs once at the supported game's verified startup call,
+outside the loader lock. The temporary command-line import hook is restored
+before chaining. No bootstrap worker thread or helper process is installed.
+Loader, runtime and native tests use Visual Studio 2022 / MSVC 14.44.
 
 Only current-process discovery is configured. No registry/global environment
 changes, helper process, automatic update, game EXE/asset replacement, recording
@@ -34,4 +39,13 @@ is not a debug-report or package input. Anonymous Player N menu labels are sessi
 labels. No account data, assignments or models are transmitted by this feature.
 Reports retain their existing field allowlist and omit these private fields.
 
-Debug reports reconstruct allowlisted fields, not raw files. In-game map position is permitted when fresh; no real-world location source is queried. Screenshots are off until explicitly requested, previewed and included. Names/chat in the approved image remain visible. No automatic uploads, audio recordings, model transfers or remote-viseme networking are added. Exact-file scan evidence is in validation/0.4.0; unsupported engines and archive inspection limits remain coverage gaps.
+Debug reports reconstruct allowlisted fields, not raw files. In-game map position is permitted when fresh; no real-world location source is queried. Screenshots are off until explicitly requested, previewed and included. Names/chat in the approved image remain visible. No automatic uploads, audio recordings, model transfers or remote-viseme networking are added. Exact-file scan evidence is in validation/0.5.0; unsupported engines and archive inspection limits remain coverage gaps.
+
+The input loader is retained unchanged from the tested candidate, SHA-256
+0ae1e53c29f25c81aadf017fa9ed74550980036823284020d4cbe38114761386.
+Its original version resource remains 0.4.0-input-test; the package and runtime
+are version 0.5.0. A clean rebuild of the retained loader source must reproduce
+that exact hash. Exact-hash VirusTotal reports accompany the release. Timed-out,
+failed and unsupported engines remain coverage gaps. Archive reports do not
+establish that every contained file was inspected by every engine; the native
+DLLs have individual reports and every package member was scanned locally.

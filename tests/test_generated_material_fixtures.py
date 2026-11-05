@@ -1,4 +1,5 @@
 """CPU-only tests. Native benchmark binaries are never executed here."""
+from native_fixture_compiler import default_compiler, run_compiler
 from pathlib import Path
 import ctypes
 import hashlib
@@ -19,14 +20,14 @@ spec.loader.exec_module(generator)
 class GeneratedMaterialFixtureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        compiler=os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
+        compiler=default_compiler()
         if not compiler:raise unittest.SkipTest('C++ compiler required for actual importer verification')
         if os.name=='nt':ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode()|0x8003)
         cls.tmp=tempfile.TemporaryDirectory(prefix='evrm-generated-materials-',ignore_cleanup_errors=True)
         cls.addClassCleanup(cls.tmp.cleanup)
         cls.folder=Path(cls.tmp.name)
         cls.exporter=cls.folder/'fixture-export.exe'
-        result=subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(ROOT/'tests/native_surface_fixture_export.cpp'),str(ROOT/'src/vrm_asset.cpp'),'-o',str(cls.exporter)],capture_output=True,text=True,timeout=180)
+        result=run_compiler([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',str(ROOT/'tests/native_surface_fixture_export.cpp'),str(ROOT/'src/vrm_asset.cpp'),'-o',str(cls.exporter)],capture_output=True,text=True,timeout=180)
         if result.returncode:raise AssertionError(result.stdout+result.stderr)
         cls.manifest=generator.generate(cls.folder/'a')
 

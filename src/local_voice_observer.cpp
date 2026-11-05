@@ -13,10 +13,14 @@
 #include <memory>
 #include <vector>
 #include <cmath>
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#pragma intrinsic(_ReturnAddress)
+#endif
 
 namespace evrm {
 namespace {
-constexpr std::uint32_t encoder_rva=0x719720,call_rva=0xaaeb5c;
+constexpr std::uint32_t encoder_rva=0x719800,call_rva=0xaaec3c;
 struct Handle {
     HANDLE value=INVALID_HANDLE_VALUE;
     ~Handle(){if(value!=INVALID_HANDLE_VALUE)CloseHandle(value);}
@@ -142,7 +146,12 @@ bool source_identity(HMODULE module){
     return disk_anchor(bytes,dos.e_lfanew,nt,encoder_rva,identity.encoder_prologue.data(),identity.encoder_prologue.size())&&
         disk_anchor(bytes,dos.e_lfanew,nt,call_rva,identity.encoder_call.data(),identity.encoder_call.size());
 }
-__attribute__((noinline)) std::int64_t encode_observed(void* encoder,VoiceByteSpan* output,const VoiceFloatSpan* input)noexcept {
+#if defined(_MSC_VER) && defined(_M_X64)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+std::int64_t encode_observed(void* encoder,VoiceByteSpan* output,const VoiceFloatSpan* input)noexcept {
     auto* state=observer.load(std::memory_order_acquire);
     // The trampoline and state are published before this function is reachable.
     const VoiceFrameSink sink{state,
@@ -154,7 +163,13 @@ __attribute__((noinline)) std::int64_t encode_observed(void* encoder,VoiceByteSp
             auto* owner=static_cast<Observer*>(context);auto* worker=owner->worker.load(std::memory_order_acquire);
             if(requested.load(std::memory_order_acquire)&&worker)worker->submit(samples,source,timestamp,token);
         }};
+    // Capture here, in the non-inlined detour, so this is the native encoder's
+    // caller and never the return address of an out-of-line helper.
+#if defined(_MSC_VER) && defined(_M_X64)
+    const auto caller=reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+#else
     const auto caller=reinterpret_cast<std::uintptr_t>(__builtin_extract_return_addr(__builtin_return_address(0)));
+#endif
     const bool known_caller=caller==state->borrowed_return;
     const bool analysis=known_caller&&requested.load(std::memory_order_acquire)&&state->worker.load(std::memory_order_acquire);
     const auto contract=known_caller?VoiceReadContract::BorrowedThroughReturn:VoiceReadContract::UnrecognizedCaller;

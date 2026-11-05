@@ -2,7 +2,7 @@
 
 **Still buggy and incomplete.** Shader quality and stability are below the intended standard. Other players' voice-driven visemes/lip sync are not implemented. This release is named 0.4.0 without a Preview suffix.
 
-For Enshrouded Steam build **26404966**. Version 0.3.3 remains available for build 26320373.
+For Enshrouded Steam build **26430625**. Version 0.3.3 remains available for build 26320373.
 
 ## Features
 

@@ -1,4 +1,7 @@
 #define VK_NO_PROTOTYPES
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "mod_overlay.hpp"
 #include "avatar_runtime.hpp"
 #include "mod_menu_gpu.hpp"

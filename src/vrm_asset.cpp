@@ -7,13 +7,19 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
-#if defined(__GNUC__)
+#if defined(_MSC_VER)
+#pragma warning(push)
+// TinyGLTF's disabled filesystem branches leave unused callback parameters.
+#pragma warning(disable:4100)
+#elif defined(__GNUC__)
 #pragma GCC diagnostic push
 // TinyGLTF's disabled filesystem branches leave unused callback parameters.
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 #include "../vendor/tinygltf/tiny_gltf.h"
-#if defined(__GNUC__)
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
 #include <fstream>
@@ -23,7 +29,11 @@
 #include <set>
 #include <stdexcept>
 #include <tuple>
-#if defined(__GNUC__)
+#if defined(_MSC_VER)
+#pragma warning(push)
+// Canonical MikkTSpace uses an anonymous struct/union; keep its source pinned.
+#pragma warning(disable:4201)
+#elif defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
@@ -31,7 +41,9 @@
 // Kept in this translation unit so importer-only test/consumer drivers retain
 // their existing single-source link contract. Canonical upstream files unedited.
 #include "../vendor/mikktspace/mikktspace.c"
-#if defined(__GNUC__)
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
 

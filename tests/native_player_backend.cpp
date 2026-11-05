@@ -1,4 +1,43 @@
-#include <bits/stdc++.h>
+// Preload the standard library before this fixture exposes private members.
+// GCC's bits/stdc++.h is not a portable standard-library header.
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <exception>
+#include <fstream>
+#include <functional>
+#include <future>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <new>
+#include <numeric>
+#include <optional>
+#include <set>
+#include <shared_mutex>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 #define private public
 #include "../src/native_backend.hpp"
 #undef private
@@ -140,7 +179,7 @@ NativeSources native_sources(evrm::NativeBackend::Impl& b){
  const VkDescriptorBufferInfo source_info{source,0,8192},arena_info{arena,0,65536};std::array<VkWriteDescriptorSet,2> writes{};for(unsigned n=0;n<2;++n){writes[n].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;writes[n].dstSet=set;writes[n].dstBinding=n;writes[n].descriptorCount=1;writes[n].descriptorType=bindings[n].descriptorType;writes[n].pBufferInfo=n?&arena_info:&source_info;}m.descriptors_written(2,writes.data());
  const std::array<unsigned,5> words{0x07230203,0x10000,0,1,0};VkShaderModuleCreateInfo si{};si.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;si.codeSize=20;si.pCode=words.data();m.shader_created(shader_handle,si);
  VkComputePipelineCreateInfo ci{};ci.sType=VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;ci.layout=pl;ci.stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;ci.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;ci.stage.module=shader_handle;ci.stage.pName="main";m.compute_pipelines_created(1,&ci,&pipeline);m.command_begin(cmd);m.pipeline_bound(cmd,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline);m.sets_bound(cmd,VK_PIPELINE_BIND_POINT_COMPUTE,pl,0,1,&set,0,nullptr);
- const auto bound=m.observed_bound(cmd,VK_PIPELINE_BIND_POINT_COMPUTE);NativeSources out{m.observed_buffer_binding(bound,0,0),m.observed_buffer_binding(bound,0,1)};require(m.live(out.instances)&&m.live(out.arena),"fixture native descriptor/source certificates not current");return out;
+ const auto source_bound=m.observed_bound(cmd,VK_PIPELINE_BIND_POINT_COMPUTE);NativeSources out{m.observed_buffer_binding(source_bound,0,0),m.observed_buffer_binding(source_bound,0,1)};require(m.live(out.instances)&&m.live(out.arena),"fixture native descriptor/source certificates not current");return out;
 }
 std::size_t backend_actor_slot(const Fixture&,unsigned);
 void backend_absent_actor(Fixture&,unsigned,bool);
@@ -154,11 +193,11 @@ void submission_cases(){
  fixture_runtime_subjects=std::make_shared<const std::vector<evrm::AvatarSubjectSelection>>(std::vector<evrm::AvatarSubjectSelection>{local,remote});
  owned.memory.reset();const auto capture_started=std::chrono::steady_clock::now();
  auto poses=api->player_pose_owners(b.metadata.buffer_epoch(),{local,remote});require(poses.size()==2&&owner->captures==1,"backend repeated capture for each actor");std::cout<<"METRIC backend-targets=2 roster=3 capture-calls="<<owned.memory.calls<<" capture-bytes="<<owned.memory.bytes<<" capture-ms="<<std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-capture_started).count()<<"\n";
- unsigned serial=20;
+ unsigned publication_serial=20;
  const auto record=[&](bool two=true){
-  auto make=[&](unsigned n){auto x=std::make_shared<evrm::Bundle>(b.context);const auto& choice=n?remote:local;auto p=std::make_shared<evrm::NativeAvatarPublication>();p->subject=choice.subject;p->player_identity=choice.identity;p->assignment_generation=choice.selection->generation;p->asset=choice.model->asset;p->pose_owner=poses[n].owner;p->parts={{n+1,42,0,0}};p->instance_qualifiers=p->parts;p->serial=serial;p->presentation_serial=serial;p->published_milliseconds=GetTickCount64();p->source_instances=0x12340000;p->source_instance_range=8192;p->source_buffer_epoch=b.metadata.buffer_epoch();x->pose=p;x->qualified_parts=p->parts;x->assets=b.player_models.at(choice.subject).assets;x->instances=sources.instances;x->arena=sources.arena;x->gbuf_camera=sources.arena;x->owner=sources.arena;x->sources={sources.instances,sources.arena};x->cpu_owner=poses[n].owner->candidate;x->prepared_owner_hint=std::shared_ptr<const evrm::NativeOwnerCandidate>(poses[n].owner,&poses[n].owner->candidate);x->recorded=x->ended=true;x->visibility_passes=x->gbuffer_passes=x->visibility_draws=x->gbuffer_draws=1;x->visibility_clips=x->gbuffer_clips=1;x->data.permit[3]=1;x->clip_set=handle<VkDescriptorSet>(0x800+n);x->first_pass.extent={1920,1080};x->control=evrm::make_buffer(b.context,sizeof(evrm::NativePrepareControl),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);x->frame=evrm::make_buffer(b.context,sizeof(evrm::NativePreparedFrame),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);require(evrm::make_native_body_mask(x->cpu_owner,p->parts,x->instances,x->body_mask,why),"fixture body mask failed");x->body_bits=evrm::make_buffer(b.context,sizeof(x->body_mask.words),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);return x;};
+  auto make=[&](unsigned n){auto x=std::make_shared<evrm::Bundle>(b.context);const auto& choice=n?remote:local;auto p=std::make_shared<evrm::NativeAvatarPublication>();p->subject=choice.subject;p->player_identity=choice.identity;p->assignment_generation=choice.selection->generation;p->asset=choice.model->asset;p->pose_owner=poses[n].owner;p->parts={{n+1,42,0,0}};p->instance_qualifiers=p->parts;p->serial=publication_serial;p->presentation_serial=publication_serial;p->published_milliseconds=GetTickCount64();p->source_instances=0x12340000;p->source_instance_range=8192;p->source_buffer_epoch=b.metadata.buffer_epoch();x->pose=p;x->qualified_parts=p->parts;x->assets=b.player_models.at(choice.subject).assets;x->instances=sources.instances;x->arena=sources.arena;x->gbuf_camera=sources.arena;x->owner=sources.arena;x->sources={sources.instances,sources.arena};x->cpu_owner=poses[n].owner->candidate;x->prepared_owner_hint=std::shared_ptr<const evrm::NativeOwnerCandidate>(poses[n].owner,&poses[n].owner->candidate);x->recorded=x->ended=true;x->visibility_passes=x->gbuffer_passes=x->visibility_draws=x->gbuffer_draws=1;x->visibility_clips=x->gbuffer_clips=1;x->data.permit[3]=1;x->clip_set=handle<VkDescriptorSet>(0x800+n);x->first_pass.extent={1920,1080};x->control=evrm::make_buffer(b.context,sizeof(evrm::NativePrepareControl),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);x->frame=evrm::make_buffer(b.context,sizeof(evrm::NativePreparedFrame),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);require(evrm::make_native_body_mask(x->cpu_owner,p->parts,x->instances,x->body_mask,why),"fixture body mask failed");x->body_bits=evrm::make_buffer(b.context,sizeof(x->body_mask.words),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);return x;};
   auto a=make(0),z=make(1);auto publication=std::make_shared<evrm::NativeAvatarPublication>(*a->pose);if(two)publication->additional_subjects={z->pose};a->pose=publication;api->publish(queue,0,publication,b.metadata.buffer_epoch());
-  auto& r=b.commands[command];r.eligible=true;r.affected_pass=true;r.ownership_closed=true;r.ownership_window=serial;r.ownership_presentation=serial;r.ownership_sources={sources.instances};require(b.prepare_player_group(r,two?std::vector<std::shared_ptr<evrm::Bundle>>{a,z}:std::vector<std::shared_ptr<evrm::Bundle>>{a}),"fixture group preparation failed");require(*static_cast<unsigned*>(a->body_bits->mapped)==(two?6u:2u),"unassigned third actor entered suppression union");++serial;return a;
+  auto& r=b.commands[command];r.eligible=true;r.affected_pass=true;r.ownership_closed=true;r.ownership_window=publication_serial;r.ownership_presentation=publication_serial;r.ownership_sources={sources.instances};require(b.prepare_player_group(r,two?std::vector<std::shared_ptr<evrm::Bundle>>{a,z}:std::vector<std::shared_ptr<evrm::Bundle>>{a}),"fixture group preparation failed");require(*static_cast<unsigned*>(a->body_bits->mapped)==(two?6u:2u),"unassigned third actor entered suppression union");++publication_serial;return a;
  };
  const auto submit_group=[&](bool expected){const auto root=b.commands.at(command).bundle;VkSubmitInfo info{};info.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;info.commandBufferCount=1;info.pCommandBuffers=&command;require(api->before_submit(queue,1,&info)==VK_SUCCESS,"native submission unexpectedly rejected");require(bool(root->data.permit[0])==expected&&bool(root->subjects[0]->data.permit[0])==expected&&bool(*static_cast<unsigned*>(root->common_gate->mapped))==expected,"CPU subject permits and common clipping disagree");
   require(root->data.config[3]==0.f&&root->subjects[0]->data.config[3]==(expected?1.f:0.f),"remote anchor role escaped final cohort/account admission or changed local mode");
@@ -183,9 +222,9 @@ void submission_cases(){
  const auto submit_single=[&](bool expected){const auto root=b.commands.at(command).bundle;VkSubmitInfo info{};info.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;info.commandBufferCount=1;info.pCommandBuffers=&command;require(root->subjects.empty()&&*static_cast<unsigned*>(root->body_bits->mapped)==2,"unavailable third body entered local suppression union");require(api->before_submit(queue,1,&info)==VK_SUCCESS&&bool(root->data.permit[0])==expected,"partial local submit lost negative/all-active refresh proof");api->submission_result(queue,VK_SUCCESS);api->command_reset(command);};
  for(bool overlap_spawn:{false,true}){
   backend_absent_actor(owned,3,true);b.player_observed_at=GetTickCount64()-251;owned.memory.reset();poses=api->player_pose_owners(b.metadata.buffer_epoch(),{local,remote});require(poses.size()==2,"unassigned absent remote removed ready cohort");
-  auto alone=record(false);const auto before_refresh=owner->captures;backend_absent_actor(owned,3,false);
+  auto alone=record(false);const auto absent_refresh=owner->captures;backend_absent_actor(owned,3,false);
   if(overlap_spawn)put<std::uint32_t>(owned.player_storage,3200,0x01000001);
-  submit_single(!overlap_spawn);require(owner->captures==before_refresh+1,"negative occupancy mutation did not force fresh all-active capture");
+  submit_single(!overlap_spawn);require(owner->captures==absent_refresh+1,"negative occupancy mutation did not force fresh all-active capture");
   require(alone->pose->pose_owner==poses[0].owner,"refresh renewed pose lifetime/selection");
   if(overlap_spawn)put<std::uint32_t>(owned.player_storage,3200,0x01000003);
  }

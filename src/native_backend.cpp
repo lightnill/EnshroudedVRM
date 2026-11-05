@@ -35,6 +35,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <cmath>
 #include <chrono>
@@ -975,7 +976,7 @@ struct NativeBackend::Impl {
             {1,VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},{2,VK_DESCRIPTOR_TYPE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},
             {3,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},
             {4,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_VERTEX_BIT,nullptr},{5,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_VERTEX_BIT,nullptr}}};
-        VkDescriptorSetLayoutCreateInfo set_info{};set_info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;set_info.bindingCount=bindings.size();set_info.pBindings=bindings.data();
+        VkDescriptorSetLayoutCreateInfo set_info{};set_info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;set_info.bindingCount=static_cast<uint32_t>(bindings.size());set_info.pBindings=bindings.data();
         checked(F(vkCreateDescriptorSetLayout)(context.device,&set_info,nullptr,&draw_set),"Native draw set layout");
         std::array<VkDescriptorSetLayoutBinding,71> prep{};
         for(uint32_t i=0;i<prep.size();++i)prep[i]={i,i==0||(i>=6&&i<70)?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
@@ -984,9 +985,9 @@ struct NativeBackend::Impl {
         std::array<VkDescriptorBindingFlags,71> prep_flags{};
         prep_flags[2]=partially_bound?VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT:0;
         VkDescriptorSetLayoutBindingFlagsCreateInfo binding_flags{};binding_flags.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-        binding_flags.bindingCount=prep_flags.size();binding_flags.pBindingFlags=prep_flags.data();
+        binding_flags.bindingCount=static_cast<uint32_t>(prep_flags.size());binding_flags.pBindingFlags=prep_flags.data();
         set_info.pNext=partially_bound?&binding_flags:nullptr;
-        set_info.bindingCount=prep.size();set_info.pBindings=prep.data();checked(F(vkCreateDescriptorSetLayout)(context.device,&set_info,nullptr,&prepare_set),"Native prepare set layout");
+        set_info.bindingCount=static_cast<uint32_t>(prep.size());set_info.pBindings=prep.data();checked(F(vkCreateDescriptorSetLayout)(context.device,&set_info,nullptr,&prepare_set),"Native prepare set layout");
         VkPipelineLayoutCreateInfo layout_info{};layout_info.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout_info.setLayoutCount=1;layout_info.pSetLayouts=&draw_set;
         checked(F(vkCreatePipelineLayout)(context.device,&layout_info,nullptr,&draw_layout),"Native draw layout");layout_info.pSetLayouts=&prepare_set;
         checked(F(vkCreatePipelineLayout)(context.device,&layout_info,nullptr,&prepare_layout),"Native prepare layout");
@@ -1210,10 +1211,11 @@ struct NativeBackend::Impl {
         }
         const auto count=static_cast<uint32_t>(material_count);
         const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,65+2*count+(replacement?1u:0u)},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6+2*count+(replacement?1u:0u)},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,count},{VK_DESCRIPTOR_TYPE_SAMPLER,count}}};
-        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count+1+(replacement?1u:0u);pool.poolSizeCount=sizes.size();pool.pPoolSizes=sizes.data();checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&bundle->pool),"Native bundle pool");
+        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count+1+(replacement?1u:0u);pool.poolSizeCount=static_cast<uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&bundle->pool),"Native bundle pool");
         std::vector<VkDescriptorSetLayout> set_layouts(count+1,draw_set);set_layouts[0]=prepare_set;std::vector<VkDescriptorSet> sets(count+1);
         if(replacement){set_layouts.push_back(clips->private_layout());sets.resize(set_layouts.size());}
-        VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocation.descriptorPool=bundle->pool;allocation.descriptorSetCount=sets.size();allocation.pSetLayouts=set_layouts.data();checked(F(vkAllocateDescriptorSets)(context.device,&allocation,sets.data()),"Native bundle sets");bundle->prepare=sets[0];
+        // Asset staging caps materials at 4096; fallback/prepare/clip add at most 3 sets.
+        VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocation.descriptorPool=bundle->pool;allocation.descriptorSetCount=static_cast<uint32_t>(sets.size());allocation.pSetLayouts=set_layouts.data();checked(F(vkAllocateDescriptorSets)(context.device,&allocation,sets.data()),"Native bundle sets");bundle->prepare=sets[0];
         std::array<VkDescriptorBufferInfo,71> buffers{};buffers[0]={bundle->control->handle,0,sizeof(NativePrepareControl)};buffers[1]=bundle->instances.info;buffers[2]=bundle->culled.info;buffers[3]=bundle->indirect.info;buffers[4]=bundle->counts.info;buffers[5]={bundle->frame->handle,0,bundle->frame->size};
         for(uint32_t i=0;i<64;++i)buffers[6+i]={bundle->arena.info.buffer,i*65536ull<bundle->arena.size?i*65536ull:0,65536};
         // When history is absent this valid alias is dynamically unused. The
@@ -1225,7 +1227,7 @@ struct NativeBackend::Impl {
         // through this write. Native destroy/free hold that same mutex through
         // their driver call, so a stale handle cannot enter a new descriptor.
         if(!sources_current(bundle->sources)){report("source backing changed before descriptor construction");return{};}
-        F(vkUpdateDescriptorSets)(context.device,writes.size(),writes.data(),0,nullptr);
+        F(vkUpdateDescriptorSets)(context.device,static_cast<uint32_t>(writes.size()),writes.data(),0,nullptr);
         if(replacement) {
             bundle->body_bits=make_buffer(context,sizeof(bundle->body_mask.words),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             std::memcpy(bundle->body_bits->mapped,bundle->body_mask.words.data(),sizeof(bundle->body_mask.words));bundle->clip_set=sets.back();
@@ -1234,7 +1236,7 @@ struct NativeBackend::Impl {
             std::array<VkWriteDescriptorSet,2> clip_writes{};
             for(uint32_t i=0;i<2;++i){auto& w=clip_writes[i];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=bundle->clip_set;
                 w.dstBinding=i;w.descriptorCount=1;w.descriptorType=i?VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;w.pBufferInfo=&clip_buffers[i];}
-            F(vkUpdateDescriptorSets)(context.device,clip_writes.size(),clip_writes.data(),0,nullptr);
+            F(vkUpdateDescriptorSets)(context.device,static_cast<uint32_t>(clip_writes.size()),clip_writes.data(),0,nullptr);
         }
         for(uint32_t i=0;i<count;++i) {
             const std::array<VkDescriptorBufferInfo,4> buf={{{bundle->frame->handle,0,sizeof(NativePreparedFrame)},{bundle->materials->handle,stride*i,sizeof(NativeMaterial)},vertex_binding(*bundle),index_binding(*bundle)}};
@@ -1242,7 +1244,7 @@ struct NativeBackend::Impl {
             const std::array<VkDescriptorImageInfo,2> images={{{VK_NULL_HANDLE,sampled.imageView,sampled.imageLayout},{sampled.sampler,VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED}}};
             std::array<VkWriteDescriptorSet,6> draw_writes{};
             for(uint32_t j=0;j<6;++j){auto& w=draw_writes[j];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=sets[i+1];w.dstBinding=j;w.descriptorCount=1;w.descriptorType=j==0||j==3?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:j==1?VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:j==2?VK_DESCRIPTOR_TYPE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;if(j==1||j==2)w.pImageInfo=&images[j-1];else w.pBufferInfo=&buf[j?j-2:0];}
-            F(vkUpdateDescriptorSets)(context.device,draw_writes.size(),draw_writes.data(),0,nullptr);
+            F(vkUpdateDescriptorSets)(context.device,static_cast<uint32_t>(draw_writes.size()),draw_writes.data(),0,nullptr);
         }
         std::vector<VkDescriptorSet> surface_sets(count);
         if(bundle->surface.any())try{surface_sets=make_surface_sets(*bundle,std::vector<VkDescriptorSet>(sets.begin()+1,sets.begin()+1+count),false);}
@@ -1533,7 +1535,7 @@ struct NativeBackend::Impl {
         VkDescriptorSetLayoutCreateInfo set{};set.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;set.bindingCount=1;set.pBindings=&binding;
         checked(function<PFN_vkCreateDescriptorSetLayout>("vkCreateDescriptorSetLayout")(context.device,&set,nullptr,&shadow_set),"Native shadow view set");
         const std::array<VkDescriptorSetLayout,2> sets{{draw_set,shadow_set}};
-        VkPipelineLayoutCreateInfo layout{};layout.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout.setLayoutCount=sets.size();layout.pSetLayouts=sets.data();
+        VkPipelineLayoutCreateInfo layout{};layout.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;layout.setLayoutCount=static_cast<uint32_t>(sets.size());layout.pSetLayouts=sets.data();
         checked(function<PFN_vkCreatePipelineLayout>("vkCreatePipelineLayout")(context.device,&layout,nullptr,&shadow_layout),"Native shadow layout");
         shadow_shaders[0]=shader("avatar_native.shadow.vert.spv");shadow_shaders[1]=shader("avatar_native.shadow.frag.spv");
         shadow_pipeline=std::make_unique<NativeShadowDrawPipeline>(context.device,context.get,shadow_layout,shadow_shaders[0],shadow_shaders[1]);
@@ -1905,7 +1907,8 @@ void NativeBackend::before_rendering(VkCommandBuffer command,const VkRenderingIn
         before.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;before.dstAccessMask=VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_HOST_READ_BIT;
         context.fn<PFN_vkCmdPipelineBarrier>("vkCmdPipelineBarrier")(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_HOST_BIT|(impl->mesh_enabled?VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT:0),0,1,&before,0,nullptr,0,nullptr);
         context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,compute.pipeline.pipeline);
-        context.fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->compute_restore->handle,0,compute.sets.size(),compute.sets.data(),0,nullptr);
+        // NativeState accepts complete bound states with at most 32 descriptor sets.
+        context.fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->compute_restore->handle,0,static_cast<uint32_t>(compute.sets.size()),compute.sets.data(),0,nullptr);
         impl->each_bundle(b,[](Bundle& subject){subject.recorded=true;});
     }catch(const std::exception& e){scope_unsupported(command);try{impl->report(e.what());}catch(...){}}catch(...){scope_unsupported(command);}
 }
@@ -1950,7 +1953,8 @@ void NativeBackend::render_current(VkCommandBuffer command)noexcept {
         if(!r.pass.supported||r.pass.extent.width!=b.first_pass.extent.width||r.pass.extent.height!=b.first_pass.extent.height||r.pass.depth!=b.first_pass.depth||!restore){b.invalid=true;return;}
         if(r.pass.kind==NativePipelineKind::gbuffer&&!b.gbuf_camera)b.gbuf_camera=impl->metadata.buffer_binding(bound,1,16);
         b.graphics_restore.push_back(restore);
-        if(!impl->draw_pipelines->record(command,r.pass.kind==NativePipelineKind::gbuffer,b.calls.data(),b.calls.size(),bound.pipeline.pipeline,restore->handle,bound.sets.size(),bound.sets.data())){b.invalid=true;return;}
+        // The validated material plan caps draws at 4096; NativeState caps sets at 32.
+        if(!impl->draw_pipelines->record(command,r.pass.kind==NativePipelineKind::gbuffer,b.calls.data(),static_cast<uint32_t>(b.calls.size()),bound.pipeline.pipeline,restore->handle,static_cast<uint32_t>(bound.sets.size()),bound.sets.data())){b.invalid=true;return;}
         const auto instance=impl->metadata.buffer_binding(bound,2,4);
         if(!same_binding(b.instances,instance))b.invalid=true;
         b.sources.push_back(instance);

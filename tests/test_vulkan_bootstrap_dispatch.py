@@ -9,22 +9,30 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'portable'))
+from native_compiler import default_compiler, run_compiler
 
 
 class VulkanBootstrapDispatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        directory = os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY')
+        directory = os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY') or str(Path(default_compiler()).parent)
         include = os.environ.get('EVRM_VULKAN_INCLUDE_DIRECTORY')
         approved = os.environ.get('EVRM_APPROVED_BOOTSTRAP_SHA256')
         if os.name != 'nt' or not directory or not include or not approved:
             raise unittest.SkipTest('Microsoft tools, Vulkan headers and exact approved bootstrap hash required')
         ctypes.windll.kernel32.SetErrorMode(ctypes.windll.kernel32.GetErrorMode() | 0x8003)
-        temporary = tempfile.TemporaryDirectory(prefix='evrm-vulkan-dispatch-', ignore_cleanup_errors=True)
-        cls.addClassCleanup(temporary.cleanup)
-        cls.folder = Path(temporary.name)
+        destination = os.environ.get('EVRM_BOOTSTRAP_DISPATCH_DIRECTORY')
+        if destination:
+            cls.folder = Path(destination).resolve()
+            cls.folder.mkdir(parents=True, exist_ok=False)
+        else:
+            temporary = tempfile.TemporaryDirectory(prefix='evrm-vulkan-dispatch-', ignore_cleanup_errors=True)
+            cls.addClassCleanup(temporary.cleanup)
+            cls.folder = Path(temporary.name)
         cls.include, cls.compiler = include, Path(directory)/'cl.exe'
         spec = importlib.util.spec_from_file_location('dispatch_bootstrap_builder', ROOT/'portable/bootstrap/build_bootstrap.py')
         cls.builder = importlib.util.module_from_spec(spec); spec.loader.exec_module(cls.builder)
@@ -43,8 +51,7 @@ class VulkanBootstrapDispatchTests(unittest.TestCase):
                             ('native', ['/DEVRM_CHECK_NATIVE_DORMANT'])]:
             cls.compile([*cls.common, ROOT/'tests/bootstrap_vulkan_dispatch.cpp', *extra,
                          '/Fo'+str(cls.folder/(name+'.obj')), '/Fe'+str(cls.folder/(name+'.exe')), '/link', '/INCREMENTAL:NO'])
-        probe = cls.folder/'probe.cpp'
-        probe.write_text((ROOT/'tests/bootstrap_layer_probe.cpp').read_text().replace('__declspec(dllexport) ', ''))
+        probe = ROOT/'tests/bootstrap_layer_probe.cpp'
         definition = cls.folder/'probe.def'
         definition.write_text('LIBRARY owned_probe_layer\nEXPORTS\n vkGetInstanceProcAddr\n vkGetDeviceProcAddr\n vkNegotiateLoaderLayerInterfaceVersion\n')
         cls.compile([*cls.common, '/LD', probe, '/Fo'+str(cls.folder/'probe.obj'), '/Fe'+str(cls.folder/'probe.dll'),
@@ -52,7 +59,7 @@ class VulkanBootstrapDispatchTests(unittest.TestCase):
 
     @classmethod
     def compile(cls, command):
-        result = subprocess.run(list(map(str, command)), cwd=cls.folder, capture_output=True, text=True, timeout=90)
+        result = run_compiler(list(map(str, command)), cwd=cls.folder, capture_output=True, text=True, timeout=90)
         if result.returncode:
             raise AssertionError(result.stdout+result.stderr)
 

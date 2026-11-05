@@ -1,8 +1,12 @@
 // Inspect the private fence classifier without constructing a GPU renderer.
+#if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsubobject-linkage"
+#endif
 #include "../src/mod_menu_gpu.cpp"
+#if defined(__GNUC__)
 #pragma GCC diagnostic pop
+#endif
 #include <iostream>
 #include <stdexcept>
 namespace { VkResult response=VK_NOT_READY;

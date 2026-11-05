@@ -1,10 +1,10 @@
-EnshroudedVRM 0.4.0 — current bugs and incomplete features
+EnshroudedVRM 0.5.0 — current bugs and incomplete features
 
 This implementation is still buggy and incomplete. It is not at the intended
 quality/stability level. There is no Preview suffix in the release name.
 
-Only Steam game build 26404966 is supported, executable SHA256
-ce6fdba63e27744943b695921383a29133285d359e07671f6ca33a47e2147618.
+Only Steam game build 26430625 is supported, executable SHA256
+5d9ef2f140b8ed49e30dbee655841b89d08baec20f799a1817e171a18a850c77.
 Keep 0.3.3 for old build 26320373. Do not mix files from different releases.
 
 SHADERS / IMPORTER
@@ -49,7 +49,10 @@ Coordinates are inside Enshrouded, never real-world location.
 Approved screenshots may include names/chat. Review before sharing. Do not share
 raw runtime.log, player-model-assignments.json, the installation key or local paths.
 Nothing uploads automatically.
-The retained bootstrap targets the default C:\Windows system Vulkan loader.
-Other Windows-directory layouts are unsupported. Another vulkan-1.dll conflicts;
-an already-loaded system loader may bypass the mod. Do not overwrite other mods'
-DLLs or disable antivirus/compatibility checks to force loading.
+The input bootstrap targets C:\Windows\System32\dinput8.dll on Windows x64.
+Other Windows-directory layouts are unsupported. Preserve another input loader
+as dinput8.chainload.dll before installing; do not chain an older EnshroudedVRM
+loader. Existing EML dbghelp.dll can coexist. Direct EML plugin hosting is not
+implemented. BuildingTools initialized but disabled its own features for this
+game build, including in a test without EnshroudedVRM. Do not overwrite unrelated
+mods or disable antivirus/compatibility checks to force loading.

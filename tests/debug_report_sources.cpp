@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "../src/debug_report_archive.hpp"
 #include "../vendor/tinygltf/json.hpp"
 #include <windows.h>

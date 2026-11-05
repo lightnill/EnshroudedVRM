@@ -4,22 +4,23 @@ import hashlib
 import importlib.util
 import json
 import os
-import shutil
 import tempfile
 import unittest
+import sys
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'portable'))
+from native_compiler import default_compiler
 
 
 class VulkanBootstrapBuildTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = os.environ.get('EVRM_TEST_COMPILER') or shutil.which('g++')
-        cls.bootstrap_compiler = os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY')
-        if os.name != 'nt' or not cls.compiler:
+        cls.compiler = default_compiler()
+        cls.bootstrap_compiler = os.environ.get('EVRM_TEST_BOOTSTRAP_COMPILER_DIRECTORY') or str(Path(cls.compiler).parent)
+        if os.name != 'nt':
             raise unittest.SkipTest('Windows x64 compiler required')
-        if not cls.bootstrap_compiler:
-            raise unittest.SkipTest('Explicit Microsoft bootstrap tool directory required')
         destination = os.environ.get('EVRM_VULKAN_BOOTSTRAP_BUILD_DIRECTORY')
         if destination:
             cls.folder = Path(destination).resolve()
@@ -56,6 +57,17 @@ class VulkanBootstrapBuildTests(unittest.TestCase):
             self.assertEqual(entry.get('forwarder'), target+symbol)
         second = self.builder.build_bootstrap(ROOT, self.folder/'bootstrap-repeat', Path(self.bootstrap_compiler), provider)
         self.assertEqual(first['dll'].read_bytes(), second['dll'].read_bytes())
+        receipt = json.loads((first['dll'].parent/'toolchain.json').read_bytes())
+        self.assertEqual(receipt['toolsetVersion'], '14.44.35207')
+        self.assertEqual(receipt['windowsSdkVersion'], '10.0.28000.0')
+        self.assertEqual(receipt['tools']['cl']['fileVersion'], '19.44.35229.0')
+        for name in ('cl', 'link', 'lib', 'rc'):
+            identity = receipt['tools'][name]
+            self.assertEqual(identity['sha256'], hashlib.sha256(Path(identity['path']).read_bytes()).hexdigest())
+        self.assertEqual(receipt['dllSha256'], hashlib.sha256(first['dll'].read_bytes()).hexdigest())
+        for name, digest in receipt['sourceInputs'].items():
+            self.assertEqual(digest, hashlib.sha256((ROOT/name).read_bytes()).hexdigest())
+        self.assertEqual(receipt['exportInventory'], actual)
         import struct
         data = first['dll'].read_bytes()
         pe = struct.unpack_from('<I', data, 60)[0]
@@ -73,6 +85,19 @@ class VulkanBootstrapBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'inventory differs'):
             self.builder.build_bootstrap(ROOT, self.folder/'wrong-provider', Path(self.compiler).parent,
                                          Path(os.environ['SystemRoot'])/'System32/powrprof.dll')
+
+    def test_matching_metadata_cannot_replace_the_system_reference(self):
+        accepted = json.loads((ROOT/'portable/bootstrap/vulkan-exports.json').read_bytes())
+        with mock.patch.object(self.builder._exports, 'export_inventory', return_value=accepted):
+            with self.assertRaisesRegex(ValueError, 'installed system Vulkan DLL'):
+                self.builder.build_bootstrap(ROOT, self.folder/'non-system-reference', Path(self.bootstrap_compiler),
+                                             self.folder/'owned-not-system.dll')
+
+    def test_rejects_a_non_sdk_resource_compiler(self):
+        with mock.patch.dict(os.environ, {'EVRM_BOOTSTRAP_RESOURCE_COMPILER':str(Path(self.bootstrap_compiler)/'cl.exe')}):
+            with self.assertRaisesRegex(ValueError, 'pinned Windows SDK'):
+                self.builder.build_bootstrap(ROOT, self.folder/'wrong-resource-tool', Path(self.bootstrap_compiler),
+                                             self.builder.system_provider())
 
 
 if __name__ == '__main__':

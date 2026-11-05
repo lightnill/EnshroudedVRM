@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #define VK_NO_PROTOTYPES
 #include "../src/native_oit_draw.hpp"
 #include <algorithm>

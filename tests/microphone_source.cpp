@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "../src/microphone_source.hpp"
 #include <windows.h>
 #include <atomic>

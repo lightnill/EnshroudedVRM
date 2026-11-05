@@ -6,8 +6,12 @@
 #include <array>
 #include "native_visual_slot_write.hpp"
 
-#if !defined(__x86_64__) || !defined(__GNUC__)
-#error "This bounded copy requires the Windows64 GNU/SEH toolchain."
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <emmintrin.h>
+#include <intrin.h>
+#pragma intrinsic(_ReadWriteBarrier)
+#elif !defined(__x86_64__) || !defined(__GNUC__)
+#error "This bounded copy requires a Windows x64 MSVC or GNU/SEH toolchain."
 #endif
 
 // This filter belongs only to the leaf copy's scope table. It never registers
@@ -20,6 +24,40 @@ extern "C" int evrm_visual_slot_copy_filter(EXCEPTION_POINTERS* info,void*) noex
 }
 extern "C" bool evrm_visual_slot_copy_leaf(void*,const void*,std::size_t) noexcept;
 
+#if defined(_MSC_VER) && defined(_M_X64)
+// Keep all source loads before any destination store, including when a later
+// source page faults. The compiler barriers preserve that order under /O2;
+// x64 SSE2 loads/stores keep the existing instruction baseline and byte layout.
+extern "C" __declspec(noinline) bool evrm_visual_slot_copy_leaf(void* destination,const void* source,std::size_t bytes) noexcept {
+ __try {
+  const auto* input=static_cast<const __m128i*>(source);
+  auto* output=static_cast<__m128i*>(destination);
+  const auto first=_mm_loadu_si128(input);
+  const auto second=_mm_loadu_si128(input+1);
+  const auto third=_mm_loadu_si128(input+2);
+  if(bytes==48){
+   _ReadWriteBarrier();
+   _mm_storeu_si128(output,first);
+   _mm_storeu_si128(output+1,second);
+   _mm_storeu_si128(output+2,third);
+  }else{
+   const auto fourth=_mm_loadu_si128(input+3);
+   const auto fifth=_mm_loadu_si128(input+4);
+   const auto sixth=_mm_loadu_si128(input+5);
+   _ReadWriteBarrier();
+   _mm_storeu_si128(output+3,fourth);
+   _mm_storeu_si128(output+4,fifth);
+   _mm_storeu_si128(output+5,sixth);
+   _mm_storeu_si128(output,first);
+   _mm_storeu_si128(output+1,second);
+   _mm_storeu_si128(output+2,third);
+  }
+  return true;
+ } __except(evrm_visual_slot_copy_filter(GetExceptionInformation(),nullptr)) {
+  return false;
+ }
+}
+#else
 // Fixed-size leaf, Windows64 ABI: RCX destination, RDX source, R8 byte count.
 // Only volatile registers are used; there are no calls, stack changes or C++
 // objects to unwind. Read the full source before writing. Windows' ordinary
@@ -44,6 +82,7 @@ asm(
  ".rva .Levrm_copy_begin, .Levrm_copy_end, evrm_visual_slot_copy_filter, .Levrm_copy_fault\n"
  ".text\n.seh_endproc\n"
 );
+#endif
 
 namespace evrm {
 bool write_native_visual_slot_data(std::uint64_t destination,const float* source,std::size_t bytes) noexcept {

@@ -18,7 +18,8 @@ inline const char* runtime_hook_name(RuntimeHookKind kind)noexcept {
 }
 struct RuntimeHookRow {std::uint64_t samples=0,total_ns=0,max_ns=0;};
 class RuntimeHookTiming {
-    struct Bucket {std::mutex mutex;RuntimeHookRow row;};
+    struct Bucket {std::mutex mutex;RuntimeHookRow row;
+    };
     std::array<Bucket,runtime_hook_count> buckets_;
     static std::uint64_t add(std::uint64_t a,std::uint64_t b)noexcept {
         return b>std::numeric_limits<std::uint64_t>::max()-a?std::numeric_limits<std::uint64_t>::max():a+b;

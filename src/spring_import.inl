@@ -66,7 +66,11 @@ void build_springs(const Json& doc, Avatar& avatar) {
             require(j.is_object(),"Invalid spring joint object");SpringJoint out;
             out.hit_radius=scalar(j,"hitRadius",0,100.f);out.stiffness=scalar(j,v1?"stiffness":"stiffiness",1);
             out.gravity_power=scalar(j,"gravityPower",0);out.drag=scalar(j,"dragForce",v1?.5f:.4f,1);
-            out.gravity=vector(j,"gravityDir",{0,-1,0},!v1);return out;
+            out.gravity=vector(j,"gravityDir",{0,-1,0},!v1);
+            // VRM0 serialized world gravity in Unity coordinates, like collider offsets.
+            // Keep all imported SpringJoint directions in canonical glTF coordinates.
+            if(!v1)out.gravity[2]=-out.gravity[2];
+            return out;
         };
         auto add_joint=[&](SpringJoint j){require(avatar.spring_joints.size()<256,"Spring joint limit");avatar.spring_joints.push_back(std::move(j));};
         if(v1) {
@@ -122,4 +126,111 @@ void build_springs(const Json& doc, Avatar& avatar) {
         if(mandatory)fail(std::string("Invalid required spring bones: ")+error.what());
         avatar.warnings.push_back(std::string("Spring bones disabled: ")+error.what());
     }
+}
+
+// VRM0 exporters sometimes put a spring on an unweighted duplicate of the
+// visible chain. Use imported matrices and actual vertex influences; skin joint
+// membership alone is insufficient. This runs once, after mesh validation.
+void recover_vrm0_springs(const Json& doc, Avatar& avatar) {
+    if (avatar.version != VrmVersion::V0 || avatar.spring_joints.empty() ||
+        doc.at("extensions").contains("VRMC_springBone")) return;
+    const auto& nodes = avatar.nodes;
+    const auto& groups = doc.at("extensions").at("VRM").at("secondaryAnimation").at("boneGroups");
+    std::set<int> roots;
+    for (const auto& group : groups)
+        if (group.contains("bones")) for (int root : group.at("bones"))
+            if (nodes[root].parent >= 0 && nodes[nodes[root].parent].children.size() > 1) roots.insert(root);
+    if (roots.empty()) return;
+
+    std::vector<bool> weighted(nodes.size()), reserved(nodes.size());
+    std::vector<std::vector<bool>> slots(avatar.meshes.size());
+    std::vector<bool> scanned(avatar.meshes.size());
+    for (const auto& n : nodes) {
+        if (!n.active || n.mesh < 0 || n.skin < 0) continue;
+        auto& used = slots[n.mesh];
+        if (!scanned[n.mesh]) {
+            // build_meshes retains only vertices referenced by the draw.
+            for (const auto& p : avatar.meshes[n.mesh].primitives) if (p.skinned)
+                for (const auto& v : p.vertices) for (unsigned k=0; k<v.weights.size(); ++k) {
+                    if (v.weights[k] <= 0) continue;
+                    const std::size_t index = v.joints[k];
+                    if (index >= used.size()) used.resize(index+1);
+                    used[index] = true;
+                }
+            scanned[n.mesh] = true;
+        }
+        const auto& skin = avatar.skins[n.skin];
+        for (std::size_t i=0; i<used.size(); ++i) if (used[i]) weighted[skin.joints[i]] = true;
+    }
+
+    auto subtree = [&](int root) {
+        std::vector<int> out{root};
+        for (std::size_t i=0; i<out.size(); ++i) {
+            const auto& children = nodes[out[i]].children;
+            out.insert(out.end(), children.begin(), children.end());
+        }
+        return out;
+    };
+    std::vector<int> settings(nodes.size(), -1);
+    std::size_t visits=0, collisions=0;
+    for (std::size_t i=0; i<avatar.spring_joints.size(); ++i) {
+        const auto& j=avatar.spring_joints[i];
+        settings[j.node]=static_cast<int>(i);
+        reserved[j.node]=true;
+        if (j.center>=0) reserved[j.center]=true;
+        visits += subtree(j.node).size();
+        collisions += j.colliders.size()*2;
+    }
+    for (const auto& h : avatar.humanoid) reserved[h.second]=true;
+    for (const auto& c : avatar.spring_colliders) reserved[c.node]=true;
+
+    struct Proposal { int source; std::vector<int> target; };
+    std::vector<Proposal> proposals;
+    std::vector<unsigned> claims(nodes.size());
+    for (int root : roots) {
+        const auto from=subtree(root);
+        if (std::any_of(from.begin(),from.end(),[&](int n){return weighted[n] || nodes[n].mesh>=0;})) continue;
+        const auto& j=avatar.spring_joints[settings[root]];
+        // A centre internal to the helper is not an ancestor of its sibling.
+        if (j.center>=0 && std::find(from.begin(),from.end(),j.center)!=from.end()) continue;
+        std::vector<int> match;
+        for (int sibling : nodes[nodes[root].parent].children) {
+            if (sibling==root || nodes[root].local!=nodes[sibling].local) continue;
+            auto to=subtree(sibling);
+            if (from.size()!=to.size() || std::none_of(to.begin(),to.end(),[&](int n){return weighted[n];})) continue;
+            const bool congruent=std::equal(from.begin(),from.end(),to.begin(),[&](int a,int b){
+                return nodes[a].local==nodes[b].local && nodes[a].children.size()==nodes[b].children.size();
+            });
+            if (!congruent) continue;
+            if (!match.empty()) {match.clear();break;} // count ambiguity before testing eligibility
+            match=std::move(to);
+        }
+        if (match.empty() || std::any_of(match.begin(),match.end(),[&](int n){return reserved[n] || nodes[n].mesh>=0;})) continue;
+        for (int n : match) ++claims[n];
+        proposals.push_back({root,std::move(match)});
+    }
+
+    std::vector<SpringJoint> additions;
+    for (const auto& p : proposals) {
+        const auto& to=p.target;
+        if (std::any_of(to.begin(),to.end(),[&](int n){return claims[n]!=1;})) continue;
+        const auto& source=avatar.spring_joints[settings[p.source]];
+        const auto collision_cost=to.size()*source.colliders.size()*2;
+        if (avatar.spring_joints.size()+additions.size()+to.size()>256 || collisions+collision_cost>16384) continue;
+        std::size_t visit_cost=0;
+        for (int n : to) visit_cost+=subtree(n).size();
+        if (visits+visit_cost>16384) continue;
+        visits+=visit_cost;
+        collisions+=collision_cost;
+        for (int n : to) {
+            auto joint=source;
+            joint.node=n;
+            joint.child=nodes[n].children.empty()?-1:nodes[n].children.front();
+            additions.push_back(std::move(joint));
+        }
+    }
+    if (additions.empty()) return;
+    avatar.spring_joints.reserve(avatar.spring_joints.size()+additions.size());
+    avatar.warnings.push_back("Recovered VRM0 spring joints on weighted sibling chains: "+std::to_string(additions.size()));
+    for (auto& joint : additions) avatar.spring_joints.push_back(std::move(joint));
 }

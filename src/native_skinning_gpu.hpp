@@ -26,6 +26,19 @@ private:
     explicit NativeSkinGpuGeometry(std::shared_ptr<Impl>);
     friend class NativeSkinningGpu;
 };
+// Optional legacy-outline view of existing source/pose buffers. This lease
+// retains its own geometry and mesh transforms, never a frame or predecessor.
+class NativeSkinGpuOutlineRig {
+public:
+    ~NativeSkinGpuOutlineRig();
+    VkDescriptorBufferInfo sources()const noexcept;
+    VkDescriptorBufferInfo batches()const noexcept;
+    std::shared_ptr<const NativeSkinGpuGeometry> geometry()const noexcept;
+private:
+    struct Impl;std::shared_ptr<Impl> impl;
+    explicit NativeSkinGpuOutlineRig(std::shared_ptr<Impl>);
+    friend class NativeSkinningGpu;
+};
 class NativeSkinGpuFrame {
 public:
     ~NativeSkinGpuFrame();
@@ -59,6 +72,10 @@ public:
     std::shared_ptr<NativeSkinGpuFrame> frame(const std::shared_ptr<NativeSkinGpuAsset>&,
         const NativeSkinPose&,VkDescriptorBufferInfo prepared_frame,
         std::shared_ptr<const NativeSkinGpuGeometry> previous,const vrm::MouthWeights& mouth_weights,bool surface);
+    // Request before record(). No native allocation, pipeline or descriptors;
+    // record() then exposes the exact immutable source/current mesh batches to
+    // vertex shaders. An unavailable request leaves ordinary skinning intact.
+    std::shared_ptr<const NativeSkinGpuOutlineRig> outline_rig(const std::shared_ptr<NativeSkinGpuFrame>&)noexcept;
     // Preparation must already have written the shared frame. This records
     // transforms -> deformation -> aggregate commit gate -> graphics visibility.
     void record(VkCommandBuffer,const std::shared_ptr<NativeSkinGpuFrame>&);

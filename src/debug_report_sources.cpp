@@ -93,7 +93,7 @@ DebugReportData debug_report_take_sources(std::uint64_t job,std::uint64_t now_ms
     auto result=source.data;if(!result.collected_ms)result.collected_ms=now_ms;
     const auto sample=result.scene.location.sample_ms;
     if(!sample||sample>result.collected_ms||result.collected_ms-sample>250)result.scene.location.available=false;
-    if(source.frames<2)result.partial.push_back(DebugReportCode::Unavailable);
+    if(source.frames<2)result.partial.push_back({DebugReportCode::Unavailable,DebugReportSource::SceneFrames});
     return result;
 }
 void debug_report_presented(std::uint64_t tick_us,std::uint64_t generation,bool menu_open,bool reporting)noexcept{try{

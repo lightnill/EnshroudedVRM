@@ -34,6 +34,7 @@
     X(vkCmdBindPipeline) \
     X(vkCmdSetViewport) \
     X(vkCmdSetScissor) \
+    X(vkCmdPushConstants) \
     X(vkCmdDispatch) \
     X(vkCmdDispatchIndirect) \
     X(vkCmdDispatchBase) \
@@ -196,11 +197,15 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateShaderModule(VkDevice device, const VkSh
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkCreateShaderModule>(state, "vkCreateShaderModule");
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
-    const auto result = next(device, info, allocator, module);
-    if (result == VK_SUCCESS) observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.shader_created(*module, *info); });
-    if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.shader_created(*module, *info); });
-    if (result == VK_SUCCESS) observe_native(state, [&](evrm::NativeState& native) { native.shader_created(*module,*info); });
-    if(result==VK_SUCCESS&&state->native)if(auto* clips=state->native->clipping())clips->shader_created(*module,*info);
+    const evrm::NativePlayerLightShader player_light(info,state&&state->remove_player_light);
+    const auto* effective=player_light.info();
+    const auto result = next(device, effective, allocator, module);
+    if (result == VK_SUCCESS) observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.shader_created(*module, *effective); });
+    if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.shader_created(*module, *effective); });
+    if (result == VK_SUCCESS) observe_native(state, [&](evrm::NativeState& native) { native.shader_created(*module,*effective); });
+    if(result==VK_SUCCESS&&state->native)if(auto* clips=state->native->clipping())clips->shader_created(*module,*effective);
+    if(result==VK_SUCCESS&&player_light.changed()&&!state->player_light_noticed.exchange(true))
+        evrm::log_event("player-light.suppressed source=base-player-vfx constant=zero");
     return result;
 }
 EVRM_EXPORT void VKAPI_CALL vkDestroyShaderModule(VkDevice device, VkShaderModule module, const VkAllocationCallbacks* allocator) {
@@ -228,6 +233,7 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyPipeline(VkDevice device, VkPipeline pipeli
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkDestroyPipeline>(state, "vkDestroyPipeline");
     if (!next) return;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     next(device, pipeline, allocator);
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.pipeline_destroyed(pipeline); });
     observe_native(state, [&](evrm::NativeState& native) { native.pipeline_destroyed(pipeline); });
@@ -280,6 +286,7 @@ EVRM_EXPORT void VKAPI_CALL vkFreeCommandBuffers(VkDevice device, VkCommandPool 
     next(device, pool, count, commands);
     if (state->deferred) state->deferred->command_freed(count, commands);
     if (state->native) state->native->command_freed(count,commands);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_freed(count,commands);});
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.command_freed(count, commands); });
     observe(state, [&](evrm::GpuProbe& probe) { probe.command_freed(count, commands); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().freed(pool, count, commands); });
@@ -416,11 +423,23 @@ EVRM_EXPORT void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer command, VkPipelin
         observe(state,[&](evrm::GpuProbe& probe){probe.compute_pipeline_bound(command,anchor,layout);});
     }
 }
+EVRM_EXPORT void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues) {
+    const auto state = device_state(commandBuffer);
+    const auto next = device_proc<PFN_vkCmdPushConstants>(state, "vkCmdPushConstants");
+    if (!next) return;
+    native_before_forwarded_command(state, commandBuffer, "vkCmdPushConstants",true);
+    next(commandBuffer, layout, stageFlags, offset, size, pValues);
+    observe_native(state,[&](evrm::NativeState& native){native.push_constants(commandBuffer,layout,stageFlags,offset,size,pValues);});
+}
+
 EVRM_EXPORT void VKAPI_CALL vkCmdDispatch(VkCommandBuffer command,uint32_t x,uint32_t y,uint32_t z) {
     const auto state=device_state(command);const auto next=device_proc<PFN_vkCmdDispatch>(state,"vkCmdDispatch");if(!next)return;
     native_before_command(state, command);
     next(command,x,y,z);
-    if(state->native&&x&&y&&z)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.dispatch(command,true,x,y,z);});
+    ((void)0);
+    observe_native(state,[&](evrm::NativeState& native){native.dispatch_observed(command,true,x,y,z);});
+    const auto family=state->deferred?state->deferred->pose_copy_family(command):std::optional<std::uint32_t>{};
+    if(state->native&&x&&y&&z)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.dispatch(command,true,x,y,z,family.value_or(UINT32_MAX));});
     observe(state,[&](evrm::GpuProbe& probe){probe.compute_dispatched(command,x,y,z);});
     observe_trace(state,[&](evrm::CommandTraceRuntime& trace){trace.collector().dispatch(command,x,y,z);});
 }
@@ -428,7 +447,10 @@ EVRM_EXPORT void VKAPI_CALL vkCmdDispatchIndirect(VkCommandBuffer command,VkBuff
     const auto state=device_state(command);const auto next=device_proc<PFN_vkCmdDispatchIndirect>(state,"vkCmdDispatchIndirect");if(!next)return;
     native_before_command(state, command);
     next(command,buffer,offset);
-    if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.dispatch(command,false);});
+    ((void)0);
+    observe_native(state,[&](evrm::NativeState& native){native.dispatch_observed(command,false,0,0,0,buffer,offset);});
+    const auto family=state->deferred?state->deferred->pose_copy_family(command):std::optional<std::uint32_t>{};
+    if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.dispatch(command,false,0,0,0,family.value_or(UINT32_MAX));});
     observe(state,[&](evrm::GpuProbe& probe){probe.compute_dispatch_unsupported(command);});
     observe_trace(state,[&](evrm::CommandTraceRuntime& trace){trace.collector().dispatch_indirect(command,buffer,offset);});
 }
@@ -437,6 +459,8 @@ EVRM_EXPORT void VKAPI_CALL name(VkCommandBuffer command,uint32_t bx,uint32_t by
     const auto state=device_state(command);const auto next=device_proc<PFN_##name>(state,#name);if(!next)return; \
     native_before_command(state, command); \
     next(command,bx,by,bz,x,y,z); \
+    ((void)0); \
+    observe_native(state,[&](evrm::NativeState& native){native.dispatch_observed(command,!(bx||by||bz),x,y,z);}); \
     if(state->native&&x&&y&&z)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.dispatch(command,!(bx||by||bz),x,y,z);}); \
     observe(state,[&](evrm::GpuProbe& probe){if(bx||by||bz)probe.compute_dispatch_unsupported(command);else probe.compute_dispatched(command,x,y,z);}); \
     observe_trace(state,[&](evrm::CommandTraceRuntime& trace){trace.collector().dispatch_base(command,bx,by,bz,x,y,z);}); \
@@ -450,6 +474,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdDrawIndexedIndirect(VkCommandBuffer command,VkB
     native_before_command(state, command, evrm::DeferredRenderingCommand::candidate_draw,false,"vkCmdDrawIndexedIndirect");
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.before_native_draw(command);});
     next(command,buffer,offset,count,stride);
+    ((void)0);
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.after_native_draw(command);});
     observe(state,[&](evrm::GpuProbe& probe){probe.draw_indexed_indirect(command,buffer,offset,count,stride);});
     observe_trace(state,[&](evrm::CommandTraceRuntime& trace){trace.collector().draw_indexed_indirect(command,buffer,offset,count,stride);});
@@ -461,6 +486,7 @@ EVRM_EXPORT void VKAPI_CALL name(VkCommandBuffer command,VkBuffer buffer,VkDevic
     native_before_command(state, command, evrm::DeferredRenderingCommand::candidate_draw,false,#name); \
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.render_current(command);native.before_native_draw(command);}); \
     next(command,buffer,offset,count_buffer,count_offset,count,stride); \
+    ((void)0); \
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.after_native_draw(command);}); \
     observe(state,[&](evrm::GpuProbe& probe){probe.draw_indexed_indirect(command,buffer,offset,count,stride,count_buffer,count_offset);}); \
     observe_trace(state,[&](evrm::CommandTraceRuntime& trace){trace.collector().draw_indexed_indirect(command,buffer,offset,count,stride,count_buffer,count_offset);}); \
@@ -475,6 +501,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer command, VkPipe
     if (!next) return;
     native_before_command(state, command);
     next(command, source, destination, flags, memory_count, memory, buffer_count, buffers, image_count, images);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_barriers(command,source,destination,flags,image_count,images);});
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.barriers(command,source,destination,flags,memory_count,memory,buffer_count,buffers,image_count,images);});
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.barriers(command, image_count, images); });
 }
@@ -485,6 +512,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdPipelineBarrier2(VkCommandBuffer command, const
     native_before_command(state, command);
     next(command, info);
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.barriers2(command,info);});
+    observe_native(state,[&](evrm::NativeState& native){native.cube_barriers2(command,info);});
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.barriers2(command, *info); });
 }
 EVRM_EXPORT void VKAPI_CALL vkCmdPipelineBarrier2KHR(VkCommandBuffer command, const VkDependencyInfo* info) {
@@ -494,6 +522,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdPipelineBarrier2KHR(VkCommandBuffer command, co
     native_before_command(state, command);
     next(command, info);
     if(state->native)timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.barriers2(command,info);});
+    observe_native(state,[&](evrm::NativeState& native){native.cube_barriers2(command,info);});
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.barriers2(command, *info); });
 }
 EVRM_EXPORT void VKAPI_CALL vkCmdExecuteCommands(VkCommandBuffer command, uint32_t count, const VkCommandBuffer* children) {
@@ -502,6 +531,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdExecuteCommands(VkCommandBuffer command, uint32
     if (!next) return;
     native_before_command(state, command, evrm::DeferredRenderingCommand::other, true);
     next(command, count, children);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_executed(count,children);});
     observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.execute(command, count, children); });
     observe(state, [&](evrm::GpuProbe& probe) { probe.execute(command, count, children); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().execute(command, count, children); });
@@ -512,10 +542,14 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue, uint32_t count, con
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
     const auto mutex = queue_mutex(state, queue);
     std::lock_guard<std::recursive_mutex> queue_guard(*mutex);
-    if(state->native){const auto gate=timed_native(state,evrm::RuntimeHookKind::NativeSubmit,[&](auto& native){return native.before_submit(queue,count,submits);});if(gate!=VK_SUCCESS)return gate;}
+    ((void)0);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_before_submit(count,submits);});
+    if(state->native){const auto gate=timed_native(state,evrm::RuntimeHookKind::NativeSubmit,[&](auto& native){return native.before_submit(queue,count,submits);});if(gate!=VK_SUCCESS){((void)0);return gate;}}
     const auto result = state->native&&state->probe?
         state->probe->submit_async(queue,count,submits,fence,next,state->native->state().buffer_epoch()):next(queue,count,submits,fence);
+    ((void)0);
     if(state->native)state->native->submission_result(queue,result);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_submitted(queue,count,submits,result,fence);});
     if (result == VK_SUCCESS) observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.submitted(queue, count, submits); });
     if (result == VK_SUCCESS) observe(state, [&](evrm::GpuProbe& probe) { probe.submitted(queue,count, submits); });
     if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().submitted(queue, count, submits); });
@@ -527,10 +561,14 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueueSubmit2(VkQueue queue, uint32_t count, co
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
     const auto mutex = queue_mutex(state, queue);
     std::lock_guard<std::recursive_mutex> queue_guard(*mutex);
-    if(state->native){const auto gate=timed_native(state,evrm::RuntimeHookKind::NativeSubmit,[&](auto& native){return native.before_submit2(queue,count,submits);});if(gate!=VK_SUCCESS)return gate;}
+    ((void)0);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_submitted2(count,submits);});
+    if(state->native){const auto gate=timed_native(state,evrm::RuntimeHookKind::NativeSubmit,[&](auto& native){return native.before_submit2(queue,count,submits);});if(gate!=VK_SUCCESS){((void)0);return gate;}}
     const auto result = next(queue, count, submits, fence);
+    ((void)0);
     if(state->native&&state->probe)state->probe->inline_submitted2(queue,count,submits,result,state->native->state().buffer_epoch());
     if(state->native)state->native->submission_result(queue,result);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_submitted2(count,submits);});
     if (result == VK_SUCCESS) observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.submitted2(queue, count, submits); });
     if (result == VK_SUCCESS) observe(state, [&](evrm::GpuProbe& probe) { probe.submitted2(queue,count, submits); });
     if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().submitted2(queue, count, submits); });
@@ -542,10 +580,14 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueueSubmit2KHR(VkQueue queue, uint32_t count,
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
     const auto mutex = queue_mutex(state, queue);
     std::lock_guard<std::recursive_mutex> queue_guard(*mutex);
-    if(state->native){const auto gate=timed_native(state,evrm::RuntimeHookKind::NativeSubmit,[&](auto& native){return native.before_submit2(queue,count,submits);});if(gate!=VK_SUCCESS)return gate;}
+    ((void)0);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_submitted2(count,submits);});
+    if(state->native){const auto gate=timed_native(state,evrm::RuntimeHookKind::NativeSubmit,[&](auto& native){return native.before_submit2(queue,count,submits);});if(gate!=VK_SUCCESS){((void)0);return gate;}}
     const auto result = next(queue, count, submits, fence);
+    ((void)0);
     if(state->native&&state->probe)state->probe->inline_submitted2(queue,count,submits,result,state->native->state().buffer_epoch());
     if(state->native)state->native->submission_result(queue,result);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_submitted2(count,submits);});
     if (result == VK_SUCCESS) observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.submitted2(queue, count, submits); });
     if (result == VK_SUCCESS) observe(state, [&](evrm::GpuProbe& probe) { probe.submitted2(queue,count, submits); });
     if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().submitted2(queue, count, submits); });
@@ -576,7 +618,9 @@ EVRM_EXPORT VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
     const auto next = device_proc<PFN_vkDeviceWaitIdle>(state, "vkDeviceWaitIdle");
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
     AllQueueLocks queues(state);
-    return next(device);
+    const auto result=next(device);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_queue_idle(VK_NULL_HANDLE,result);});
+    return result;
 }
 
 

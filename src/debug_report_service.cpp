@@ -164,14 +164,14 @@ void DebugReportService::pump()noexcept{
                 if(words->front()!=0x07230203u)throw DebugReportCode::Invalid;
                 std::lock_guard<std::mutex> lock(state.changes);state.program=std::move(words);state.publish();
             }catch(...){std::lock_guard<std::mutex> lock(state.changes);state.image_failed=true;state.capture_requested=false;state.code=DebugReportCode::Unavailable;state.publish();}
-            state.data.request_ms=state.requested;state.data.mod_version=state.options.mod_version;state.data.game_sha256=state.options.game_sha256;
-            try{state.data.utc=state.options.utc?state.options.utc():utc_now();}catch(...){state.data.partial.push_back(DebugReportCode::Unavailable);}
-            try{state.data.system=state.options.system?state.options.system():debug_report_collect_system();}catch(...){state.data.partial.push_back(DebugReportCode::Unavailable);}
+            state.data.request_ms=state.requested;state.data.mod_version=state.options.mod_version;state.data.runtime_sha256=state.options.runtime_sha256;state.data.game_sha256=state.options.game_sha256;
+            try{state.data.utc=state.options.utc?state.options.utc():utc_now();}catch(...){state.data.partial.push_back({DebugReportCode::Unavailable,DebugReportSource::Clock});}
+            try{state.data.system=state.options.system?state.options.system():debug_report_collect_system();}catch(...){state.data.partial.push_back({DebugReportCode::Unavailable,DebugReportSource::System});}
             std::string engine;
             try{if(state.options.files)state.options.files(state.data.graphics_source_json,engine);else if(!state.options.game_directory.empty()){
-                    try{state.data.graphics_source_json=read_known_file(state.options.game_directory/L"enshrouded_local.json",2*1024*1024,false);}catch(...){state.data.partial.push_back(DebugReportCode::Unavailable);}
-                    try{engine=read_known_file(state.options.game_directory/L"enshrouded.log",2*1024*1024,true);}catch(...){state.data.partial.push_back(DebugReportCode::Unavailable);}
-                }}catch(...){state.data.partial.push_back(DebugReportCode::Unavailable);}
+                    try{state.data.graphics_source_json=read_known_file(state.options.game_directory/L"enshrouded_local.json",2*1024*1024,false);}catch(...){state.data.partial.push_back({DebugReportCode::Unavailable,DebugReportSource::GraphicsSettings});}
+                    try{engine=read_known_file(state.options.game_directory/L"enshrouded.log",2*1024*1024,true);}catch(...){state.data.partial.push_back({DebugReportCode::Unavailable,DebugReportSource::EngineLog});}
+                }}catch(...){state.data.partial.push_back({DebugReportCode::Unavailable,DebugReportSource::FileProvider});}
             state.data.graphics_source_json=debug_report_graphics_json(state.data.graphics_source_json);
             state.data.diagnostics=debug_report_recent_log(state.requested)+debug_report_engine_events(engine)+native_preview_trace_report(state.requested)+native_preview_handoff_history().report(state.requested);
             const auto omissions=debug_report_log_omissions();state.data.diagnostics_contention_drops=omissions[0];state.data.diagnostics_overwritten=omissions[1];
@@ -201,13 +201,13 @@ void DebugReportService::pump()noexcept{
                     else {if(state.phase.compare_exchange_strong(expected,DebugReportPhase::Preview)){state.png=std::move(png);state.preview=std::move(preview);state.image_id=id;state.pixels.reset();state.publish();}return;}}
                 phase=DebugReportPhase::Encoding;
             }
-            if(failed){state.data.partial.push_back(failure==DebugReportCode::None?DebugReportCode::Unavailable:failure);state.image_partial_added=true;std::lock_guard<std::mutex> lock(state.changes);state.code=failure;}
+            if(failed){state.data.partial.push_back({failure==DebugReportCode::None?DebugReportCode::Unavailable:failure,DebugReportSource::Screenshot});state.image_partial_added=true;std::lock_guard<std::mutex> lock(state.changes);state.code=failure;}
             auto expected=phase;if(!state.phase.compare_exchange_strong(expected,DebugReportPhase::Writing))return;
         }
         if(state.phase.load()!=DebugReportPhase::Writing)return;
         for(unsigned attempt=0;attempt<2;++attempt){
         bool selected=false;{std::lock_guard<std::mutex> lock(state.changes);if(!state.capture_valid()){state.image_failed=true;state.selected=false;state.code=DebugReportCode::Stale;}
-            if(state.image_failed&&!state.image_partial_added){state.data.partial.push_back(state.code);state.image_partial_added=true;}selected=state.selected;}
+            if(state.image_failed&&!state.image_partial_added){state.data.partial.push_back({state.code,DebugReportSource::Screenshot});state.image_partial_added=true;}selected=state.selected;}
         auto files=make_debug_report_contents(state.data);
         {std::lock_guard<std::mutex> lock(state.changes);if(selected){files.push_back({"screenshot.png",state.png});
             for(auto& file:files)if(file.name=="report.json"){auto value=nlohmann::json::parse(file.bytes);value["screenshot_included"]=true;const auto text=value.dump(2)+'\n';file.bytes.assign(text.begin(),text.end());}}}
@@ -236,7 +236,7 @@ DebugReportService* global_service(bool create)noexcept{
 #ifndef EVRM_DEBUG_REPORT_TESTING
     if(create)try{std::lock_guard<std::mutex> lock(global_mutex);if(auto* service=global.load())return service;
         const auto& context=runtime_startup_context();if(!context.ready()||!context.state_writable)return nullptr;
-        DebugReportOptions options;options.directory=context.state_directory/L"Reports";options.game_directory=context.game_directory;options.mod_version=context.version;
+        DebugReportOptions options;options.directory=context.state_directory/L"Reports";options.game_directory=context.game_directory;options.mod_version=context.version;options.runtime_sha256=context.runtime_sha256;
         options.capture_shader=context.runtime_directory/L"shaders"/L"debug_report_capture.comp.spv";
         const char hex[]="0123456789abcdef";for(auto byte:context.owner.sha256){options.game_sha256+=hex[byte>>4];options.game_sha256+=hex[byte&15];}
         auto* service=new DebugReportService(std::move(options));global.store(service,std::memory_order_release);return service;

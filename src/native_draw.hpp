@@ -4,10 +4,14 @@
 #include <memory>
 
 namespace evrm {
+struct DeviceFeaturesObservation;
 struct NativeDrawCall {
     VkDescriptorSet set{};
     std::uint32_t first_index=0,index_count=0;
     VkDescriptorSet surface_set{};
+    // Optional set2: frame-owned visible-surface identity inputs. All draws in
+    // an identity-enabled GBuffer recording must supply it. Ignored elsewhere.
+    VkDescriptorSet identity_set{};
 };
 // Owns the private Basic pipelines and an optional Enhanced GBuffer pipeline.
 // The caller retains shaders/layout,
@@ -24,6 +28,12 @@ public:
     // leave Basic usable and may be retried. Caller serializes install/record.
     bool install_surface_variant(VkPipelineLayout,VkShaderModule vertex,VkShaderModule fragment) noexcept;
     bool surface_ready() const noexcept;
+    // Independent optional GBuffer instrumentation. These pipelines consume
+    // the already enabled fragment-storage/primitive-ID features; never enable
+    // device features here. Caller retains set0/set2 layouts, shaders and inputs.
+    bool install_identity_variant(bool surface,VkPipelineLayout,VkShaderModule vertex,VkShaderModule fragment,
+        const DeviceFeaturesObservation&) noexcept;
+    bool identity_ready(bool surface)const noexcept;
     // Requires matching native viewport/scissor/stencil dynamic state. Changes
     // only graphics pipeline/descriptors, restoring the complete native sets
     // through a retained layout with identical set definitions/push ranges.

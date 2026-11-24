@@ -156,15 +156,28 @@ struct EnshroudedBridge::Impl {
         require(profile.at("schema")=="enshrouded-native-rig-profile-v1","Unsupported pose profile schema");
         require(catalog.at("schema")=="enshrouded-player-catalog-v2","Unsupported player catalog schema");
         const auto expected_hash=hash_string(profile.at("game").at("executable_sha256").get<std::string>());
-        require(hash_string(verified_hash)==expected_hash,"Executable build hash does not match pose profile");
+        // Current-process Steam build/header and hook checks precede this adapter.
+        // The supplied whole-file digest is diagnostic, not compatibility.
+        (void)verified_hash;
         if (catalog.contains("game")) require(hash_string(catalog.at("game").at("executable_sha256").get<std::string>())==expected_hash,"Catalog executable hash differs from pose profile");
         require(profile.at("hierarchy_guid")==catalog.at("hierarchy_guid"),"Catalog hierarchy differs from pose profile");
         const auto count=number(profile.at("joint_count"));
         require(count>0 && count<=1024 && number(catalog.at("joint_count"))==count,"Invalid pose hierarchy joint count");
         require(profile.at("source_rest_global").is_array() && profile.at("source_rest_global").size()==count,"Incomplete source rest globals");
         for (const auto& value : profile.at("source_rest_global")) rest.push_back(matrix(value));
+        // The original overlay profile named the two sides from the mirrored
+        // avatar. Normalize those aliases once; captured matrices/joint IDs
+        // stay in native space. Explicit anatomical profiles never swap again.
+        const auto convention=profile.value("semantic_convention",std::string("legacy-overlay-v1"));
+        require(convention=="legacy-overlay-v1"||convention=="native-anatomical-v1","Unsupported pose semantic convention");
         for (const auto& entry : profile.at("semantic_to_joint").items()) {
-            const auto joint=number(entry.value()); require(joint<count,"Semantic joint exceeds hierarchy"); semantics.emplace(entry.key(),joint);
+            const auto joint=number(entry.value()); require(joint<count,"Semantic joint exceeds hierarchy");
+            auto name=entry.key();
+            if(convention=="legacy-overlay-v1"){
+                if(name.compare(0,4,"left")==0)name="right"+name.substr(4);
+                else if(name.compare(0,5,"right")==0)name="left"+name.substr(5);
+            }
+            require(semantics.emplace(std::move(name),joint).second,"Duplicated semantic joint alias");
         }
         for (const auto* name : required_semantics) require(semantics.count(name)!=0,"Pose profile lacks core semantic: "+std::string(name));
         tolerance=catalog.at("match_tolerance_native_units").get<double>();

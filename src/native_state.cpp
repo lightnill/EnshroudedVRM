@@ -1,4 +1,6 @@
 #include "native_state.hpp"
+#include "native_binding_table.hpp"
+#include "native_cube_upload.hpp"
 #include "sha256.hpp"
 #include <algorithm>
 #include <array>
@@ -231,16 +233,29 @@ NativeBufferBinding::operator bool()const noexcept{
     return info.buffer && generation && size && info.range && info.offset<size && info.range!=VK_WHOLE_SIZE &&
            info.range<=size-info.offset && (!set || (set_generation && set_version));
 }
+// Test builds may start the registry-state counter elsewhere (0 leaves the front table unused; a value near the
+// top spends the counter early) and may count the table's hits and the lookups that asked the registries.
+#ifndef EVRM_NATIVE_VIEW_FRONT_FIRST_STATE
+#define EVRM_NATIVE_VIEW_FRONT_FIRST_STATE 1
+#endif
+#ifdef EVRM_NATIVE_VIEW_FRONT_STATISTICS
+std::uint64_t native_view_front_statistics[2]{};
+#define EVRM_NATIVE_VIEW_FRONT_COUNT(which) (++native_view_front_statistics[which])
+#else
+#define EVRM_NATIVE_VIEW_FRONT_COUNT(which) ((void)0)
+#endif
 struct NativeState::Impl{
     struct Buffer{VkDeviceSize size=0;VkBufferUsageFlags usage=0;std::uint64_t generation=0;};
-    struct Layout{std::map<std::uint32_t,VkDescriptorSetLayoutBinding> bindings;std::map<std::uint32_t,VkDescriptorBindingFlags> flags;std::uint64_t generation=0;};
+    struct Layout{std::map<std::uint32_t,NativeSamplerToken> immutable_samplers;std::map<std::uint32_t,VkDescriptorSetLayoutBinding> bindings;std::map<std::uint32_t,VkDescriptorBindingFlags> flags;std::uint64_t generation=0;};
     struct LayoutRef{VkDescriptorSetLayout handle{};std::uint64_t generation=0;};
-    struct PipelineLayout{std::vector<LayoutRef> layouts;std::uint64_t generation=0;};
+    struct PipelineLayout{std::vector<LayoutRef> layouts;std::uint64_t generation=0;bool compute_word_root=false;};
     struct Cell{VkDescriptorBufferInfo info{};std::uint64_t generation=0;};
     struct Content{std::vector<Cell> cells;bool known=false,poisoned=false;};
     // raw_known means an exact scalar payload was observed, not usable image provenance.
     struct SampledCell{VkDescriptorImageInfo info{};NativeSampledImageView view;bool known=false,poisoned=false,raw_known=false,storage_known=false,storage_poisoned=false;};
-    struct Set{VkDescriptorPool pool{};LayoutRef layout;std::uint64_t generation=0,version=1;bool poisoned=false;std::map<std::uint32_t,Content> contents;std::map<std::uint32_t,SampledCell> sampled;std::array<std::uint32_t,6> rejected_update{};};
+    struct SamplerCell{NativeSamplerToken identity;bool known=false,poisoned=false;};
+    struct SceneCell{VkDescriptorImageInfo info{};NativeSceneImageToken image;VkDescriptorType type=VK_DESCRIPTOR_TYPE_MAX_ENUM;bool known=false,poisoned=false;};
+    struct Set{VkDescriptorPool pool{};LayoutRef layout;std::uint64_t generation=0,version=1;bool poisoned=false,scene_poisoned=false,sampler_poisoned=false;NativeBindingTable<SamplerCell> samplers;NativeBindingTable<Content> contents;NativeBindingTable<SampledCell> sampled;NativeBindingTable<SceneCell> scene;std::array<std::uint32_t,6> rejected_update{};};
     struct Template{LayoutRef layout;std::vector<VkDescriptorUpdateTemplateEntry> entries;};
     struct Shader{NativePipelineKind kind=NativePipelineKind::other;std::uint32_t bytes=0;detail::Sha256Digest digest{};};
     struct Pipeline{NativePipelineState state;VkPipelineBindPoint point{};std::uint64_t layout_generation=0,generation=0;std::array<bool,2> raster_dynamic{};};
@@ -248,11 +263,40 @@ struct NativeState::Impl{
     struct View{VkImageViewCreateInfo info{};std::uint64_t image_generation=0;VkImageUsageFlags usage=0;std::uint64_t generation=0;};
     struct SampledImage{VkImageType type{};VkFormat format{};VkExtent3D extent{};std::uint32_t mips=0,layers=0;VkImageUsageFlags usage=0;std::uint64_t generation=0;VkImageCreateFlags flags=0;std::uint32_t format_count=0;std::array<VkFormat,16> formats{};};
     struct Bind{VkPipeline pipeline{};std::uint64_t pipeline_generation=0;VkPipelineLayout layout{};std::uint64_t layout_generation=0;std::vector<std::pair<VkDescriptorSet,std::uint64_t>> sets;bool complete=false;};
-    struct Command{std::array<Bind,2> points;std::array<VkPipeline,2> observed_pipeline{};std::array<VkPipelineLayout,2> observed_layout{};std::array<std::array<std::uint32_t,3>,2> observed_sets{};NativeRasterState raster;};
+    struct Command{std::array<Bind,2> points;std::array<VkPipeline,2> observed_pipeline{};std::array<VkPipelineLayout,2> observed_layout{};std::array<std::array<std::uint32_t,3>,2> observed_sets{};NativeRasterState raster;NativeComputeRootValue compute_root;NativeDispatchObservation dispatch;};
     mutable std::mutex mutex;
     std::atomic<bool> available{true};
     std::uint64_t next_generation=1;
     std::uint64_t buffers_epoch=1;
+    NativeSamplerMetadata samplers;
+    bool sampler_descriptors_available=true;
+    std::size_t sampler_cell_count=0,sampler_layout_count=0;
+    static constexpr std::size_t sampler_cell_capacity=65536,sampler_layout_capacity=32768;
+    NativeSceneImageMetadata scene_images;
+    NativeCubeUpload cube_upload;
+    // Negative filter only: collisions cause a bounded lookup, never admission.
+    // Ordinary non-cube copy/barrier hooks do not acquire the metadata mutex.
+    std::array<std::atomic<std::uint64_t>,16> cube_bits{},cube_command_bits{},cube_fence_bits{};
+    std::atomic<bool> cube_completion_pending{false};
+    template<class H>static std::uint32_t cube_hash(H h)noexcept{auto v=reinterpret_cast<std::uintptr_t>(h);v^=v>>17;v*=0xed5ad4bbU;v^=v>>11;return std::uint32_t(v&1023);}
+    template<class H>static bool maybe(const std::array<std::atomic<std::uint64_t>,16>& bits,H h)noexcept{const auto hash=cube_hash(h);return (bits[hash>>6].load(std::memory_order_acquire)&(std::uint64_t(1)<<(hash&63)))!=0;}
+    bool maybe_cube(VkImage h)const noexcept{return maybe(cube_bits,h);}
+    bool maybe_cube_command(VkCommandBuffer h)const noexcept{return maybe(cube_command_bits,h);}
+    template<class H>static void mark(std::array<std::atomic<std::uint64_t>,16>& bits,H h)noexcept{const auto hash=cube_hash(h);bits[hash>>6].fetch_or(std::uint64_t(1)<<(hash&63),std::memory_order_release);}
+    void rebuild_cube_completion_filter()noexcept{
+        std::array<std::uint64_t,16> bits{};cube_upload.each_pending_fence([&](VkFence f){const auto hash=cube_hash(f);bits[hash>>6]|=std::uint64_t(1)<<(hash&63);});
+        for(std::size_t n=0;n<bits.size();++n)cube_fence_bits[n].store(bits[n],std::memory_order_release);
+        cube_completion_pending.store(cube_upload.completion_pending(),std::memory_order_release);
+    }
+    void rebuild_cube_filters()noexcept{
+        std::array<std::uint64_t,16> image_bits{},command_bits{};
+        cube_upload.each_image([&](VkImage h){const auto hash=cube_hash(h);image_bits[hash>>6]|=std::uint64_t(1)<<(hash&63);});
+        cube_upload.each_command([&](VkCommandBuffer h){const auto hash=cube_hash(h);command_bits[hash>>6]|=std::uint64_t(1)<<(hash&63);});
+        for(std::size_t i=0;i<16;++i){cube_bits[i].store(image_bits[i],std::memory_order_release);cube_command_bits[i].store(command_bits[i],std::memory_order_release);}
+    }
+    bool scene_descriptors_available=true;
+    std::size_t scene_cell_count=0;
+    static constexpr std::size_t scene_cell_capacity=131072;
     std::map<VkBuffer,Buffer> buffers;
     std::map<VkDescriptorSetLayout,Layout> layouts;
     std::map<VkPipelineLayout,PipelineLayout> pipeline_layouts;
@@ -269,6 +313,38 @@ struct NativeState::Impl{
     // makes sampled certificates unavailable; generations are never recycled.
     std::array<std::map<VkImage,SampledImage>,2> sampled_images;
     std::array<std::map<VkImageView,NativeSampledImageView>,2> sampled_views;
+    // Front table for the two answers a descriptor write stores about its image view: the scene registry's token
+    // and the sampled-image cache's view. Each is a function of the handle and of those two registries alone, and
+    // the registries change only inside the four image and view lifetime calls, each of which calls
+    // views_changing() before anything else. An entry answers for one handle under one registry state and is
+    // ignored under any other. Entries hold values, never references, and own nothing; the table has a fixed
+    // size, so it allocates nothing and has no eviction of its own beyond overwriting a row. Only writes consult
+    // it: every read still asks the registries, so what a caller is told is checked against them as before.
+    struct ViewAnswers{NativeSceneImageToken scene;NativeSampledImageView sampled;};
+    struct ViewFront{
+        static constexpr unsigned row_bits=9; // 512 rows of two entries
+        static constexpr std::size_t rows=std::size_t(1)<<row_bits;
+        struct Key{VkImageView view{};std::uint64_t state=0;};
+        std::array<std::array<Key,2>,rows> keys{};
+        std::array<std::array<ViewAnswers,2>,rows> answers{};
+        std::array<std::uint8_t,rows> replace{}; // the entry of a row to overwrite next: the one not used last
+    };
+    ViewFront view_front;
+    // The registries' state, counted. 0 once the counter is spent: from then on every write asks the registries
+    // itself, exactly as it did before there was a table.
+    std::uint64_t views_state=EVRM_NATIVE_VIEW_FRONT_FIRST_STATE;
+    void views_changing()noexcept{if(views_state)views_state=views_state==std::numeric_limits<std::uint64_t>::max()?0:views_state+1;}
+    // Called only while views_state is not 0. A miss asks both registries once and keeps both answers.
+    const ViewAnswers& view_answers(VkImageView h)noexcept{
+        const auto row=static_cast<std::size_t>((static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(h))*0x9E3779B97F4A7C15ull)>>(64-ViewFront::row_bits));
+        auto& keys=view_front.keys[row];
+        for(unsigned n=0;n<2;++n)if(keys[n].view==h&&keys[n].state==views_state){
+            view_front.replace[row]=static_cast<std::uint8_t>(1-n);EVRM_NATIVE_VIEW_FRONT_COUNT(0);return view_front.answers[row][n];}
+        const unsigned n=view_front.replace[row]&1u;view_front.replace[row]=static_cast<std::uint8_t>(1-n);
+        auto& out=view_front.answers[row][n];keys[n]={};
+        out.scene=scene_images.token(h);out.sampled=sampled_view(h);keys[n]={h,views_state};
+        EVRM_NATIVE_VIEW_FRONT_COUNT(1);return out;
+    }
     std::map<VkCommandBuffer,Command> commands;
     std::array<std::string,2> native_pipeline_observations;
     std::uint64_t generation(){if(next_generation==std::numeric_limits<std::uint64_t>::max())throw std::bad_alloc();return next_generation++;}
@@ -291,6 +367,19 @@ struct NativeState::Impl{
         const auto it=pipeline_layouts.find(handle);if(it==pipeline_layouts.end())return nullptr;
         for(const auto& ref:it->second.layouts)if(!layout(ref))return nullptr;
         return &it->second;
+    }
+    // One locked write's current declaration, never retained across operations.
+    // Validators may poison/repair metadata, but cannot retire this set/layout.
+    struct DirectTarget{Set* set=nullptr;const Layout* declaration=nullptr;const VkDescriptorSetLayoutBinding* binding=nullptr;};
+    static const VkDescriptorSetLayoutBinding* declared_span(const Layout* l,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type){
+        if(!l || !count || count>(buffer_type(type)?cap:opaque_cap))return nullptr;
+        const auto it=l->bindings.find(binding);
+        return it!=l->bindings.end() && it->second.descriptorType==type && descriptor_type(type) &&
+            first<=it->second.descriptorCount && count<=it->second.descriptorCount-first?&it->second:nullptr;
+    }
+    DirectTarget direct_target(VkDescriptorSet handle,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type){
+        const auto it=sets.find(handle);if(it==sets.end())return {};
+        const auto* l=layout(it->second.layout);return {&it->second,l,declared_span(l,binding,first,count,type)};
     }
     bool set_valid(const Set& s)const{return layout(s.layout)!=nullptr;}
     void bump(Set& s){if(s.version==std::numeric_limits<std::uint64_t>::max())throw std::bad_alloc();++s.version;}
@@ -357,12 +446,12 @@ struct NativeState::Impl{
         return cell.storage_known&&!cell.storage_poisoned&&cell.raw_known&&!cell.poisoned&&cell.info.imageView&&cell.info.imageLayout==VK_IMAGE_LAYOUT_GENERAL&&
             cell.view.view&&(cell.view.usage&VK_IMAGE_USAGE_STORAGE_BIT)&&same_view(cell.view,sampled_view(cell.info.imageView));
     }
-    void sampled_direct(VkDescriptorSet h,std::uint32_t binding,std::uint32_t first,std::uint32_t count,const VkDescriptorImageInfo* value,bool valid,std::uint32_t op=1,VkDescriptorType type=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE){
-        const auto it=sets.find(h);if(it==sets.end())return;auto& s=it->second;
-        if(!valid||!span(s,binding,first,count,type)){reject(s,op,binding,first,count,type,!valid?1:2);return;}
-        if(layout(s.layout)->bindings.at(binding).descriptorCount!=1){s.sampled.erase(binding);bump(s);return;}
+    void sampled_direct(VkDescriptorSet h,std::uint32_t binding,std::uint32_t first,std::uint32_t count,const VkDescriptorImageInfo* value,bool valid,std::uint32_t op=1,VkDescriptorType type=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,const DirectTarget* context=nullptr){
+        const auto target=context?*context:direct_target(h,binding,first,count,type);if(!target.set)return;auto& s=*target.set;
+        if(!valid||!target.binding){reject(s,op,binding,first,count,type,!valid?1:2);return;}
+        if(target.binding->descriptorCount!=1){s.sampled.erase(binding);bump(s);return;}
         if(!value){reject(s,op,binding,first,count,type,3);return;}
-        auto& cell=s.sampled[binding];const bool storage_poisoned=cell.storage_poisoned;cell={};cell.info={VK_NULL_HANDLE,value->imageView,value->imageLayout};cell.view=sampled_view(value->imageView);
+        auto& cell=s.sampled[binding];const bool storage_poisoned=cell.storage_poisoned;cell={};cell.info={VK_NULL_HANDLE,value->imageView,value->imageLayout};if(views_state)cell.view=view_answers(value->imageView).sampled;else{EVRM_NATIVE_VIEW_FRONT_COUNT(1);cell.view=sampled_view(value->imageView);}
         cell.raw_known=true;cell.known=type==VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE&&cell.view.view&&(cell.view.usage&VK_IMAGE_USAGE_SAMPLED_BIT)&&sampled_layout(cell.info.imageLayout);
         cell.poisoned=type==VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE&&!cell.known;
         if(type==VK_DESCRIPTOR_TYPE_STORAGE_IMAGE){const bool current=cell.view.view&&(cell.view.usage&VK_IMAGE_USAGE_STORAGE_BIT)&&cell.info.imageLayout==VK_IMAGE_LAYOUT_GENERAL;
@@ -371,7 +460,145 @@ struct NativeState::Impl{
     }
     // Diagnostic POD only: operation,binding,first,count,type,reason. Never retain caller data pointers.
     void reject(Set& s,std::uint32_t op,std::uint32_t binding,std::uint32_t first,std::uint32_t count,std::uint32_t type,std::uint32_t reason){s.rejected_update={op,binding,first,count,type,reason};poison(s);}
-    void poison_all(){for(auto& pair:sets)reject(pair.second,4,0,0,0,UINT32_MAX,9);}
+    void poison_all(){for(auto& pair:sets){sampler_poison(pair.second);scene_poison(pair.second);reject(pair.second,4,0,0,0,UINT32_MAX,9);}}
+    // Independent descriptor-at-write facts. Legacy unsupported-view poison is
+    // not evidence of an unobserved image update; neither census can grant use.
+    static bool scene_type(VkDescriptorType type){return type==VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE||type==VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;}
+    void scene_forget(Set& s)noexcept{sampler_forget(s);scene_cell_count-=s.scene.size();s.scene.clear();}
+    void scene_disable()noexcept{scene_descriptors_available=false;for(auto& pair:sets)scene_forget(pair.second);}
+    template<class F>void scene_observe(F&& f)noexcept{
+        if(!scene_descriptors_available)return;
+        try{f();}catch(...){scene_disable();}
+    }
+    void scene_poison(Set& s)noexcept{s.scene_poisoned=true;for(auto& pair:s.scene){pair.second.known=false;pair.second.poisoned=true;}}
+    SceneCell* scene_slot(Set& s,std::uint32_t binding){
+        const auto found=s.scene.find(binding);if(found!=s.scene.end())return &found->second;
+        if(scene_cell_count>=scene_cell_capacity){scene_disable();return nullptr;}
+        auto inserted=s.scene.emplace(binding,SceneCell{});++scene_cell_count;return &inserted.first->second;
+    }
+    bool scene_current(const SceneCell& c)const{return c.known&&!c.poisoned&&scene_type(c.type)&&
+        c.info.imageView==c.image.view&&!c.info.sampler&&scene_images.current(c.image);}
+    bool scene_damaged(const Set& s,std::uint32_t binding)const{
+        const auto old=s.scene.find(binding);return old==s.scene.end()?s.scene_poisoned:old->second.poisoned||!scene_current(old->second);
+    }
+    void scene_direct(VkDescriptorSet h,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type,
+                      const VkDescriptorImageInfo* value,bool valid,bool repair=true,const DirectTarget* context=nullptr){
+        const auto target=context?*context:direct_target(h,binding,first,count,type);if(!target.set)return;auto& s=*target.set;
+        if(!valid||!target.binding){scene_poison(s);return;}
+        if(!scene_type(type))return;
+        if(target.binding->descriptorCount!=1){const auto old=s.scene.find(binding);
+            if(old!=s.scene.end()){s.scene.erase(old);--scene_cell_count;}return;}
+        const bool damaged=!repair&&scene_damaged(s,binding);auto* c=scene_slot(s,binding);if(!c)return;
+        *c={};c->type=type;
+        if(value){c->info={VK_NULL_HANDLE,value->imageView,value->imageLayout};if(views_state)c->image=view_answers(value->imageView).scene;else{EVRM_NATIVE_VIEW_FRONT_COUNT(1);c->image=scene_images.token(value->imageView);}}
+        c->known=!damaged&&bool(c->image);c->poisoned=!c->known;
+    }
+    void scene_copy(const VkCopyDescriptorSet& c){
+        const auto dst=sets.find(c.dstSet);if(dst==sets.end())return;auto& target=dst->second;const auto src=sets.find(c.srcSet);
+        if(c.sType!=VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET||c.pNext||src==sets.end()||!set_valid(src->second)||!set_valid(target)){scene_poison(target);return;}
+        const auto* l=layout(src->second.layout);const auto declaration=l->bindings.find(c.srcBinding);
+        if(declaration==l->bindings.end()||!span(src->second,c.srcBinding,c.srcArrayElement,c.descriptorCount,declaration->second.descriptorType)||
+           !span(target,c.dstBinding,c.dstArrayElement,c.descriptorCount,declaration->second.descriptorType)||
+           (c.srcSet==c.dstSet&&c.srcBinding==c.dstBinding&&c.srcArrayElement<c.dstArrayElement+c.descriptorCount&&c.dstArrayElement<c.srcArrayElement+c.descriptorCount)){
+            scene_poison(target);return;}
+        const auto type=declaration->second.descriptorType;if(!scene_type(type))return;
+        if(layout(target.layout)->bindings.at(c.dstBinding).descriptorCount!=1)return;
+        const auto source=src->second.scene.find(c.srcBinding);
+        const bool known=source!=src->second.scene.end()&&scene_current(source->second)&&!scene_damaged(target,c.dstBinding);
+        const auto retained=known?source->second:SceneCell{};auto* out=scene_slot(target,c.dstBinding);if(!out)return;
+        *out=retained;out->type=type;out->known=known;out->poisoned=!known;
+    }
+    void scene_template(VkDescriptorSet h,VkDescriptorUpdateTemplate update,const void* data){
+        const auto s=sets.find(h);if(s==sets.end())return;const auto t=templates.find(update);
+        if(t==templates.end()||!data||!layout(t->second.layout)||s->second.layout.handle!=t->second.layout.handle||
+           s->second.layout.generation!=t->second.layout.generation){scene_poison(s->second);return;}
+        for(const auto& e:t->second.entries){if(!scene_type(e.descriptorType))continue;
+            if(layout(s->second.layout)->bindings.at(e.dstBinding).descriptorCount!=1)continue;
+            VkDescriptorImageInfo value{};std::memcpy(&value,static_cast<const unsigned char*>(data)+e.offset,sizeof(value));
+            scene_direct(h,e.dstBinding,e.dstArrayElement,e.descriptorCount,e.descriptorType,&value,true,false);}
+    }
+    NativeSceneImageDescriptor scene_source(const NativeBoundState& state,std::uint32_t index,std::uint32_t binding)const{
+        if(!scene_descriptors_available||!scene_images.available())return {};const auto* s=current_set(state,index,false);if(!s)return {};
+        for(std::uint32_t n=0;n<state.sets.size();++n)if(!current_set(state,n,false))return {};
+        const auto* l=layout(s->layout);const auto d=l->bindings.find(binding);
+        if(d==l->bindings.end()||!scene_type(d->second.descriptorType)||d->second.descriptorCount!=1)return {};
+        const auto c=s->scene.find(binding);if(c==s->scene.end()||!scene_current(c->second)||c->second.type!=d->second.descriptorType)return {};
+        return {c->second.info,c->second.image,state.sets[index],d->second.descriptorType,binding,s->generation,s->version,l->flags.at(binding)};
+    }
+    void sampler_forget(Set& s)noexcept{sampler_cell_count-=s.samplers.size();s.samplers.clear();}
+    void sampler_forget_layout(VkDescriptorSetLayout h)noexcept{
+        const auto l=layouts.find(h);if(l!=layouts.end()){sampler_layout_count-=l->second.immutable_samplers.size();l->second.immutable_samplers.clear();}
+    }
+    void sampler_disable()noexcept{
+        sampler_descriptors_available=false;for(auto& s:sets)sampler_forget(s.second);
+        for(auto& l:layouts)l.second.immutable_samplers.clear();sampler_layout_count=0;
+    }
+    template<class F>void sampler_observe(F&& f)noexcept{
+        if(!sampler_descriptors_available)return;try{f();}catch(...){sampler_disable();}
+    }
+    void sampler_poison(Set& s)noexcept{s.sampler_poisoned=true;for(auto& c:s.samplers){c.second.known=false;c.second.poisoned=true;}}
+    void sampler_layout(Layout& l,const VkDescriptorSetLayoutCreateInfo& info){
+        for(std::uint32_t n=0;n<info.bindingCount;++n){const auto& b=info.pBindings[n];
+            if(b.descriptorType!=VK_DESCRIPTOR_TYPE_SAMPLER||b.descriptorCount!=1||!b.pImmutableSamplers)continue;
+            if(sampler_layout_count>=sampler_layout_capacity){sampler_disable();l.immutable_samplers.clear();return;}
+            l.immutable_samplers.emplace(b.binding,samplers.token(b.pImmutableSamplers[0]));++sampler_layout_count;
+        }
+    }
+    SamplerCell sampler_cell(const Set& s,std::uint32_t binding)const{
+        const auto* l=layout(s.layout);if(!l)return {};const auto i=l->immutable_samplers.find(binding);
+        if(i!=l->immutable_samplers.end())return {i->second,samplers.current(i->second),false};
+        const auto c=s.samplers.find(binding);return c==s.samplers.end()?SamplerCell{}:c->second;
+    }
+    bool sampler_current(const SamplerCell& c)const{return c.known&&!c.poisoned&&samplers.current(c.identity);}
+    bool sampler_damaged(const Set& s,std::uint32_t binding)const{
+        const auto c=s.samplers.find(binding);return c==s.samplers.end()?s.sampler_poisoned:!sampler_current(c->second);
+    }
+    SamplerCell* sampler_slot(Set& s,std::uint32_t binding){
+        const auto c=s.samplers.find(binding);if(c!=s.samplers.end())return &c->second;
+        if(sampler_cell_count>=sampler_cell_capacity){sampler_disable();return nullptr;}
+        auto inserted=s.samplers.emplace(binding,SamplerCell{});++sampler_cell_count;return &inserted.first->second;
+    }
+    void sampler_direct(VkDescriptorSet h,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type,
+                        const VkDescriptorImageInfo* value,bool valid,bool repair=true,const DirectTarget* context=nullptr){
+        const auto target=context?*context:direct_target(h,binding,first,count,type);if(!target.set)return;auto& s=*target.set;
+        if(!valid||!target.binding){sampler_poison(s);return;}
+        if(type!=VK_DESCRIPTOR_TYPE_SAMPLER)return;const auto* l=target.declaration;
+        if(l->bindings.at(binding).descriptorCount!=1||l->immutable_samplers.count(binding))return;
+        const bool damaged=!repair&&sampler_damaged(s,binding);const auto token=value?samplers.token(value->sampler):NativeSamplerToken{};
+        auto* c=sampler_slot(s,binding);if(!c)return;*c={token,!damaged&&bool(token),damaged||!token};
+    }
+    void sampler_copy(const VkCopyDescriptorSet& c){
+        const auto dst=sets.find(c.dstSet);if(dst==sets.end())return;auto& target=dst->second;const auto src=sets.find(c.srcSet);
+        if(c.sType!=VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET||c.pNext||src==sets.end()||!set_valid(src->second)||!set_valid(target)){sampler_poison(target);return;}
+        const auto* l=layout(src->second.layout);const auto d=l->bindings.find(c.srcBinding);
+        if(d==l->bindings.end()||!span(src->second,c.srcBinding,c.srcArrayElement,c.descriptorCount,d->second.descriptorType)||
+           !span(target,c.dstBinding,c.dstArrayElement,c.descriptorCount,d->second.descriptorType)||
+           (c.srcSet==c.dstSet&&c.srcBinding==c.dstBinding&&c.srcArrayElement<c.dstArrayElement+c.descriptorCount&&c.dstArrayElement<c.srcArrayElement+c.descriptorCount)){
+            sampler_poison(target);return;
+        }
+        if(d->second.descriptorType!=VK_DESCRIPTOR_TYPE_SAMPLER)return;const auto* out_layout=layout(target.layout);
+        if(out_layout->bindings.at(c.dstBinding).descriptorCount!=1||out_layout->immutable_samplers.count(c.dstBinding))return;
+        const auto retained=d->second.descriptorCount==1?sampler_cell(src->second,c.srcBinding):SamplerCell{};
+        const bool valid=sampler_current(retained)&&!sampler_damaged(target,c.dstBinding);auto* out=sampler_slot(target,c.dstBinding);
+        if(out)*out={retained.identity,valid,!valid};
+    }
+    void sampler_template(VkDescriptorSet h,VkDescriptorUpdateTemplate update,const void* data){
+        const auto s=sets.find(h);if(s==sets.end())return;const auto t=templates.find(update);
+        if(t==templates.end()||!data||!layout(t->second.layout)||s->second.layout.handle!=t->second.layout.handle||
+           s->second.layout.generation!=t->second.layout.generation){sampler_poison(s->second);return;}
+        for(const auto& e:t->second.entries){if(e.descriptorType!=VK_DESCRIPTOR_TYPE_SAMPLER||layout(s->second.layout)->bindings.at(e.dstBinding).descriptorCount!=1||layout(s->second.layout)->immutable_samplers.count(e.dstBinding))continue;
+            VkDescriptorImageInfo value{};std::memcpy(&value,static_cast<const unsigned char*>(data)+e.offset,sizeof(value));
+            sampler_direct(h,e.dstBinding,e.dstArrayElement,e.descriptorCount,e.descriptorType,&value,true,false);
+        }
+    }
+    NativeSamplerDescriptor sampler_source(const NativeBoundState& state,std::uint32_t index,std::uint32_t binding)const{
+        if(!sampler_descriptors_available||!samplers.available())return {};const auto* s=current_set(state,index,false);if(!s)return {};
+        for(std::uint32_t n=0;n<state.sets.size();++n)if(!current_set(state,n,false))return {};
+        const auto* l=layout(s->layout);const auto d=l->bindings.find(binding);
+        if(d==l->bindings.end()||d->second.descriptorType!=VK_DESCRIPTOR_TYPE_SAMPLER||d->second.descriptorCount!=1)return {};
+        const auto c=sampler_cell(*s,binding);if(!sampler_current(c))return {};
+        return {c.identity,state.sets[index],binding,s->generation,s->version,l->flags.at(binding),l->immutable_samplers.count(binding)!=0};
+    }
     bool cell(VkDescriptorType type,const VkDescriptorBufferInfo& input,Cell& output)const{
         const auto it=buffers.find(input.buffer);if(it==buffers.end() || !buffer_type(type))return false;
         const auto& b=it->second;const auto usage=type==VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER?VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT:VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -381,13 +608,11 @@ struct NativeState::Impl{
         output={{input.buffer,input.offset,range},b.generation};return true;
     }
     bool span(const Set& set,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type)const{
-        const auto* l=layout(set.layout);if(!l || !count || count>(buffer_type(type)?cap:opaque_cap))return false;
-        const auto it=l->bindings.find(binding);return it!=l->bindings.end() && it->second.descriptorType==type && descriptor_type(type) &&
-            first<=it->second.descriptorCount && count<=it->second.descriptorCount-first;
+        return declared_span(layout(set.layout),binding,first,count,type)!=nullptr;
     }
-    void direct(VkDescriptorSet handle,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type,const VkDescriptorBufferInfo* values,bool valid,std::uint32_t operation=1){
-        const auto it=sets.find(handle);if(it==sets.end())return;auto& s=it->second;
-        if(!valid || !span(s,binding,first,count,type)){reject(s,operation,binding,first,count,type,!valid?1:2);return;}
+    void direct(VkDescriptorSet handle,std::uint32_t binding,std::uint32_t first,std::uint32_t count,VkDescriptorType type,const VkDescriptorBufferInfo* values,bool valid,std::uint32_t operation=1,const DirectTarget* context=nullptr){
+        const auto target=context?*context:direct_target(handle,binding,first,count,type);if(!target.set)return;auto& s=*target.set;
+        if(!valid || !target.binding){reject(s,operation,binding,first,count,type,!valid?1:2);return;}
         // Opaque descriptors are restored through their original native sets.
         // Exact, nonspilling writes cannot modify any tracked buffer binding.
         if(!buffer_type(type)){bump(s);return;}
@@ -399,7 +624,7 @@ struct NativeState::Impl{
             s.rejected_update={operation,binding,first,count,static_cast<std::uint32_t>(type),buffers.find(values[i].buffer)==buffers.end()?4u:5u};
             auto& rejected=s.contents[binding];rejected.known=false;rejected.poisoned=true;bump(s);return;
         }incoming.push_back(c);}
-        const auto total=layout(s.layout)->bindings.at(binding).descriptorCount;auto& content=s.contents[binding];
+        const auto total=target.binding->descriptorCount;auto& content=s.contents[binding];
         if(first==0 && count==total){content.cells=std::move(incoming);content.known=true;content.poisoned=false;}
         else if(content.known && content.cells.size()==total)std::copy(incoming.begin(),incoming.end(),content.cells.begin()+first);
         else{content.known=false;content.poisoned=true;s.rejected_update={operation,binding,first,count,static_cast<std::uint32_t>(type),6};}
@@ -519,12 +744,29 @@ std::string NativeState::sampled_binding_diagnostic(const NativeBoundState& stat
         out<<" layoutKnown="<<bool(layout)<<" setPoisoned="<<value.poisoned<<" setGeneration="<<value.generation<<" setVersion="<<value.version;
         if(layout){const auto d=layout->bindings.find(binding);out<<" declared="<<(d!=layout->bindings.end());
             if(d!=layout->bindings.end())out<<" type="<<d->second.descriptorType<<" declaredCount="<<d->second.descriptorCount<<" declarationFlags="<<layout->flags.at(binding);}
+        const auto descriptor=impl_->available?impl_->scene_source(state,index,binding):NativeSceneImageDescriptor{};
+        out<<" sceneDescriptorProvenance="<<bool(descriptor);
+        if(descriptor)out<<" sceneDescriptorImage="<<descriptor.image.image<<" sceneDescriptorImageGeneration="<<descriptor.image.image_generation
+            <<" sceneDescriptorViewGeneration="<<descriptor.image.view_generation<<" sceneDescriptorRegistry="<<descriptor.image.registry_serial;
         const auto cell=value.sampled.find(binding);out<<" cellExists="<<(cell!=value.sampled.end());
         if(cell!=value.sampled.end()){const auto& c=cell->second;const auto current=impl_->sampled_view(c.info.imageView);
             out<<" rawObserved="<<c.raw_known<<" contentsKnown="<<c.known<<" currentCellKnown="<<impl_->sampled_current(c)<<" contentsPoisoned="<<c.poisoned
                <<" retainedImageView="<<c.info.imageView<<" retainedLayout="<<c.info.imageLayout
                <<" currentViewKnown="<<bool(current.view)
                <<" retainedImage="<<c.view.image<<" retainedImageGeneration="<<c.view.image_generation<<" retainedViewGeneration="<<c.view.view_generation;
+            // Diagnostic join by current handle only. These facts deliberately
+            // do not upgrade the retained descriptor's provenance or permit.
+            const auto scene=impl_->available?impl_->scene_images.view(c.info.imageView):NativeSceneImageFacts{};
+            out<<" sceneCurrentViewKnown="<<bool(scene);
+            if(scene)out<<" sceneImage="<<scene.identity.image<<" sceneImageGeneration="<<scene.identity.image_generation
+                <<" sceneViewGeneration="<<scene.identity.view_generation<<" sceneRegistry="<<scene.identity.registry_serial
+                <<" sceneImageType="<<scene.image_type<<" sceneViewType="<<scene.view_type<<" sceneImageFormat="<<scene.image_format<<" sceneViewFormat="<<scene.format
+                <<" sceneImageFlags="<<scene.image_flags<<" sceneImageUsage="<<scene.image_usage<<" sceneViewUsage="<<scene.view_usage
+                <<" sceneExtent="<<scene.extent.width<<","<<scene.extent.height<<","<<scene.extent.depth
+                <<" sceneBaseExtent="<<scene.image_extent.width<<","<<scene.image_extent.height<<","<<scene.image_extent.depth
+                <<" sceneMips="<<scene.image_mips<<" sceneLayers="<<scene.image_layers
+                <<" sceneRange="<<scene.range.aspectMask<<","<<scene.range.baseMipLevel<<","<<scene.range.levelCount<<","<<scene.range.baseArrayLayer<<","<<scene.range.layerCount
+                <<" sceneSharing="<<scene.sharing_mode<<" sceneQueueCount="<<scene.queue_family_count;
             if(current.view){out<<" currentViewFormat="<<current.format<<" currentViewUsage="<<current.usage<<" currentImageFlags="<<current.image_flags
                 <<" currentImageUsage="<<current.image_usage<<" currentImageFormatCount="<<current.image_format_count<<" currentImageFormats=";
                 for(std::uint32_t n=0;n<current.image_format_count;++n){if(n)out<<",";out<<current.image_formats[n];}}}
@@ -532,6 +774,32 @@ std::string NativeState::sampled_binding_diagnostic(const NativeBoundState& stat
     },true);
 }
 NativeSampledImageView NativeState::sampled_view(VkImageView h)const noexcept{return impl_?impl_->read<NativeSampledImageView>([&]{return impl_->sampled_view(h);}):NativeSampledImageView{};}
+NativeSceneImageFacts NativeState::scene_image_view(VkImageView h)const noexcept{
+    return impl_?impl_->read<NativeSceneImageFacts>([&]{return impl_->scene_images.view(h);}):NativeSceneImageFacts{};
+}
+NativeSceneImageFacts NativeState::scene_image_view(const NativeSceneImageToken& token)const noexcept{
+    return impl_?impl_->read<NativeSceneImageFacts>([&]{return impl_->scene_images.current(token)?impl_->scene_images.view(token.view):NativeSceneImageFacts{};}):NativeSceneImageFacts{};
+}
+NativeSceneImageDescriptor NativeState::observed_scene_image_descriptor(const NativeBoundState& state,std::uint32_t index,std::uint32_t binding)const noexcept{
+    return impl_?impl_->read<NativeSceneImageDescriptor>([&]{return impl_->scene_source(state,index,binding);}):NativeSceneImageDescriptor{};
+}
+bool NativeState::scene_image_descriptor_current(const NativeSceneImageDescriptor& ref)const noexcept{
+    return impl_&&impl_->read<bool>([&]{if(!ref||!impl_->scene_descriptors_available)return false;const auto s=impl_->sets.find(ref.set);
+        if(s==impl_->sets.end()||!impl_->set_valid(s->second)||s->second.generation!=ref.set_generation||s->second.version!=ref.set_version)return false;
+        const auto* l=impl_->layout(s->second.layout);const auto d=l->bindings.find(ref.binding);const auto f=l->flags.find(ref.binding);
+        if(d==l->bindings.end()||d->second.descriptorCount!=1||d->second.descriptorType!=ref.type||f==l->flags.end()||f->second!=ref.declaration_flags)return false;
+        const auto c=s->second.scene.find(ref.binding);if(c==s->second.scene.end()||!impl_->scene_current(c->second))return false;const auto& actual=c->second;
+        return actual.type==ref.type&&actual.info.imageView==ref.info.imageView&&actual.info.imageLayout==ref.info.imageLayout&&
+            actual.image.image==ref.image.image&&actual.image.view==ref.image.view&&actual.image.image_generation==ref.image.image_generation&&
+            actual.image.view_generation==ref.image.view_generation&&actual.image.registry_serial==ref.image.registry_serial;
+    });
+}
+bool NativeState::scene_image_metadata_current(const NativeSceneImageToken& token)const noexcept{
+    return impl_&&impl_->read<bool>([&]{return impl_->scene_images.current(token);});
+}
+bool NativeState::scene_image_metadata_available()const noexcept{
+    return impl_&&impl_->read<bool>([&]{return impl_->scene_images.available();});
+}
 NativeSampledImageBinding NativeState::observed_sampled_image_binding(const NativeBoundState& state,std::uint32_t index,std::uint32_t binding)const noexcept{
     return impl_?impl_->read<NativeSampledImageBinding>([&]{return impl_->sampled_source(state,index,binding);}):NativeSampledImageBinding{};
 }
@@ -543,6 +811,21 @@ bool NativeState::live(const NativeSampledImageBinding& ref)const noexcept{
         const auto c=s->second.sampled.find(ref.binding);return c!=s->second.sampled.end()&&impl_->sampled_current(c->second)&&
             c->second.info.imageView==ref.info.imageView&&c->second.info.imageLayout==ref.info.imageLayout&&same_view(c->second.view,ref.view);});
 }
+void NativeState::sampler_created(VkSampler h,const VkSamplerCreateInfo& i)noexcept{if(impl_)impl_->write([&]{impl_->samplers.created(h,i);});}
+void NativeState::sampler_destroyed(VkSampler h)noexcept{if(impl_)impl_->write([&]{impl_->samplers.destroyed(h);});}
+NativeSamplerDescriptor NativeState::observed_sampler_descriptor(const NativeBoundState& state,std::uint32_t index,std::uint32_t binding)const noexcept{
+    return impl_?impl_->read<NativeSamplerDescriptor>([&]{return impl_->sampler_source(state,index,binding);}):NativeSamplerDescriptor{};
+}
+bool NativeState::sampler_descriptor_current(const NativeSamplerDescriptor& ref)const noexcept{
+    return impl_&&impl_->read<bool>([&]{if(!ref||!impl_->sampler_descriptors_available||!impl_->samplers.available())return false;
+        const auto s=impl_->sets.find(ref.set);if(s==impl_->sets.end()||!impl_->set_valid(s->second)||s->second.generation!=ref.set_generation||s->second.version!=ref.set_version)return false;
+        const auto* l=impl_->layout(s->second.layout);const auto d=l->bindings.find(ref.binding);const auto flags=l->flags.find(ref.binding);
+        if(d==l->bindings.end()||d->second.descriptorType!=VK_DESCRIPTOR_TYPE_SAMPLER||d->second.descriptorCount!=1||flags==l->flags.end()||flags->second!=ref.declaration_flags||
+           (l->immutable_samplers.count(ref.binding)!=0)!=ref.immutable)return false;
+        const auto c=impl_->sampler_cell(s->second,ref.binding);return impl_->sampler_current(c)&&same_native_sampler(c.identity,ref.identity);
+    });
+}
+bool NativeState::sampler_metadata_available()const noexcept{return impl_&&impl_->read<bool>([&]{return impl_->samplers.available()&&impl_->sampler_descriptors_available;});}
 void NativeState::buffer_created(VkBuffer h,const VkBufferCreateInfo& i)noexcept{
     if(impl_)impl_->write([&]{impl_->advance_buffer_epoch();impl_->buffers.erase(h);if(h && i.sType==VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO && !i.pNext && !i.flags && i.size && i.usage)
         impl_->store(impl_->buffers,h,Impl::Buffer{i.size,i.usage,impl_->generation()});});
@@ -555,7 +838,7 @@ NativeBufferBinding NativeState::buffer(VkBuffer h)const noexcept{
 }
 std::uint64_t NativeState::buffer_epoch()const noexcept {if(!impl_)return 0;return impl_->read<std::uint64_t>([&]{return impl_->buffers_epoch;});}
 void NativeState::layout_created(VkDescriptorSetLayout h,const VkDescriptorSetLayoutCreateInfo& i)noexcept{
-    if(impl_)impl_->write([&]{impl_->layouts.erase(h);
+    if(impl_)impl_->write([&]{impl_->sampler_forget_layout(h);impl_->layouts.erase(h);
         if(!h || i.sType!=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO || i.flags || i.bindingCount>binding_cap || (i.bindingCount && !i.pBindings))return;
         const VkDescriptorBindingFlags* flags=nullptr;
         if(i.pNext){const auto& f=*static_cast<const VkDescriptorSetLayoutBindingFlagsCreateInfo*>(i.pNext);
@@ -568,9 +851,10 @@ void NativeState::layout_created(VkDescriptorSetLayout h,const VkDescriptorSetLa
                (buffer_type(b.descriptorType) && b.descriptorCount>cap-buffers) || !b.stageFlags || !l.bindings.emplace(b.binding,b).second)return;
             total+=b.descriptorCount;if(buffer_type(b.descriptorType))buffers+=b.descriptorCount;
             l.bindings.at(b.binding).pImmutableSamplers=nullptr;l.flags.emplace(b.binding,flags?flags[j]:0);}
+        impl_->sampler_observe([&]{impl_->sampler_layout(l,i);});
         impl_->store(impl_->layouts,h,std::move(l));});
 }
-void NativeState::layout_destroyed(VkDescriptorSetLayout h)noexcept{if(impl_)impl_->write([&]{impl_->layouts.erase(h);});}
+void NativeState::layout_destroyed(VkDescriptorSetLayout h)noexcept{if(impl_)impl_->write([&]{impl_->sampler_forget_layout(h);impl_->layouts.erase(h);});}
 void NativeState::pipeline_layout_created(VkPipelineLayout h,const VkPipelineLayoutCreateInfo& i)noexcept{
     if(impl_)impl_->write([&]{impl_->pipeline_layouts.erase(h);
         if(!h || !simple(i,VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO) || i.setLayoutCount>32 || (i.setLayoutCount && !i.pSetLayouts) ||
@@ -578,22 +862,24 @@ void NativeState::pipeline_layout_created(VkPipelineLayout h,const VkPipelineLay
         for(std::uint32_t j=0;j<i.pushConstantRangeCount;++j){const auto& r=i.pPushConstantRanges[j];
             if(!r.stageFlags || !r.size || r.offset%4 || r.size%4 || r.offset>4096 || r.size>4096-r.offset)return;}
         Impl::PipelineLayout l;l.generation=impl_->generation();
+        l.compute_word_root=i.pushConstantRangeCount==1&&i.pPushConstantRanges[0].stageFlags==VK_SHADER_STAGE_COMPUTE_BIT&&
+            i.pPushConstantRanges[0].offset==0&&i.pPushConstantRanges[0].size==4;
         for(std::uint32_t j=0;j<i.setLayoutCount;++j){const auto it=impl_->layouts.find(i.pSetLayouts[j]);if(it==impl_->layouts.end())return;l.layouts.push_back({it->first,it->second.generation});}
         impl_->store(impl_->pipeline_layouts,h,std::move(l));});
 }
 void NativeState::pipeline_layout_destroyed(VkPipelineLayout h)noexcept{if(impl_)impl_->write([&]{impl_->pipeline_layouts.erase(h);});}
 void NativeState::sets_allocated(const VkDescriptorSetAllocateInfo& i,const VkDescriptorSet* handles)noexcept{
     if(impl_)impl_->write([&]{if(i.descriptorSetCount>cap || (i.descriptorSetCount && !handles)){impl_->available=false;return;}
-        for(std::uint32_t j=0;j<i.descriptorSetCount;++j){impl_->sets.erase(handles[j]);
+        for(std::uint32_t j=0;j<i.descriptorSetCount;++j){const auto old=impl_->sets.find(handles[j]);if(old!=impl_->sets.end())impl_->scene_forget(old->second);impl_->sets.erase(handles[j]);
             if(!handles[j] || i.sType!=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO || i.pNext || !i.descriptorPool || !i.pSetLayouts)continue;
             const auto l=impl_->layouts.find(i.pSetLayouts[j]);if(l==impl_->layouts.end())continue;
             Impl::Set s;s.pool=i.descriptorPool;s.layout={l->first,l->second.generation};s.generation=impl_->generation();impl_->store(impl_->sets,handles[j],std::move(s));}});
 }
 void NativeState::sets_freed(std::uint32_t count,const VkDescriptorSet* handles)noexcept{
-    if(impl_)impl_->write([&]{if(count>cap || (count && !handles)){impl_->available=false;return;}for(std::uint32_t i=0;i<count;++i)impl_->sets.erase(handles[i]);});
+    if(impl_)impl_->write([&]{if(count>cap || (count && !handles)){impl_->available=false;return;}for(std::uint32_t i=0;i<count;++i){const auto old=impl_->sets.find(handles[i]);if(old!=impl_->sets.end())impl_->scene_forget(old->second);impl_->sets.erase(handles[i]);}});
 }
 void NativeState::pool_reset(VkDescriptorPool h)noexcept{
-    if(impl_)impl_->write([&]{for(auto it=impl_->sets.begin();it!=impl_->sets.end();)if(it->second.pool==h)it=impl_->sets.erase(it);else ++it;});
+    if(impl_)impl_->write([&]{for(auto it=impl_->sets.begin();it!=impl_->sets.end();)if(it->second.pool==h){impl_->scene_forget(it->second);it=impl_->sets.erase(it);}else ++it;});
 }
 void NativeState::descriptors_written(std::uint32_t count,const VkWriteDescriptorSet* writes)noexcept{
     if(impl_)impl_->write([&]{if(count>cap || (count && !writes)){impl_->poison_all();return;}
@@ -602,12 +888,15 @@ void NativeState::descriptors_written(std::uint32_t count,const VkWriteDescripto
             else if(w.descriptorType==VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || w.descriptorType==VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)valid=valid && w.pTexelBufferView;
             else if(w.descriptorType==VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || w.descriptorType==VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)valid=valid && w.pBufferInfo;
             else valid=valid && w.pImageInfo;
-            if(w.descriptorType==VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE||w.descriptorType==VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)impl_->sampled_direct(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.pImageInfo,valid,1,w.descriptorType);
-            else impl_->direct(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.descriptorType,w.pBufferInfo,valid);}});
+            const auto target=impl_->direct_target(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.descriptorType);
+            impl_->sampler_observe([&]{impl_->sampler_direct(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.descriptorType,w.pImageInfo,valid,true,&target);});
+            impl_->scene_observe([&]{impl_->scene_direct(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.descriptorType,w.pImageInfo,valid,true,&target);});
+            if(w.descriptorType==VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE||w.descriptorType==VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)impl_->sampled_direct(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.pImageInfo,valid,1,w.descriptorType,&target);
+            else impl_->direct(w.dstSet,w.dstBinding,w.dstArrayElement,w.descriptorCount,w.descriptorType,w.pBufferInfo,valid,1,&target);}});
 }
 void NativeState::descriptors_copied(std::uint32_t count,const VkCopyDescriptorSet* copies)noexcept{
     if(impl_)impl_->write([&]{if(count>cap || (count && !copies)){impl_->poison_all();return;}
-        for(std::uint32_t i=0;i<count;++i){const auto& c=copies[i];const auto dst=impl_->sets.find(c.dstSet);if(dst==impl_->sets.end())continue;
+        for(std::uint32_t i=0;i<count;++i){const auto& c=copies[i];impl_->sampler_observe([&]{impl_->sampler_copy(c);});impl_->scene_observe([&]{impl_->scene_copy(c);});const auto dst=impl_->sets.find(c.dstSet);if(dst==impl_->sets.end())continue;
             const auto src=impl_->sets.find(c.srcSet);auto& target=dst->second;
             if(c.sType!=VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET || c.pNext || src==impl_->sets.end() || !impl_->set_valid(src->second) || !impl_->set_valid(target)){impl_->reject(target,2,c.dstBinding,c.dstArrayElement,c.descriptorCount,UINT32_MAX,7);continue;}
             const auto* l=impl_->layout(src->second.layout);const auto decl=l->bindings.find(c.srcBinding);
@@ -629,7 +918,7 @@ void NativeState::descriptors_copied(std::uint32_t count,const VkCopyDescriptorS
                 if(decl->second.descriptorCount!=1){target.sampled.erase(c.dstBinding);impl_->bump(target);continue;}
                 if(cell==src->second.sampled.end()||!impl_->sampled_current(cell->second)||(old==target.sampled.end()&&target.poisoned)||
                    (old!=target.sampled.end()&&old->second.poisoned)){impl_->reject(target,2,c.dstBinding,c.dstArrayElement,c.descriptorCount,UINT32_MAX,7);continue;}
-                target.sampled[c.dstBinding]=cell->second;impl_->bump(target);continue;
+                const auto retained=cell->second;target.sampled[c.dstBinding]=retained;impl_->bump(target);continue;
             }
             if(!buffer_type(decl->second.descriptorType)){impl_->bump(target);continue;}
             const auto source=src->second.contents.find(c.srcBinding);
@@ -662,7 +951,7 @@ void NativeState::template_created(VkDescriptorUpdateTemplate h,const VkDescript
 }
 void NativeState::template_destroyed(VkDescriptorUpdateTemplate h)noexcept{if(impl_)impl_->write([&]{impl_->templates.erase(h);});}
 void NativeState::template_written(VkDescriptorSet h,VkDescriptorUpdateTemplate update,const void* data)noexcept{
-    if(impl_)impl_->write([&]{const auto s=impl_->sets.find(h);if(s==impl_->sets.end())return;const auto t=impl_->templates.find(update);
+    if(impl_)impl_->write([&]{impl_->sampler_observe([&]{impl_->sampler_template(h,update,data);});impl_->scene_observe([&]{impl_->scene_template(h,update,data);});const auto s=impl_->sets.find(h);if(s==impl_->sets.end())return;const auto t=impl_->templates.find(update);
         if(t==impl_->templates.end() || !data || !impl_->layout(t->second.layout) || s->second.layout.handle!=t->second.layout.handle ||
            s->second.layout.generation!=t->second.layout.generation){impl_->reject(s->second,3,0,0,0,UINT32_MAX,8);return;}
         // Templates and copies cannot repair unknown provenance. Only a full
@@ -753,7 +1042,7 @@ void NativeState::compute_pipelines_created(std::uint32_t count,const VkComputeP
 }
 void NativeState::pipeline_destroyed(VkPipeline h)noexcept{if(impl_)impl_->write([&]{impl_->pipelines.erase(h);impl_->raster_declarations.erase(h);});}
 void NativeState::image_created(VkImage h,const VkImageCreateInfo& i)noexcept{
-    if(impl_)impl_->write([&]{impl_->sampled_image(h,i);impl_->images.erase(h);if(!(i.usage&(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)))return;
+    if(impl_)impl_->write([&]{impl_->views_changing();impl_->scene_images.image_created(h,i);impl_->cube_upload.image_destroyed(h);if(i.flags&VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT){impl_->cube_upload.image_created(impl_->scene_images.image(h));if(impl_->cube_upload.tracks(h))Impl::mark(impl_->cube_bits,h);}impl_->sampled_image(h,i);impl_->images.erase(h);if(!(i.usage&(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)))return;
         if(!h || i.sType!=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO || (i.flags&~VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || i.imageType!=VK_IMAGE_TYPE_2D ||
         !i.extent.width || !i.extent.height || i.extent.depth!=1 || i.extent.width>32768 || i.extent.height>32768 || !i.mipLevels || !i.arrayLayers ||
         i.samples!=VK_SAMPLE_COUNT_1_BIT || !i.usage)return;
@@ -763,9 +1052,9 @@ void NativeState::image_created(VkImage h,const VkImageCreateInfo& i)noexcept{
             if(list.viewFormatCount)image.view_formats.assign(list.pViewFormats,list.pViewFormats+list.viewFormatCount);}
         impl_->store(impl_->images,h,std::move(image));});
 }
-void NativeState::image_destroyed(VkImage h)noexcept{if(impl_)impl_->write([&]{impl_->images.erase(h);for(auto& m:impl_->sampled_images)m.erase(h);});}
+void NativeState::image_destroyed(VkImage h)noexcept{if(impl_)impl_->write([&]{impl_->views_changing();if(impl_->maybe_cube(h)){impl_->cube_upload.image_destroyed(h);impl_->rebuild_cube_filters();}impl_->scene_images.image_destroyed(h);impl_->images.erase(h);for(auto& m:impl_->sampled_images)m.erase(h);});}
 void NativeState::view_created(VkImageView h,const VkImageViewCreateInfo& i)noexcept{
-    if(impl_)impl_->write([&]{impl_->sampled_view(h,i);impl_->views.erase(h);impl_->attachment_views.erase(h);const auto image=impl_->images.find(i.image);
+    if(impl_)impl_->write([&]{impl_->views_changing();impl_->scene_images.view_created(h,i);impl_->sampled_view(h,i);impl_->views.erase(h);impl_->attachment_views.erase(h);const auto image=impl_->images.find(i.image);
         if(!h || i.sType!=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO || i.flags || image==impl_->images.end() || i.viewType!=VK_IMAGE_VIEW_TYPE_2D ||
            i.subresourceRange.baseMipLevel || i.subresourceRange.levelCount!=1 ||
            i.subresourceRange.baseArrayLayer>=image->second.info.arrayLayers || i.subresourceRange.layerCount!=1 || i.components.r!=VK_COMPONENT_SWIZZLE_IDENTITY ||
@@ -787,10 +1076,100 @@ void NativeState::view_created(VkImageView h,const VkImageViewCreateInfo& i)noex
         if(i.subresourceRange.baseArrayLayer)return;
         impl_->store(impl_->views,h,observed);});
 }
-void NativeState::view_destroyed(VkImageView h)noexcept{if(impl_)impl_->write([&]{impl_->views.erase(h);impl_->attachment_views.erase(h);for(auto& m:impl_->sampled_views)m.erase(h);});}
-void NativeState::command_begin(VkCommandBuffer h)noexcept{if(impl_)impl_->write([&]{if(h)impl_->store(impl_->commands,h,Impl::Command{},command_cap);});}
+void NativeState::view_destroyed(VkImageView h)noexcept{if(impl_)impl_->write([&]{impl_->views_changing();impl_->scene_images.view_destroyed(h);impl_->views.erase(h);impl_->attachment_views.erase(h);for(auto& m:impl_->sampled_views)m.erase(h);});}
+void NativeState::command_begin(VkCommandBuffer h)noexcept{if(impl_)impl_->write([&]{if(impl_->maybe_cube_command(h)){impl_->cube_upload.command_reset(h);impl_->rebuild_cube_filters();}if(h)impl_->store(impl_->commands,h,Impl::Command{},command_cap);});}
+void NativeState::cube_copy(VkCommandBuffer c,VkImage h,VkImageLayout layout,std::uint32_t count,const VkBufferImageCopy* copies)noexcept{
+    if(impl_&&impl_->maybe_cube(h))impl_->write([&]{impl_->cube_upload.copy(c,h,layout,count,copies);Impl::mark(impl_->cube_command_bits,c);});
+}
+void NativeState::cube_copy2(VkCommandBuffer c,const VkCopyBufferToImageInfo2* info)noexcept{
+    if(!impl_||!info||!impl_->maybe_cube(info->dstImage))return;
+    if(info->pNext||!info->regionCount||info->regionCount>96||!info->pRegions){cube_unobserved_write(info->dstImage);return;}
+    std::array<VkBufferImageCopy,96> copies{};
+    for(std::uint32_t n=0;n<info->regionCount;++n){const auto& r=info->pRegions[n];if(r.pNext){cube_unobserved_write(info->dstImage);return;}
+        copies[n]={r.bufferOffset,r.bufferRowLength,r.bufferImageHeight,r.imageSubresource,r.imageOffset,r.imageExtent};}
+    cube_copy(c,info->dstImage,info->dstImageLayout,info->regionCount,copies.data());
+}
+void NativeState::cube_unobserved_write(VkImage h)noexcept{if(impl_&&impl_->maybe_cube(h))impl_->write([&]{impl_->cube_upload.unobserved_write(h);});}
+void NativeState::cube_barriers(VkCommandBuffer c,VkPipelineStageFlags src,VkPipelineStageFlags dst,VkDependencyFlags flags,std::uint32_t count,const VkImageMemoryBarrier* barriers)noexcept{
+    if(!impl_)return;if(count>512||(count&&!barriers)){impl_->write([&]{impl_->cube_upload.unknown();});return;}bool relevant=false;for(std::uint32_t n=0;n<count&&!relevant;++n)relevant=impl_->maybe_cube(barriers[n].image);
+    if(relevant)impl_->write([&]{impl_->cube_upload.legacy(c,src,dst,flags,count,barriers);Impl::mark(impl_->cube_command_bits,c);});
+}
+void NativeState::cube_barriers2(VkCommandBuffer c,const VkDependencyInfo* info)noexcept{
+    if(!impl_||!info)return;if(info->imageMemoryBarrierCount>512||(info->imageMemoryBarrierCount&&!info->pImageMemoryBarriers)){impl_->write([&]{impl_->cube_upload.unknown();});return;}bool relevant=false;
+    for(std::uint32_t n=0;n<info->imageMemoryBarrierCount&&!relevant;++n)relevant=impl_->maybe_cube(info->pImageMemoryBarriers[n].image);
+    if(relevant)impl_->write([&]{impl_->cube_upload.sync2(c,info);Impl::mark(impl_->cube_command_bits,c);});
+}
+void NativeState::cube_command_end(VkCommandBuffer c,VkResult result)noexcept{if(impl_&&impl_->maybe_cube_command(c))impl_->write([&]{impl_->cube_upload.command_end(c,result);});}
+void NativeState::cube_reset_commands()noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.reset_commands();impl_->rebuild_cube_filters();});}
+void NativeState::cube_allocated(const VkCommandBufferAllocateInfo& info,const VkCommandBuffer* commands)noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.allocated(info,commands);});}
+void NativeState::cube_freed(std::uint32_t count,const VkCommandBuffer* commands)noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.freed(count,commands);impl_->rebuild_cube_filters();});}
+void NativeState::cube_pool_reset(VkCommandPool pool,bool destroyed)noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.pool_reset(pool,destroyed);impl_->rebuild_cube_filters();});}
+void NativeState::cube_submitted(VkQueue q,std::uint32_t count,const VkSubmitInfo* submissions,VkResult result,VkFence fence)noexcept{
+    if(!impl_||!count)return;if(!submissions||count>256){impl_->write([&]{impl_->cube_upload.unknown();});return;}bool relevant=false;
+    for(std::uint32_t s=0;s<count&&!relevant;++s){const auto& submission=submissions[s];if(submission.commandBufferCount>4096||(submission.commandBufferCount&&!submission.pCommandBuffers)){impl_->write([&]{impl_->cube_upload.unknown();});return;}
+        for(std::uint32_t c=0;c<submission.commandBufferCount&&!relevant;++c)relevant=impl_->maybe_cube_command(submission.pCommandBuffers[c]);}
+    if(relevant)impl_->write([&]{impl_->cube_upload.submitted(q,count,submissions,result,fence);impl_->rebuild_cube_completion_filter();});
+}
+void NativeState::cube_queue_observed(VkQueue q,std::uint32_t family)noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.queue_observed(q,family);});}
+void NativeState::cube_fence_created(VkFence f,const VkFenceCreateInfo* info)noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.fence_created(f,info);impl_->rebuild_cube_completion_filter();});}
+void NativeState::cube_fence_retired(VkFence f)noexcept{if(impl_)impl_->write([&]{impl_->cube_upload.fence_retired(f);impl_->rebuild_cube_completion_filter();});}
+void NativeState::cube_fence_changing(std::uint32_t count,const VkFence* fences)noexcept{
+    if(!impl_||!count)return;if(count>4096||!fences){impl_->write([&]{impl_->cube_upload.unknown();impl_->rebuild_cube_completion_filter();});return;}
+    if(!impl_->cube_completion_pending.load(std::memory_order_acquire))return;bool relevant=false;for(std::uint32_t n=0;n<count&&!relevant;++n)relevant=Impl::maybe(impl_->cube_fence_bits,fences[n]);
+    if(relevant)impl_->write([&]{impl_->cube_upload.fence_changing(count,fences);impl_->rebuild_cube_completion_filter();});
+}
+void NativeState::cube_fence_result(std::uint32_t count,const VkFence* fences,VkBool32 wait_all,VkResult result,bool status_query)noexcept{
+    if(!impl_||!impl_->cube_completion_pending.load(std::memory_order_acquire)||!count||count>4096||!fences)return;bool relevant=false;for(std::uint32_t n=0;n<count&&!relevant;++n)relevant=Impl::maybe(impl_->cube_fence_bits,fences[n]);
+    if(relevant)impl_->write([&]{for(std::uint32_t n=0;n<count;++n)impl_->cube_upload.fence_result(fences[n],result,wait_all||count==1,status_query?"fence-status":"fence-wait");impl_->rebuild_cube_completion_filter();});
+}
+void NativeState::cube_queue_idle(VkQueue q,VkResult result)noexcept{if(impl_&&impl_->cube_completion_pending.load(std::memory_order_acquire))impl_->write([&]{impl_->cube_upload.queue_idle(q,result);impl_->rebuild_cube_completion_filter();});}
+void NativeState::cube_submitted2(std::uint32_t count,const VkSubmitInfo2* submissions)noexcept{
+    if(!impl_||!count)return;if(!submissions||count>256){impl_->write([&]{impl_->cube_upload.unknown();});return;}bool relevant=false;
+    for(std::uint32_t s=0;s<count&&!relevant;++s){const auto& submission=submissions[s];if(submission.commandBufferInfoCount>4096||(submission.commandBufferInfoCount&&!submission.pCommandBufferInfos)){impl_->write([&]{impl_->cube_upload.unknown();});return;}
+        for(std::uint32_t c=0;c<submission.commandBufferInfoCount&&!relevant;++c)relevant=impl_->maybe_cube_command(submission.pCommandBufferInfos[c].commandBuffer);}
+    if(relevant)impl_->write([&]{impl_->cube_upload.submitted2(count,submissions);});
+}
+void NativeState::cube_before_submit(std::uint32_t count,const VkSubmitInfo* submissions)noexcept{
+    if(!impl_||!count)return;if(!submissions||count>256){impl_->write([&]{impl_->cube_upload.unknown();});return;}bool relevant=false;
+    for(std::uint32_t s=0;s<count&&!relevant;++s){const auto& submission=submissions[s];if(submission.commandBufferCount>4096||(submission.commandBufferCount&&!submission.pCommandBuffers)){impl_->write([&]{impl_->cube_upload.unknown();});return;}
+        for(std::uint32_t c=0;c<submission.commandBufferCount&&!relevant;++c)relevant=impl_->maybe_cube_command(submission.pCommandBuffers[c]);}
+    if(relevant)impl_->write([&]{impl_->cube_upload.before_submit(count,submissions);});
+}
+void NativeState::cube_executed(std::uint32_t count,const VkCommandBuffer* children)noexcept{
+    if(!impl_||!count)return;if(!children||count>4096){impl_->write([&]{impl_->cube_upload.unknown();});return;}bool relevant=false;
+    for(std::uint32_t c=0;c<count&&!relevant;++c)relevant=impl_->maybe_cube_command(children[c]);
+    if(relevant)impl_->write([&]{impl_->cube_upload.executed(count,children);});
+}
+bool NativeState::cube_initialized(const NativeSceneImageToken& token,VkQueue q)const noexcept{
+    return impl_&&impl_->read<bool>([&]{return impl_->scene_images.current(token)&&impl_->cube_upload.initialized(impl_->scene_images.view(token.view),q);});
+}
+std::string NativeState::cube_diagnostic(const NativeSceneImageToken& token,VkQueue q)const noexcept{
+    return impl_?impl_->read<std::string>([&]{return impl_->cube_upload.diagnostic(token.image,q);}):"unavailable";
+}
+void NativeState::dispatch_observed(VkCommandBuffer command,bool direct,std::uint32_t x,std::uint32_t y,std::uint32_t z,VkBuffer buffer,VkDeviceSize offset)noexcept{
+    if(impl_)impl_->write([&]{const auto c=impl_->commands.find(command);if(c==impl_->commands.end())return;
+        auto& value=c->second.dispatch;value={};
+        if(direct){if(buffer||offset)return;value.kind=NativeDispatchKind::Direct;value.groups={x,y,z};}
+        else{
+            if(!buffer||x||y||z||offset%4)return;
+            const auto b=impl_->buffers.find(buffer);if(b==impl_->buffers.end()||!(b->second.usage&VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)||
+                b->second.size<sizeof(VkDispatchIndirectCommand)||offset>b->second.size-sizeof(VkDispatchIndirectCommand))return;
+            value.kind=NativeDispatchKind::Indirect;value.indirect_offset=offset;
+            value.indirect_buffer={{buffer,0,b->second.size},b->second.size,b->second.usage,b->second.generation};
+        }
+        value.serial=impl_->generation();
+    });
+}
+NativeDispatchObservation NativeState::observed_dispatch(VkCommandBuffer command)const noexcept{
+    return impl_?impl_->read<NativeDispatchObservation>([&]{const auto c=impl_->commands.find(command);if(c==impl_->commands.end())return NativeDispatchObservation{};
+        const auto& value=c->second.dispatch;if(!value)return NativeDispatchObservation{};
+        if(value.kind==NativeDispatchKind::Indirect){const auto& ref=value.indirect_buffer;const auto b=impl_->buffers.find(ref.info.buffer);
+            if(b==impl_->buffers.end()||b->second.generation!=ref.generation||b->second.size!=ref.size||b->second.usage!=ref.usage)return NativeDispatchObservation{};}
+        return value;
+    }):NativeDispatchObservation{};
+}
 void NativeState::command_freed(std::uint32_t count,const VkCommandBuffer* handles)noexcept{
-    if(impl_)impl_->write([&]{if(count>command_cap || (count && !handles)){impl_->available=false;return;}for(std::uint32_t i=0;i<count;++i)impl_->commands.erase(handles[i]);});
+    if(impl_)impl_->write([&]{if(count>command_cap || (count && !handles)){impl_->available=false;return;}bool changed=false;for(std::uint32_t i=0;i<count;++i){if(impl_->maybe_cube_command(handles[i])){impl_->cube_upload.command_reset(handles[i]);changed=true;}impl_->commands.erase(handles[i]);}if(changed)impl_->rebuild_cube_filters();});
 }
 void NativeState::viewports_set(VkCommandBuffer command,std::uint32_t first,std::uint32_t count,const VkViewport* values)noexcept{
     if(impl_)impl_->write([&]{const auto found=impl_->commands.find(command);if(found==impl_->commands.end())return;
@@ -812,6 +1191,33 @@ void NativeState::raster_unobserved(VkCommandBuffer command,const char* name)noe
 }
 NativeRasterState NativeState::raster(VkCommandBuffer command)const noexcept{
     return impl_?impl_->read<NativeRasterState>([&]{const auto found=impl_->commands.find(command);return found==impl_->commands.end()?NativeRasterState{}:found->second.raster;}):NativeRasterState{};
+}
+void NativeState::push_constants(VkCommandBuffer command,VkPipelineLayout layout,VkShaderStageFlags stages,
+    std::uint32_t offset,std::uint32_t size,const void* values)noexcept{
+    if(impl_)impl_->write([&]{const auto found=impl_->commands.find(command);if(found==impl_->commands.end())return;
+        // Vulkan push values are independent per stage. An ordinary graphics
+        // update cannot erase the retained compute word.
+        if(stages&&!(stages&VK_SHADER_STAGE_COMPUTE_BIT))return;
+        auto& word=found->second.compute_root;word={};
+        const auto* declaration=impl_->pipeline_layout(layout);
+        if(stages!=VK_SHADER_STAGE_COMPUTE_BIT||offset||size!=4||!values||!declaration||!declaration->compute_word_root)return;
+        std::memcpy(&word.value,values,4);word.layout=layout;word.layout_generation=declaration->generation;word.valid=true;
+    });
+}
+void NativeState::compute_root_unobserved(VkCommandBuffer command,const char* name)noexcept{
+    if(!name)return;
+    bool changes=false;
+    for(const auto* prefix:{"vkCmdPushConstants","vkCmdPushData","vkCmdExecute","vkCmdBindShaders"})
+        if(!std::strncmp(name,prefix,std::strlen(prefix)))changes=true;
+    if(changes&&impl_)impl_->write([&]{const auto found=impl_->commands.find(command);
+        if(found!=impl_->commands.end())found->second.compute_root={};});
+}
+NativeComputeRootValue NativeState::observed_compute_root(VkCommandBuffer command,VkPipelineLayout layout)const noexcept{
+    if(!impl_)return {};
+    return impl_->read<NativeComputeRootValue>([&]{const auto found=impl_->commands.find(command);if(found==impl_->commands.end())return NativeComputeRootValue{};
+        const auto& word=found->second.compute_root;const auto* declaration=impl_->pipeline_layout(layout);
+        return word.valid&&word.layout==layout&&declaration&&declaration->compute_word_root&&word.layout_generation==declaration->generation?word:NativeComputeRootValue{};
+    });
 }
 void NativeState::pipeline_bound(VkCommandBuffer command,VkPipelineBindPoint bind_point,VkPipeline pipeline)noexcept{
     if(impl_)impl_->write([&]{const auto cb=impl_->commands.find(command);if(cb==impl_->commands.end() || !point(bind_point))return;
@@ -846,6 +1252,25 @@ NativeBoundState NativeState::bound(VkCommandBuffer command,VkPipelineBindPoint 
 NativeBoundState NativeState::observed_bound(VkCommandBuffer command,VkPipelineBindPoint bind_point)const noexcept{
     if(!impl_)return {};
     return impl_->read<NativeBoundState>([&]{const auto c=impl_->commands.find(command);return c!=impl_->commands.end() && point(bind_point)?impl_->bound(c->second.points[pi(bind_point)],bind_point,false):NativeBoundState{};});
+}
+NativePipelineState NativeState::observed_pipeline(VkCommandBuffer command,VkPipelineBindPoint bind_point)const noexcept{
+    if(!impl_)return {};
+    return impl_->read<NativePipelineState>([&]{const auto c=impl_->commands.find(command);if(c==impl_->commands.end()||!point(bind_point))return NativePipelineState{};
+        const auto& b=c->second.points[pi(bind_point)];const auto p=impl_->pipelines.find(b.pipeline);
+        if(p==impl_->pipelines.end()||p->second.generation!=b.pipeline_generation||p->second.point!=bind_point||!impl_->pipeline_valid(p->second,false))return NativePipelineState{};
+        return p->second.state;
+    });
+}
+NativeDescriptorSetLayoutObservation NativeState::observed_set_layout(const NativeBoundState& state,std::uint32_t index)const noexcept{
+    return impl_?impl_->read<NativeDescriptorSetLayoutObservation>([&]{NativeDescriptorSetLayoutObservation out;
+        const auto* s=impl_->current_set(state,index,false);if(!s)return out;
+        for(std::uint32_t n=0;n<state.sets.size();++n)if(!impl_->current_set(state,n,false))return out;
+        const auto* l=impl_->layout(s->layout);if(!l)return out;
+        out.layout=s->layout.handle;out.generation=s->layout.generation;out.set=state.sets[index];out.set_generation=s->generation;out.set_version=s->version;
+        out.bindings.reserve(l->bindings.size());for(const auto& pair:l->bindings){const auto& b=pair.second;
+            out.bindings.push_back({pair.first,b.descriptorType,b.descriptorCount,b.stageFlags,l->flags.at(pair.first)});}
+        return out;
+    }):NativeDescriptorSetLayoutObservation{};
 }
 std::string NativeState::binding_diagnostic(VkCommandBuffer command,VkPipelineBindPoint bind_point)const noexcept{
     if(!impl_)return {};

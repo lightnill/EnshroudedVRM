@@ -53,7 +53,7 @@ NativePlayerCommit::NativePlayerCommit(VkDevice device,PFN_vkGetDeviceProcAddr g
 #define LOAD(n) p.n=reinterpret_cast<PFN_##n>(get(device,#n));require(p.n!=nullptr,"Player commit missing driver entry");
     COMMIT_FUNCTIONS(LOAD)
 #undef LOAD
-    const std::array<VkDescriptorSetLayoutBinding,2> bindings={{{0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}}};
+    std::array<VkDescriptorSetLayoutBinding,4> bindings{};for(unsigned n=0;n<4;++n)bindings[n]={n,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
     VkDescriptorSetLayoutCreateInfo dsl{};dsl.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;dsl.bindingCount=static_cast<std::uint32_t>(bindings.size());dsl.pBindings=bindings.data();
     checked(p.vkCreateDescriptorSetLayout(device,&dsl,nullptr,&p.dsl),"Player commit descriptor layout");
     const VkPushConstantRange mode={VK_SHADER_STAGE_COMPUTE_BIT,0,4};
@@ -66,24 +66,31 @@ NativePlayerCommit::NativePlayerCommit(VkDevice device,PFN_vkGetDeviceProcAddr g
     impl=std::move(state);
 }
 NativePlayerCommit::~NativePlayerCommit()=default;
-std::shared_ptr<NativePlayerCommitBatch> NativePlayerCommit::batch(const std::vector<VkDescriptorBufferInfo>& frames,VkDescriptorBufferInfo gate){
-    if(!impl||impl->uncertain.load()||frames.empty()||frames.size()>16||!valid(gate,4))return {};
+std::shared_ptr<NativePlayerCommitBatch> NativePlayerCommit::batch(const std::vector<VkDescriptorBufferInfo>& frames,
+    const std::vector<VkDescriptorBufferInfo>& masks,VkDescriptorBufferInfo effective,VkDescriptorBufferInfo clip){
+    if(!impl||impl->uncertain.load()||frames.empty()||frames.size()>16||frames.size()!=masks.size()||!valid(effective,16384)||!valid(clip,196)||effective.buffer==clip.buffer)return {};
+    std::vector<VkBuffer> handles{effective.buffer,clip.buffer};
     for(std::size_t n=0;n<frames.size();++n){
-        if(!valid(frames[n],196)||frames[n].buffer==gate.buffer)return {};
-        for(std::size_t prior=0;prior<n;++prior)if(frames[prior].buffer==frames[n].buffer)return {};
+        if(!valid(frames[n],196)||!valid(masks[n],16384))return {};
+        for(const auto buffer:{frames[n].buffer,masks[n].buffer}){
+            for(const auto prior:handles)if(prior==buffer)return {};
+            handles.push_back(buffer);
+        }
     }
     try{
         auto batch=std::make_unique<NativePlayerCommitBatch::Impl>();batch->state=impl;auto& p=*impl;
         const auto count=static_cast<std::uint32_t>(frames.size());
-        const VkDescriptorPoolSize size={VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,count*2};
+        const VkDescriptorPoolSize size={VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,count*4};
         VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count;pool.poolSizeCount=1;pool.pPoolSizes=&size;
         checked(p.vkCreateDescriptorPool(p.device,&pool,nullptr,&batch->pool),"Player commit descriptor pool");
         batch->sets.resize(count);std::array<VkDescriptorSetLayout,16> layouts{};layouts.fill(p.dsl);
         VkDescriptorSetAllocateInfo allocate{};allocate.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocate.descriptorPool=batch->pool;allocate.descriptorSetCount=count;allocate.pSetLayouts=layouts.data();
         checked(p.vkAllocateDescriptorSets(p.device,&allocate,batch->sets.data()),"Player commit descriptor sets");
-        std::array<VkWriteDescriptorSet,32> writes{};
-        for(std::uint32_t n=0;n<count;++n)for(unsigned binding=0;binding<2;++binding){auto& w=writes[n*2+binding];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=batch->sets[n];w.dstBinding=binding;w.descriptorCount=1;w.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;w.pBufferInfo=binding?&gate:&frames[n];}
-        p.vkUpdateDescriptorSets(p.device,count*2,writes.data(),0,nullptr);
+        std::array<VkWriteDescriptorSet,64> writes{};
+        std::array<std::array<VkDescriptorBufferInfo,4>,16> descriptors{};
+        for(std::uint32_t n=0;n<count;++n){descriptors[n]={frames[n],masks[n],effective,clip};
+            for(unsigned binding=0;binding<4;++binding){auto& w=writes[n*4+binding];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=batch->sets[n];w.dstBinding=binding;w.descriptorCount=1;w.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;w.pBufferInfo=&descriptors[n][binding];}}
+        p.vkUpdateDescriptorSets(p.device,count*4,writes.data(),0,nullptr);
         return std::shared_ptr<NativePlayerCommitBatch>(new NativePlayerCommitBatch(std::move(batch)));
     }catch(...){return {};}
 }
@@ -96,7 +103,8 @@ bool NativePlayerCommit::record(VkCommandBuffer command,const NativePlayerCommit
     for(std::uint32_t mode=0;mode<2;++mode){
         if(mode){barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;p.vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,nullptr,0,nullptr);}
         p.vkCmdPushConstants(command,p.layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&mode);
-        for(const auto set:batch.impl->sets){p.vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,p.layout,0,1,&set,0,nullptr);p.vkCmdDispatch(command,1,1,1);}
+        const auto count=mode?batch.impl->sets.size():1u;
+        for(std::size_t n=0;n<count;++n){const auto set=batch.impl->sets[n];p.vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,p.layout,0,1,&set,0,nullptr);p.vkCmdDispatch(command,64,1,1);}
     }
     return true;
 }

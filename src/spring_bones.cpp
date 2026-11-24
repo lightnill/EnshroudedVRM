@@ -42,6 +42,16 @@ M matrix(const Matrix& input) {
     require(std::abs(m[3])+std::abs(m[7])+std::abs(m[11])+std::abs(m[15]-1)<1e-5,"Nonaffine spring transform");
     return m;
 }
+M gravity_basis(const Matrix& input) {
+    const auto m=matrix(input);
+    require(m[3]==0&&m[7]==0&&m[11]==0&&m[15]==1&&m[12]==0&&m[13]==0&&m[14]==0,"Invalid spring gravity direction basis");
+    // A coordinate convention may reflect handedness, but cannot scale or shear a force.
+    for(int a=0;a<3;++a)for(int b=a;b<3;++b) {
+        const V x{m[a*4],m[a*4+1],m[a*4+2]},y{m[b*4],m[b*4+1],m[b*4+2]};
+        require(std::abs(dot(x,y)-(a==b?1.0:0.0))<1e-5,"Nonorthogonal spring gravity basis");
+    }
+    return m;
+}
 Matrix output(const M& m) {
     Matrix out{};for(int c=0;c<16;++c){require(std::isfinite(m[c])&&std::abs(m[c])<std::numeric_limits<float>::max(),"Nonfinite spring output");out[c]=static_cast<float>(m[c]);}return out;
 }
@@ -444,6 +454,7 @@ struct SpringBones::Impl {
             const auto& skin=avatar.skins[palette.skin];require(palette.matrices.size()==skin.joints.size()&&skin.joints.size()==skin.inverse_bind.size(),"Invalid spring palette size");
             input_work+=palette.matrices.size();require(input_work<=8192,"Spring palette work limit");
         }
+        const auto gravity_to_world=gravity_basis(frame.gravity_to_world);
         const auto actor_matrix=matrix(frame.model_to_world),actor_inverse=inverse(actor_matrix);
         const auto actor_position=position(actor_matrix);
         for(std::size_t n=0;n<baseline.size();++n){const auto m=matrix(pose.node_world[n]);inverse(m);baseline[n]=multiply(actor_matrix,m);}
@@ -547,7 +558,7 @@ struct SpringBones::Impl {
                 if(advance) {
                     const auto inertia=scale(sub(s.current,s.previous),1-settings.drag);
                     next=point(ctr,add(s.current,inertia));next=add(next,scale(shape_axis,step*settings.stiffness));
-                    next=add(next,scale({settings.gravity[0],settings.gravity[1],settings.gravity[2]},step*settings.gravity_power));
+                    next=add(next,scale(direction(gravity_to_world,{settings.gravity[0],settings.gravity[1],settings.gravity[2]}),step*settings.gravity_power));
                     if(j.airflow_weight>0)next=add(next,scale(air_velocity,-step*airflow_gain*j.airflow_weight));
                 }
                 next=add(root,scale(unit(sub(next,root),axis_unit),length));

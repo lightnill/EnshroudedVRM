@@ -6,8 +6,14 @@
 #include <string_view>
 namespace evrm {namespace {
 using Json=nlohmann::json;
-const char* preset_name(unsigned value)noexcept{switch(value){case 1:return "matte";case 2:return "enhanced";case 3:return "fast";default:return "game-lighting";}}
-bool version(std::string_view value){if(value.empty()||value.size()>64||value.front()<'0'||value.front()>'9')return false;for(auto c:value)if(!((c>='0'&&c<='9')||(c>='a'&&c<='z')||(c>='A'&&c<='Z')||c=='.'||c=='-'||c=='+'))return false;return true;}
+const char* preset_name(unsigned value)noexcept{switch(value){case 1:return "extended-fast-matte";case 2:return "extended-fast-gloss";case 3:return "minimal";case 4:case 6:return "mtoon";case 5:case 7:return "mtoon-outline";default:return "game-lighting";}}
+bool version(std::string_view value){if(value=="standalone-dev")return true;if(value.empty()||value.size()>64||value.front()<'0'||value.front()>'9')return false;for(auto c:value)if(!((c>='0'&&c<='9')||(c>='a'&&c<='z')||(c>='A'&&c<='Z')||c=='.'||c=='-'||c=='+'))return false;return true;}
+const char* issue_source(DebugReportSource source)noexcept {
+    switch(source){case DebugReportSource::Clock:return "clock";case DebugReportSource::System:return "system";
+        case DebugReportSource::GraphicsSettings:return "saved-graphics-settings";case DebugReportSource::EngineLog:return "engine-log";
+        case DebugReportSource::FileProvider:return "file-provider";case DebugReportSource::SceneFrames:return "scene-frames";
+        case DebugReportSource::Screenshot:return "screenshot";default:return "unknown";}
+}
 bool digest(std::string_view value){if(value.size()!=64)return false;for(auto c:value)if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')))return false;return true;}
 bool timestamp(std::string_view value){if(value.size()!=20)return false;for(unsigned i=0;i<20;++i){const char expected=i==4||i==7?'-':i==10?'T':i==13||i==16?':':i==19?'Z':0;if(expected?value[i]!=expected:value[i]<'0'||value[i]>'9')return false;}return true;}
 std::string hardware(std::string_view value){
@@ -59,12 +65,16 @@ std::string debug_report_graphics_json(std::string_view raw){return graphics(raw
 DebugReportContents make_debug_report_contents(const DebugReportData& input){
     DebugReportContents files;files.reserve(8);
     Json report={{"schema","enshrouded-vrm-debug-report-v1"},{"mod_version",version(input.mod_version)?input.mod_version:"unavailable"},
+        {"runtime_sha256",digest(input.runtime_sha256)?input.runtime_sha256:"unavailable"},
         {"game_sha256",digest(input.game_sha256)?input.game_sha256:"unavailable"},{"requested_utc",timestamp(input.utc)?input.utc:"unavailable"},
         {"collected_after_request_ms",input.collected_ms>=input.request_ms?bounded(input.collected_ms-input.request_ms,60000):0},
-        {"sharing","local-file-only"},{"screenshot_included",false},{"partial",Json::array()},
+        {"sharing","local-file-only"},{"screenshot_included",false},{"partial",Json::array()},{"partial_details",Json::array()},
         {"diagnostic_history",{{"runtime_window_seconds",120},{"runtime_row_limit",512},{"contention_drops_this_process",bounded(input.diagnostics_contention_drops)},
             {"overwritten_rows_this_process",bounded(input.diagnostics_overwritten)},{"engine_scope","fixed-error-categories-in-last-2MiB-of-current-log"}}}};
-    for(auto code:input.partial)if(report["partial"].size()<32)report["partial"].push_back(debug_report_code_name(code));
+    for(const auto& issue:input.partial)if(report["partial"].size()<32){
+        report["partial"].push_back(debug_report_code_name(issue.code));
+        report["partial_details"].push_back({{"code",debug_report_code_name(issue.code)},{"source",issue_source(issue.source)}});
+    }
     auto intervals=input.frame_intervals_us;if(intervals.size()>4096)intervals.resize(4096);
     intervals.erase(std::remove_if(intervals.begin(),intervals.end(),[](auto value){return !value||value>60000000;}),intervals.end());
     if(!intervals.empty()){std::sort(intervals.begin(),intervals.end());double sum=0;for(auto value:intervals)sum+=value;
@@ -90,10 +100,12 @@ DebugReportContents make_debug_report_contents(const DebugReportData& input){
     const auto& settings=input.settings;
     const auto selected_graphics=graphics(input.graphics_source_json);
     Json configured={{"mod_settings_available",settings.available},{"avatar_settings_available",settings.avatar_available},{"appearance_settings_available",settings.appearance_available},{"graphics_settings_available",!selected_graphics.empty()},{"graphics",selected_graphics}};
+    configured["graphics_settings_source"]=selected_graphics.empty()?"unavailable":"saved-game-settings";
+    configured["graphics_settings_live"]=false;
     if(settings.available){configured["voice_enabled"]=settings.voice_enabled;configured["voice_source"]=settings.voice_source==1?"microphone":"game";configured["strength"]=std::min(settings.strength,100u);configured["sensitivity"]=std::min(settings.sensitivity,100u);configured["smoothing_ms"]=std::clamp(settings.smoothing_ms,20u,140u);}
     if(settings.avatar_available)configured["replacement_enabled"]=settings.replacement_enabled;
     if(settings.appearance_available){configured["whole_model_preset"]=preset_name(settings.whole_preset);configured["material_overrides"]=Json::array();}
-    for(const auto& material:settings.materials)if(settings.appearance_available&&configured["material_overrides"].size()<1024&&material.index<100000&&material.preset<=3)
+    for(const auto& material:settings.materials)if(settings.appearance_available&&configured["material_overrides"].size()<1024&&material.index<100000&&material.preset<=7)
         configured["material_overrides"].push_back({{"index",material.index},{"preset",preset_name(material.preset)}});
     add(files,"settings.json",configured);
     const auto& model=input.model;Json active={{"available",model.available}};

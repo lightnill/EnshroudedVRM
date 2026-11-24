@@ -83,14 +83,14 @@ const char* mod_voice_status(const ModSettings& settings,const ModMenuStatus& st
         case VoiceActivity::UnsupportedSource:return "Voice to viseme unavailable";
         default:return settings.voice_source==VoiceInputSource::Microphone?"Waiting for microphone":"Waiting for game voice";}
 }
-bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expanded,bool& close,ModMenuPlacement& placement,ModMenuLayout* layout,AvatarMenuAction* action,DebugReportAction* report_action){
+bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expanded,bool& close,ModMenuPlacement& placement,ModMenuLayout* layout,AvatarMenuAction* action,DebugReportAction* report_action,bool background){
     if(action)*action={};
     if(report_action)*report_action={};
     const auto& io=ImGui::GetIO();const float width=std::max(96.f,std::min(504.f,io.DisplaySize.x-24));
     if(ImGui::IsMouseClicked(0))placement.dragging=false;
     const bool has_players=status.avatar&&status.avatar->players&&!status.avatar->players->empty();
     const float wanted_height=(expanded?(settings.voice_source==VoiceInputSource::Microphone?812.f:716.f):372.f)+
-        (status.avatar?(placement.appearance_expanded?550.f:240.f)+(!status.avatar->replacement_enabled?60.f:0.f):0.f)+
+        (status.avatar?(placement.appearance_expanded?650.f:240.f)+(!status.avatar->replacement_enabled?60.f:0.f):0.f)+
         (has_players?180.f:0.f)+
         (status.report&&status.report->phase==DebugReportPhase::Preview?510.f:174.f);
     const float height=std::max(80.f,std::min(wanted_height,io.DisplaySize.y-24));
@@ -142,7 +142,7 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
     if(phase==DebugReportPhase::Complete||phase==DebugReportPhase::Partial){
         ImGui::TextWrapped("%s",phase==DebugReportPhase::Partial?"Saved; some details were unavailable.":"Report saved locally.");
         if(!report.filename.empty())ImGui::TextWrapped("%s",report.filename.c_str());
-        if(ImGui::Button("Open reports folder"))emit_report(DebugReportActionKind::OpenFolder);
+        ImGui::BeginDisabled(background);if(ImGui::Button("Open reports folder"))emit_report(DebugReportActionKind::OpenFolder);ImGui::EndDisabled();
         if(layout)layout->report_folder=last_rect();
     }else if(phase==DebugReportPhase::Failed)ImGui::TextWrapped("Report could not be saved. Check free space and folder permissions, then retry.");
     else if(phase==DebugReportPhase::Cancelled)ImGui::TextUnformatted("Report cancelled.");
@@ -254,9 +254,10 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
             ImGui::EndCombo();
         }
         if(inner>=160)ImGui::SameLine();
-        if(ImGui::Button("Browse...",{inner>=160?90.f:inner,0})){emit(AvatarActionKind::Browse);close=true;}
+        ImGui::BeginDisabled(background);if(ImGui::Button("Browse...",{inner>=160?90.f:inner,0})){emit(AvatarActionKind::Browse);close=true;}ImGui::EndDisabled();
         if(layout)layout->browse=last_rect();
         if(ImGui::Button("Refresh list"))emit(AvatarActionKind::RefreshCatalogue);
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Refreshes the current list. After Forget all models, use Browse to add models back.");
         if(layout)layout->refresh_models=last_rect();
         const bool busy=avatar.state==AvatarLoadState::Loading||avatar.state==AvatarLoadState::Preparing||avatar.state==AvatarLoadState::Choosing;
         if(busy){ImGui::SameLine();if(ImGui::Button("Cancel"))emit(AvatarActionKind::CancelLoad);if(layout)layout->cancel_model=last_rect();}
@@ -264,7 +265,7 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
         ImGui::SetWindowFontScale(.8f);
         if(state)ImGui::TextWrapped("%s",state);
         if(!avatar.error.empty())ImGui::TextWrapped("%s",avatar.error.c_str());
-        if(avatar.save_failed)ImGui::TextWrapped("Avatar settings could not be saved.");
+        if(avatar.save_failed)ImGui::TextWrapped("Avatar preferences or model list could not be saved.");
         if(avatar.retained_cpu_buffer_bytes){
             constexpr double mib=1024.0*1024.0;
             ImGui::Text("Decoded textures: %.1f MiB",double(avatar.decoded_texture_bytes)/mib);
@@ -273,6 +274,11 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
         }
         ImGui::SetWindowFontScale(1);
         ImGui::EndDisabled();
+        ImGui::BeginDisabled(!avatar.preferences_loaded);
+        if(ImGui::Button("Forget all models"))emit(AvatarActionKind::ForgetAllModels);
+        if(layout)layout->forget_models=last_rect();
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Clears this list only. Loaded avatars, settings and files are kept. Use Browse to add a model again.");
+        ImGui::EndDisabled();
         ImGui::BeginDisabled(original);
         if(ImGui::Button(placement.appearance_expanded?"-  Appearance presets":"+  Appearance presets",{inner,36}))placement.appearance_expanded=!placement.appearance_expanded;
         if(layout)layout->appearance=last_rect();
@@ -280,10 +286,11 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
             if(has_players){ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Appearance presets are shared by players using this model.");ImGui::SetWindowFontScale(1);}
             if(!avatar.preferences_loaded)ImGui::TextUnformatted("Loading appearance preferences...");
             const bool valid=!avatar.fingerprint.empty()&&avatar.preferences_loaded;ImGui::BeginDisabled(!valid);
-            const auto whole=avatar.profile?avatar.profile->whole:AvatarShaderPreset::GameLighting;
+            const auto whole=avatar.profile?canonical_avatar_preset(avatar.profile->whole):AvatarShaderPreset::MToon;
             const auto preset_label=[](AvatarShaderPreset value){switch(value){
-                case AvatarShaderPreset::Enhanced:return "Enhanced";case AvatarShaderPreset::Fast:return "Fast";
-                case AvatarShaderPreset::Matte:return "Matte";default:return "Auto";}};
+                case AvatarShaderPreset::Enhanced:return "Extended Fast Gloss";case AvatarShaderPreset::Fast:return "Minimal";
+                case AvatarShaderPreset::Matte:return "Extended Fast Matte";case AvatarShaderPreset::NillToon:case AvatarShaderPreset::MToon:return "MToon";
+                case AvatarShaderPreset::NillToonOutline:case AvatarShaderPreset::MToonOutline:return "MToon + Outline";default:return "Auto";}};
             ImGui::TextUnformatted("Whole model");ImGui::SetNextItemWidth(inner);
             const bool presets=ImGui::BeginCombo("##whole-preset",preset_label(whole));
             if(layout)layout->whole=last_rect();
@@ -291,10 +298,12 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
                 const auto choose=[&](AvatarShaderPreset preset,ModMenuRect* rect){
                     if(ImGui::Selectable(preset_label(preset),whole==preset)){emit(AvatarActionKind::SetWholePreset);if(action)action->preset=preset;}
                     if(rect)*rect=last_rect();};
-                choose(AvatarShaderPreset::GameLighting,layout?&layout->whole_game:nullptr);
+                choose(AvatarShaderPreset::MToon,layout?&layout->whole_mtoon:nullptr);
+                choose(AvatarShaderPreset::MToonOutline,layout?&layout->whole_mtoon_outline:nullptr);
                 choose(AvatarShaderPreset::Enhanced,layout?&layout->whole_enhanced:nullptr);
-                choose(AvatarShaderPreset::Fast,layout?&layout->whole_fast:nullptr);
                 choose(AvatarShaderPreset::Matte,layout?&layout->whole_matte:nullptr);
+                choose(AvatarShaderPreset::Fast,layout?&layout->whole_fast:nullptr);
+                choose(AvatarShaderPreset::GameLighting,layout?&layout->whole_game:nullptr);
                 ImGui::EndCombo();
             }
             if(placement.material_model!=avatar.fingerprint){placement.material_model=avatar.fingerprint;placement.material_index=0;}
@@ -315,14 +324,48 @@ bool draw_mod_menu(ModSettings& settings,const ModMenuStatus& status,bool& expan
             if(layout)layout->material_override=last_rect();
             if(overrides){const auto choose=[&](const char* title,std::optional<AvatarShaderPreset> preset,ModMenuRect* rect){
                     if(ImGui::Selectable(title,selected==preset)){emit(AvatarActionKind::SetMaterialPreset);if(action){action->material=placement.material_index;action->preset=preset;}}if(rect)*rect=last_rect();};
-                choose("Use model preset",{},layout?&layout->inherit:nullptr);choose("Auto",AvatarShaderPreset::GameLighting,layout?&layout->override_game:nullptr);
-                choose("Enhanced",AvatarShaderPreset::Enhanced,layout?&layout->override_enhanced:nullptr);
-                choose("Fast",AvatarShaderPreset::Fast,layout?&layout->override_fast:nullptr);
-                choose("Matte",AvatarShaderPreset::Matte,layout?&layout->override_matte:nullptr);ImGui::EndCombo();}
+                choose("Use model preset",{},layout?&layout->inherit:nullptr);
+                choose("MToon",AvatarShaderPreset::MToon,layout?&layout->override_mtoon:nullptr);
+                choose("MToon + Outline",AvatarShaderPreset::MToonOutline,layout?&layout->override_mtoon_outline:nullptr);
+                choose("Extended Fast Gloss",AvatarShaderPreset::Enhanced,layout?&layout->override_enhanced:nullptr);
+                choose("Extended Fast Matte",AvatarShaderPreset::Matte,layout?&layout->override_matte:nullptr);
+                choose("Minimal",AvatarShaderPreset::Fast,layout?&layout->override_fast:nullptr);
+                choose("Auto",AvatarShaderPreset::GameLighting,layout?&layout->override_game:nullptr);ImGui::EndCombo();}
+            if(count&&avatar_preset_has_outline(selected.value_or(whole))){
+                const auto color=avatar_material_outline_color(avatar.appearance.get(),placement.material_index);
+                ImGui::TextUnformatted("Outline colour");ImGui::SetNextItemWidth(inner);
+                const bool colors=ImGui::BeginCombo("##outline-color",color==AvatarOutlineColor::Model?"Model colour":"Black");
+                if(layout)layout->outline_color=last_rect();
+                if(colors){const auto choose=[&](const char* title,AvatarOutlineColor value,ModMenuRect* rect){
+                        if(ImGui::Selectable(title,color==value)){emit(AvatarActionKind::SetOutlineColor);if(action){action->material=placement.material_index;action->outline_color=value;}}if(rect)*rect=last_rect();};
+                    choose("Black",AvatarOutlineColor::Black,layout?&layout->outline_black:nullptr);
+                    choose("Model colour",AvatarOutlineColor::Model,layout?&layout->outline_model:nullptr);ImGui::EndCombo();}
+            }
             ImGui::EndDisabled();
             if(ImGui::Button("Reset material overrides",{inner,0}))emit(AvatarActionKind::ResetMaterials);
             if(layout)layout->reset_materials=last_rect();
-            ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("Auto uses supported material maps and effects; ordinary materials stay cheap. Enhanced enables supported effects. Fast reduces material effects. Matte reduces shine. Individual overrides stay when the model preset changes. Changes save automatically for each model.");ImGui::SetWindowFontScale(1);ImGui::EndDisabled();
+            const auto effective=selected.value_or(whole);
+            if(avatar_preset_is_toon(effective)){
+                const auto material=avatar.mtoon_materials&&placement.material_index<avatar.mtoon_materials->size()?(*avatar.mtoon_materials)[placement.material_index]:MToonMenuMaterial{};
+                ImGui::SetWindowFontScale(.75f);
+                if(material.support==MToonMaterialSupport::None)ImGui::TextWrapped("This material has no MToon data. Existing rendering is used.");
+                else if(material.support==MToonMaterialSupport::Transparent)ImGui::TextWrapped("Transparent MToon is not available yet. Existing rendering is used.");
+                else{
+                    switch(status.mtoon.state){
+                    case MToonMenuState::NotRequested:case MToonMenuState::Preparing:ImGui::TextWrapped("Preparing MToon...");break;
+                    case MToonMenuState::RendererUnavailable:ImGui::TextWrapped("MToon is unavailable on this renderer. Existing rendering is used.");break;
+                    case MToonMenuState::WorldReady:ImGui::TextWrapped(status.mtoon.material(placement.material_index)?"MToon is ready for this view.":"Existing rendering is used for this material in this view.");break;
+                    default:ImGui::TextWrapped("MToon is waiting for supported lighting in this view.");break;}
+                    if(material.support==MToonMaterialSupport::TransparentForward)ImGui::TextWrapped("Transparent MToon keeps soft edges using the game's blended rendering. Custom draw order may differ; unsupported lighting keeps existing rendering.");
+                    if(avatar_preset_has_outline(effective)){
+                        if(material.support==MToonMaterialSupport::TransparentForward)ImGui::TextWrapped("Transparent outlines are unavailable.");
+                        else if(!material.outline)ImGui::TextWrapped("No outline is authored for this material.");
+                        else if(status.mtoon.state==MToonMenuState::WorldReady&&!status.mtoon.outline(placement.material_index))ImGui::TextWrapped("The authored outline is unavailable for this view.");}
+                    ImGui::TextWrapped("When only environment lighting is available, or water effects are active, the game's lighting is retained.");
+                }
+                ImGui::SetWindowFontScale(1);
+            }
+            ImGui::SetWindowFontScale(.75f);ImGui::TextWrapped("New imports use MToon, with the colour-balance correction. MToon + Outline adds stronger authored edges, black by default; individual materials can use Model colour. Extended Fast Gloss and Matte retain supported material details with game lighting; Matte reduces shine. Minimal reduces material effects. Auto remains available for existing profiles. Saved model choices and individual overrides are preserved.");ImGui::SetWindowFontScale(1);ImGui::EndDisabled();
         }
         ImGui::EndDisabled();
     }

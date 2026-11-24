@@ -101,6 +101,7 @@ void build_meshes(const tinygltf::Model&model,const Json&doc,Avatar&avatar,const
             reconstructed_normals=repair_primitive_normals(primitive)||reconstructed_normals;
             std::vector<SurfaceDuplicate> duplicates;
             build_surface_geometry(model,p,primitive,p.material<0?nullptr:avatar.materials[p.material].surface.get(),remap,duplicates,avatar,limits);
+            build_mtoon_geometry(model,p,primitive,p.material<0?nullptr:avatar.materials[p.material].mtoon.get(),remap,duplicates);
             mouth.primitive(mesh_index,primitive_index++,p,remap,duplicates);
             morphs=morphs||!p.targets.empty();mesh.primitives.push_back(std::move(primitive));mesh_bindings.push_back(binding);
         }

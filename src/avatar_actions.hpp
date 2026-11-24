@@ -9,8 +9,10 @@ inline void apply_avatar_action_to(AvatarService& service,const AvatarMenuAction
     case AvatarActionKind::Browse:service.request_browse(window,action.subject);break;
     case AvatarActionKind::SetWholePreset:if(action.preset)service.set_whole_preset(action.fingerprint,*action.preset);break;
     case AvatarActionKind::SetMaterialPreset:service.set_material_preset(action.fingerprint,action.material,action.preset);break;
+    case AvatarActionKind::SetOutlineColor:service.set_outline_color(action.fingerprint,action.material,action.outline_color);break;
     case AvatarActionKind::ResetMaterials:service.reset_materials(action.fingerprint);break;
     case AvatarActionKind::CancelLoad:service.cancel_request(action.subject);break;
+    case AvatarActionKind::ForgetAllModels:service.forget_all_models();break;
     case AvatarActionKind::RefreshCatalogue:service.refresh_catalogue();break;
     case AvatarActionKind::SetReplacementEnabled:service.set_replacement_enabled(action.replacement_enabled,action.subject);break;
     default:break;

@@ -8,6 +8,9 @@ enum class SpringMotion { Authored, Relaxed, Airflow, Inertial };
 struct SpringFrame {
     std::uint64_t timestamp_ms=0,source_epoch=0,actor_id=0;
     Matrix model_to_world{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    // Static authored/glTF-world gravity convention to simulation world; excludes actor yaw.
+    // Orthogonal direction basis only (reflection allowed), with no translation.
+    Matrix gravity_to_world{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
     // Current floating origin minus previous floating origin, in world metres.
     // Rebase stored world tails by subtracting this; centered tails are local.
     std::array<double,3> origin_delta{};

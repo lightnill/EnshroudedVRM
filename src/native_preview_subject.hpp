@@ -71,6 +71,9 @@ template<class Mutex=std::mutex>class BasicNativePreviewSubjects {
         for(std::size_t i=0;i<values.size();++i)published_[i].store(values[i]);
     }
 public:
+    // Observation only; zero during a Main lifecycle transition. This is not
+    // ownership authority and cannot admit a native publication.
+    std::uint64_t observed_world_lifetime()const noexcept {const auto value=lifetime_.load();return lifetime_ready(value)?value:0;}
     // Exact original Main constructor/destructor boundaries. This deliberately
     // vetoes all preview cohorts during a native Main lifecycle operation,
     // including same-address placement/reuse and nested/throwing operations.

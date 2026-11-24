@@ -7,6 +7,11 @@
 namespace evrm {
 constexpr std::size_t debug_report_archive_limit=16u*1024*1024,debug_report_png_limit=9u*1024*1024;
 enum class DebugReportCode:std::uint8_t {None,Unavailable,Busy,Permission,Disk,Stale,Unsupported,Invalid,Limit,Cancelled};
+enum class DebugReportSource:std::uint8_t {Unknown,Clock,System,GraphicsSettings,EngineLog,FileProvider,SceneFrames,Screenshot};
+struct DebugReportIssue {
+    DebugReportCode code;DebugReportSource source;
+    DebugReportIssue(DebugReportCode value,DebugReportSource origin=DebugReportSource::Unknown):code(value),source(origin){}
+};
 enum class DebugReportPhase:std::uint8_t {Idle,Collecting,AwaitingPixels,Encoding,Preview,Writing,Finalizing,Complete,Partial,Cancelled,Failed};
 enum class DebugReportSceneFamily:std::uint8_t {Unknown,Terrain,Building};
 struct DebugReportGpuInfo {bool available=false,shared_memory=false;std::string model;std::uint32_t vendor=0,device=0,driver_version=0,api_version=0;std::uint64_t local_bytes=0,budget_bytes=0;};
@@ -22,9 +27,9 @@ struct DebugReportScene {DebugReportMapLocation location;bool relative_clip_avai
     std::array<double,16> player_to_clip{};std::array<std::uint32_t,3> lighting_extent{};
     std::uint32_t width=0,height=0,depth_format=0,depth_samples=0;std::uint64_t sample_ms=0,terrain_draws=0,building_draws=0,unknown_draws=0;};
 struct DebugReportImage {std::uint32_t width=0,height=0;std::vector<std::uint8_t> rgba;};
-struct DebugReportData {std::string mod_version,game_sha256,utc,graphics_source_json,diagnostics;
+struct DebugReportData {std::string mod_version,runtime_sha256,game_sha256,utc,graphics_source_json,diagnostics;
     std::uint64_t request_ms=0,collected_ms=0,diagnostics_contention_drops=0,diagnostics_overwritten=0;DebugReportSystem system;DebugReportSettings settings;DebugReportModel model;DebugReportScene scene;
-    std::vector<std::uint32_t> frame_intervals_us;std::vector<DebugReportCode> partial;};
+    std::vector<std::uint32_t> frame_intervals_us;std::vector<DebugReportIssue> partial;};
 struct DebugReportFile {std::string name;std::vector<std::uint8_t> bytes;};
 using DebugReportContents=std::vector<DebugReportFile>;
 enum class DebugReportActionKind:std::uint8_t {None,Begin,IncludePreview,SaveTextOnly,Cancel,OpenFolder};

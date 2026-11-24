@@ -2,7 +2,7 @@
 void GpuProbe::Impl::cancel_recorded(VkCommandBuffer command){
     for(auto& slot:async_slots)if(slot.recorded&&slot.original==command){
         slot.recorded=false;slot.publishable=false;
-        if(!slot.pending){slot.ready=false;slot.plan={};}
+        if(!slot.pending&&!slot.decoding){slot.ready=false;slot.plan={};slot.decoded.reset();slot.decode_finished=false;}
     }
 }
 void GpuProbe::commands_allocated(const VkCommandBufferAllocateInfo& info,const VkCommandBuffer* handles){
@@ -40,7 +40,7 @@ bool GpuProbe::capture_inline(VkCommandBuffer command,uint32_t family)noexcept{
             auto& state=found->second;generation=state.generation;
             impl->resolve_command(impl->async_queue,command,draws,state.inline_boundary,true);state.inline_boundary=state.draws.size();
             for(const auto& draw:draws)for(const auto& binding:draw.draw.bindings){const auto set=impl->sets.find(binding.second.set);
-                if(set==impl->sets.end()||!set->second.layout.inline_safe||set->second.layout.inline_unsafe_bindings.count(binding.second.binding))return false;
+                if(set==impl->sets.end()||!set->second.description().inline_safe||set->second.description().inline_unsafe_bindings.count(binding.second.binding))return false;
             }
         }
         if(draws.empty())return false;
@@ -53,7 +53,7 @@ bool GpuProbe::capture_inline(VkCommandBuffer command,uint32_t family)noexcept{
             plan.snapshot.preview_subject=working;
         for(const auto& read:plan.reads)if(read.target.role=="instances")native_preview_trace_event(bits(read.target.binding.buffer),NativePreviewTraceStage::Inline);
         Impl::AsyncSlot* selected=nullptr;
-        for(auto& slot:impl->async_slots)if(!slot.pending&&!slot.ready&&!slot.recorded){selected=&slot;break;}
+        for(auto& slot:impl->async_slots)if(!slot.pending&&!slot.ready&&!slot.recorded&&!slot.decoding){selected=&slot;break;}
         if(!selected){++impl->async_skipped;return false;}
         impl->prepare_slot(*selected,impl->async_queue,std::move(plan));
         // Retain before the first original-primary command can reference it.
@@ -85,7 +85,11 @@ void GpuProbe::Impl::mark_submitted(VkQueue queue,const std::vector<AsyncSlot*>&
         while(completion!=VK_SUCCESS&&completion!=VK_ERROR_DEVICE_LOST){Sleep(1);completion=proc<PFN_vkQueueWaitIdle>("vkQueueWaitIdle")(queue);}
         for(auto* slot:selected){slot->pending=false;slot->ready=false;slot->plan={};}
         log_event("probe.async.marker-failed result="+std::to_string(marker));
-    }else{async_enqueued+=selected.size();if(publishable&&queue==async_queue)async_frame=true;}
+    }else{
+        async_enqueued+=selected.size();if(publishable&&queue==async_queue)async_frame=true;
+        if(decode_worker&&publishable&&queue==async_queue)
+            for(auto* slot:selected)if(slot->publishable)(void)enqueue_decode(*slot,true);
+    }
 }
 void GpuProbe::inline_submitted2(VkQueue queue,uint32_t count,const VkSubmitInfo2* submits,VkResult result,uint64_t epoch)noexcept{
     if(!enabled())return;
@@ -101,5 +105,5 @@ void GpuProbe::inline_submitted2(VkQueue queue,uint32_t count,const VkSubmitInfo
         // Submit2 retains copies until completion but never grants replacement.
         impl->mark_submitted(queue,selected,epoch,false);
         if(result!=VK_SUCCESS)for(auto* slot:selected)slot->recorded=true;
-    }catch(...){impl->async_disabled=true;}
+    }catch(...){std::lock_guard<std::mutex> copying(impl->readback_mutex);impl->async_disabled=true;}
 }

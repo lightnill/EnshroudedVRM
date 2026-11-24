@@ -1,5 +1,7 @@
 #pragma once
 #include "native_avatar_pose.hpp"
+#include "native_avatar_basis.hpp"
+#include "native_pose_freshness.hpp"
 #include "native_skinning.hpp"
 #include "tool_grip.hpp"
 #include "secondary_hand_contact.hpp"
@@ -12,6 +14,7 @@
 
 namespace evrm {
 struct NativePoseOwner;
+struct DevPoseStamp;
 struct NativeSecondaryContactBaseline {
     vrm::RetargetResult pose;
     std::array<ToolHandCorrection,2> hands;
@@ -32,7 +35,7 @@ struct NativeAvatarPublication {
     // Original source sample time, including when an unchanged pose is held.
     std::uint64_t serial=0,published_milliseconds=0;
     std::uint64_t presentation_serial=0;
-    float height_scale=1,basis_xz=1,diagnostic_x=.75f;
+    float height_scale=1,forward_sign=1,diagnostic_x=.75f;
     std::array<ToolHandCorrection,2> tool_hands;
     std::shared_ptr<const NativeSecondaryContactBaseline> secondary_baseline;
     SecondaryHandContactMode secondary_mode=SecondaryHandContactMode::None;
@@ -169,7 +172,7 @@ inline std::shared_ptr<const NativeAvatarPublication> hold_native_publication(
     const std::shared_ptr<const NativeAvatarPublication>& previous,std::uint64_t epoch,
     std::uint64_t now,std::uint64_t serial) {
     if(!previous||!epoch||previous->source_buffer_epoch!=epoch||!previous->published_milliseconds||
-        now<previous->published_milliseconds||now-previous->published_milliseconds>250||serial<=previous->serial||
+        now<previous->published_milliseconds||now-previous->published_milliseconds>native_pose_max_age_ms||serial<=previous->serial||
         !native_publication_view(previous,previous->source_instances))return {};
     auto held=std::make_shared<NativeAvatarPublication>(*previous);held->serial=serial;held->additional_views.clear();held->additional_subjects.clear();
     for(const auto& subject:previous->additional_subjects){

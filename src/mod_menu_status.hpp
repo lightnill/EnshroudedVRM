@@ -14,6 +14,7 @@ struct ModMenuStatus {
     MicrophoneState microphone=MicrophoneState::Off;
     std::shared_ptr<const MicrophoneDeviceList> microphones{};
     std::shared_ptr<const AvatarMenuSnapshot> avatar;
+    MToonMenuStatus mtoon;
     std::shared_ptr<const DebugReportStatus> report;
     std::uint64_t report_texture=0; // Menu-owned texture, never exported.
 };

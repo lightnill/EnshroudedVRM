@@ -25,6 +25,8 @@ struct DeviceFeaturesObservation {
     bool vulkan12_present=false,descriptor_indexing_present=false;
     DeviceFeatureFlag geometry_shader,uniform_buffer_update_after_bind,independent_blend;
     DeviceFeatureFlag dynamic_rendering;
+    DeviceFeatureFlag fragment_stores_and_atomics;
+    DeviceFeatureFlag storage_image_extended_formats;
     DeviceFeatureFlag mesh_shader;
     bool single_physical_device=true;
     DeviceFeatureFlag storage_buffer_update_after_bind,update_unused_while_pending;

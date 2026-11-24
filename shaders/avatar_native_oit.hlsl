@@ -11,6 +11,18 @@ struct NativeForwardConstants { float4 words[6]; };
 [[vk::binding(9,EVRM_NATIVE_DESCRIPTOR_SET)]] Texture3D<float> directionalVisibility;
 [[vk::binding(10,EVRM_NATIVE_DESCRIPTOR_SET)]] SamplerState volumeSampler;
 struct OitOut { float4 accumulation:SV_Target0; float reveal:SV_Target4; };
+#if EVRM_NATIVE_SURFACE
+#include "native_mtoon_forward_lookup.hlsli"
+#endif
+OitOut evrm_oit_result(float3 L,float a,float depth){
+    OitOut o=(OitOut)0;if(a==0.f)return o;
+    if(any(!isfinite(L))||!isfinite(a)||a<0.f||a>1.f)discard;
+    const float3 boundedL=evrm_native_oit_limit_radiance(L);
+    const float weight=clamp(pow(.9f*depth,3.f),.01f,3000.f);
+    const float4 accumulation=float4(boundedL*a,a)*weight;
+    if(any(!isfinite(accumulation))||any(abs(accumulation)>65504.f))discard;
+    o.accumulation=accumulation;o.reveal=a;return o;
+}
 OitOut ps_oit(VertexOut input
 #if EVRM_NATIVE_SURFACE
     ,bool frontFace:SV_IsFrontFace
@@ -19,6 +31,11 @@ OitOut ps_oit(VertexOut input
     // Control-flow guard must dominate all borrowed lighting resources in SPIR-V.
     if(frame.control.x==0 || material.instance.w==0)discard;
     OitOut o; o.accumulation=0; o.reveal=0;
+#if EVRM_NATIVE_SURFACE
+    float4 authored;
+    if(evrm_forward_lookup(input.position,surfaceMaterial.flags.z,input.sourceTriangle,authored))
+        return evrm_oit_result(authored.rgb,authored.a,input.position.z);
+#endif
     // Runtime owns a single mip (LOD0); explicit sampling avoids helper-lane
     // derivatives outside the common bounded UV/W contract.
     const float4 base=baseTexture.SampleLevel(baseSampler,input.uv,0)*material.base;
@@ -54,11 +71,5 @@ OitOut ps_oit(VertexOut input
 #endif
     // Explicit bounded private HDR scope: uniform RGB scaling preserves hue/sign
     // and ordinary finite values; alpha and the native weight stay unchanged.
-    if(!all(isfinite(L)))discard;
-    const float3 boundedL=evrm_native_oit_limit_radiance(L);
-    const float weight=clamp(pow(.9f*input.position.z,3.f),.01f,3000.f);
-    const float4 accumulation=float4(boundedL*a,a)*weight;
-    // Local numeric safeguard only. Whole-model common validation is separate.
-    if(!all(isfinite(accumulation)) || any(abs(accumulation)>65504.f))discard;
-    o.accumulation=accumulation;o.reveal=a;return o;
+    return evrm_oit_result(L,a,input.position.z);
 }

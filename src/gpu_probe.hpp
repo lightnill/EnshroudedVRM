@@ -81,6 +81,10 @@ public:
     VkResult submit_async(VkQueue,uint32_t,const VkSubmitInfo*,VkFence,PFN_vkQueueSubmit,uint64_t source_epoch) noexcept;
     bool async_frame_scheduled(VkQueue) const noexcept;
     GpuSnapshot poll_async(VkQueue) noexcept;
+    // Hands the byte storage of consumed snapshots back for the next decode and
+    // leaves them without bytes. Storage only: no binding, epoch, sequence or
+    // content survives, and nothing is kept when a decoder holds the storage lock.
+    void recycle(std::vector<GpuSnapshot>& consumed) noexcept;
     void capture(VkQueue, uint64_t frame, bool already_idle, uint32_t wait_count = 0,
                  const VkSemaphore* waits = nullptr, bool* consumed_waits = nullptr) noexcept;
     bool player_anchor_capture_enabled() const;

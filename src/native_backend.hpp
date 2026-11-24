@@ -1,10 +1,12 @@
 #pragma once
+#include "mtoon_menu_status.hpp"
 #include "native_state.hpp"
 #include "native_publication.hpp"
 #include "avatar_service.hpp"
 #include "native_player_pose_owner.hpp"
 #include "native_avatar_assets.hpp"
 #include <vulkan/vk_layer.h>
+#include <array>
 #include <filesystem>
 #include <mutex>
 #ifdef EVRM_NATIVE_BACKEND_TESTING
@@ -16,7 +18,9 @@ namespace evrm {
 class NativeClipPipelines;
 class NativeBufferMemory;
 class NativeImageMemory;
+struct DeviceFeaturesObservation;
 struct NativePoseOwner;
+struct DevFallbackFact;
 #ifdef EVRM_NATIVE_BACKEND_TESTING
 // CPU fixture only. Normal production builds have no owner override API.
 struct NativeBackendTestOwner {
@@ -37,6 +41,9 @@ struct NativeBackendTestOwner {
             batch.valid=true;return batch;
         }catch(...){return {};}
     }
+    virtual NativePlayerOwnerBatch capture_independent_players(const std::vector<NativePlayerIdentity>& ids,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats=nullptr)const noexcept {
+        return capture_available_players(ids,why,limits,stats);
+    }
     virtual bool revalidate_players(std::vector<NativeOwnerCandidate>& out,std::string& why,const NativeOwnerLimits&,NativeOwnerObservationStats* stats=nullptr)const noexcept {
         return out.size()==1&&revalidate(out[0],why,stats);
     }
@@ -44,24 +51,36 @@ struct NativeBackendTestOwner {
     virtual bool revalidate_menu(NativeMenuOwnerCandidate& out,std::string& why)const noexcept{out={};why.clear();return false;}
 };
 #endif
+// Private storage kept for reuse, for diagnostics. created and reissued are
+// cumulative since the device was created; idle and idle_bytes are one pool's
+// state at one instant. A pool that was never requested is available and
+// empty. The buffer pool counts no creations: its created and reissued stay 0.
+struct NativePrivateReusePool {bool available=false;std::uint64_t created=0,reissued=0,idle=0,idle_bytes=0;};
+struct NativePrivateReuseSample {bool enabled=false;NativePrivateReusePool volume,probe,buffer;};
 // Explicit native-pass experiments. Replacement additionally requires current
 // CPU ownership, matched per-primary coverage and the shared GPU commit.
 class NativeBackend {
 public:
-    NativeBackend(VkInstance,VkPhysicalDevice,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,PFN_vkSetDeviceLoaderData,const std::filesystem::path&,bool independent_blend_enabled=false,bool replacement=false,bool partially_bound_enabled=false,bool mesh_enabled=false);
+    NativeBackend(VkInstance,VkPhysicalDevice,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,PFN_vkSetDeviceLoaderData,const std::filesystem::path&,bool independent_blend_enabled=false,bool replacement=false,bool partially_bound_enabled=false,bool mesh_enabled=false,const DeviceFeaturesObservation* original_features=nullptr,std::uint32_t request_api_version=0);
     ~NativeBackend();
     NativeState& state() noexcept;
     NativeClipPipelines* clipping() noexcept;
     NativeBufferMemory* buffer_memory() noexcept;
     NativeImageMemory* image_memory() noexcept;
     bool mouth_gpu_unavailable()const noexcept;
+    // Diagnostics only: read-only and never waits. False when the backend itself was busy: nothing in `out` is valid.
+    // True otherwise; a pool whose own lock was busy has available=false and zero counts, the others are filled.
+    bool private_reuse_sample(NativePrivateReuseSample& out)const noexcept;
+    MToonMenuStatus mtoon_menu_status(const std::shared_ptr<const AvatarAppearance>&,const std::string& subject)const noexcept;
     std::shared_ptr<const NativePoseOwner> pose_owner(std::uint64_t source_epoch)noexcept;
     std::vector<NativePlayerPoseOwner> player_pose_owners(std::uint64_t,const std::vector<AvatarSubjectSelection>&) noexcept;
     NativeAvatarUploadState prepare_player_model(VkQueue,std::uint32_t,const AvatarCandidatePtr&) noexcept;
     bool player_model_ready(const AvatarCandidate&)const noexcept;
     bool activate_player_model(const AvatarCandidate&,bool(*)(void*,std::uint64_t)noexcept,void*) noexcept;
     void retain_player_models(const std::vector<AvatarSubjectSelection>&) noexcept;
-    // Host source construction and native destroy/free use the same mutex.
+    // Host construction shares this mutex with guarded buffer/image backing,
+    // descriptor mutation and resource/layout/set/pool/pipeline teardown.
+    // This creates no GPU dependency or lease beyond the caller's lock scope.
     // try_only is for nonblocking coordination; the ordinary hook waits.
     std::unique_lock<std::mutex> native_source_guard(bool try_only=false);
 #ifdef EVRM_NATIVE_BACKEND_TESTING
@@ -87,7 +106,7 @@ public:
     bool pose_capture_boundary(VkCommandBuffer)noexcept;
     void render_current(VkCommandBuffer)noexcept;
     void draw(VkCommandBuffer,VkBuffer,VkDeviceSize,VkBuffer,VkDeviceSize,std::uint32_t,std::uint32_t)noexcept;
-    void dispatch(VkCommandBuffer,bool capture_owner=true,std::uint32_t x=0,std::uint32_t y=0,std::uint32_t z=0)noexcept;
+    void dispatch(VkCommandBuffer,bool capture_owner=true,std::uint32_t x=0,std::uint32_t y=0,std::uint32_t z=0,std::uint32_t observed_family=UINT32_MAX)noexcept;
     void barriers(VkCommandBuffer,VkPipelineStageFlags,VkPipelineStageFlags,VkDependencyFlags,
                   std::uint32_t,const VkMemoryBarrier*,std::uint32_t,const VkBufferMemoryBarrier*,
                   std::uint32_t,const VkImageMemoryBarrier*)noexcept;

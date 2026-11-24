@@ -70,6 +70,7 @@ std::size_t field(const Json& object, const char* name, std::size_t default_valu
 }
 #include "import_uv.inl"
 #include "import_surface.inl"
+#include "import_mtoon.inl"
 
 template<class T> const T& indexed(const std::vector<T>& values, int index, const char* label) {
     require(index >= 0 && static_cast<std::size_t>(index) < values.size(), std::string("Invalid ") + label);
@@ -239,7 +240,8 @@ Json preflight(const Bytes& bytes, const ImportLimits& limits) {
     }
     std::size_t surface_index=0;
     for (const auto& material : doc.value("materials", Json::array())) {
-        (void)parse_surface(doc,surface_index++);
+        (void)parse_surface(doc,surface_index);
+        (void)parse_mtoon(doc,surface_index++);
         if (material.contains("pbrMetallicRoughness") && material.at("pbrMetallicRoughness").contains("baseColorTexture")) {
             const auto& texture = material.at("pbrMetallicRoughness").at("baseColorTexture");
             reference(texture.at("index"), "textures", "base texture");
@@ -516,6 +518,7 @@ void build_materials(tinygltf::Model& model, const Json& doc, Avatar& avatar) {
     for (std::size_t i = 0; i < model.materials.size(); ++i) {
         const auto& source = model.materials[i]; Material material; material.name = source.name;
         material.surface=parse_surface(doc,i);
+        material.mtoon=parse_mtoon(doc,i);
         require(source.pbrMetallicRoughness.baseColorFactor.size() == 4, "Invalid base color shape");
         for (int c = 0; c < 4; ++c) {
             material.base_color[c] = checked_float(source.pbrMetallicRoughness.baseColorFactor[c]);
@@ -535,33 +538,12 @@ void build_materials(tinygltf::Model& model, const Json& doc, Avatar& avatar) {
         material.unlit = source.extensions.count("KHR_materials_unlit") != 0;
         if (source.extensions.count("VRMC_materials_mtoon"))
             material.mtoon_json = doc.at("materials").at(i).at("extensions").at("VRMC_materials_mtoon").dump();
-        bool mtoon = source.extensions.count("VRMC_materials_mtoon") != 0;
-        if (!mtoon && doc.contains("extensions") && doc.at("extensions").contains("VRM")) {
-            const auto& legacy = doc.at("extensions").at("VRM");
-            if (legacy.is_object() && legacy.contains("materialProperties")) {
-                const auto& properties = legacy.at("materialProperties");
-                if (properties.is_array() && i < properties.size()) {
-                    const auto& property = properties.at(i);
-                    mtoon = property.is_object() && property.contains("shader") && property.contains("name") &&
-                        property.at("shader") == "VRM/MToon" && property.at("name") == source.name;
-                }
-            }
-        }
-        // VRoid combines the brow and its painted face overlay in one BLEND
-        // material. Its nearly opaque brow otherwise takes the world's simpler
-        // OIT lighting instead of the face's native lighting. Match the tested
-        // menu cutout path only for this standard, unfaded MToon material.
-        if (mtoon && material.alpha == AlphaMode::Blend && material.base_color[3] == 1.f &&
-            material.name.find("_FaceBrow_") != std::string::npos) {
-            material.alpha = AlphaMode::Mask;
-            material.alpha_cutoff = .5f;
-            avatar.warnings.push_back("VRoid FaceBrow overlay uses alpha cutout for consistent native face lighting.");
-        }
         avatar.materials.push_back(std::move(material));
     }
 }
 #include "import_normals.inl"
 #include "import_surface_geometry.inl"
+#include "import_mtoon_geometry.inl"
 #include "import_mouth.inl"
 #include "import_meshes.inl"
 } // namespace
@@ -618,6 +600,8 @@ ImportResult load_vrm_bytes(const Bytes& bytes, const ImportLimits& limits) {
         Avatar avatar; if (!warning.empty()) avatar.warnings.push_back(warning);
         build_nodes(model, avatar); build_humanoid(doc, avatar); build_constraints(doc,avatar);
         build_skins(model, avatar, limits); build_springs(doc,avatar); build_materials(model, doc, avatar); build_meshes(model, doc, avatar, limits);
+        // Supplemental legacy recovery is optional, even under allocation pressure.
+        try { recover_vrm0_springs(doc, avatar); } catch (const std::bad_alloc&) { /* keep authored springs */ }
         std::set<std::string> used(model.extensionsUsed.begin(), model.extensionsUsed.end());
         if (used.count("VRMC_materials_mtoon") || used.count("VRM"))
             avatar.warnings.push_back("MToon parameters preserved where available; toon lighting/outlines are not implemented.");

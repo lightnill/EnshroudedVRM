@@ -1,4 +1,5 @@
 #include "avatar_model.hpp"
+#include "native_mtoon_forward.hpp"
 #include <cmath>
 #include "avatar_settings.hpp"
 #include "sha256.hpp"
@@ -28,6 +29,7 @@ struct BufferBytes {
 void cache_memory_usage(PreparedAvatar& model){
     const auto& asset=*model.asset;const auto& skin=*model.skin;BufferBytes bytes;
     bytes.add(asset.nodes);bytes.add(asset.meshes);bytes.add(asset.skins);bytes.add(asset.images);bytes.add(asset.textures);
+    if(model.mtoon_materials)bytes.add(*model.mtoon_materials);
     bytes.add(asset.materials);bytes.add(asset.constraints);bytes.add(asset.spring_colliders);bytes.add(asset.spring_joints);
     for(const auto& image:asset.images){
         if(image.rgba.size()>std::numeric_limits<std::uint64_t>::max()-model.decoded_texture_bytes)throw std::overflow_error("Avatar texture size overflow");
@@ -82,7 +84,14 @@ AvatarLoadResult prepare_avatar_bytes(const std::vector<std::uint8_t>& bytes,con
     result->name=result->asset->title.empty()?std::filesystem::u8path(path).stem().u8string():result->asset->title;
     if(result->name.size()>1024)result->name=std::filesystem::u8path(path).filename().u8string();
     for(auto& c:result->name)if(static_cast<unsigned char>(c)<32)c=' ';
-    for(const auto& material:result->asset->materials)result->material_names.push_back(material.name);
+    auto mtoon=std::make_shared<std::vector<MToonMenuMaterial>>();mtoon->reserve(result->asset->materials.size());
+    for(const auto& material:result->asset->materials){result->material_names.push_back(material.name);MToonMenuMaterial status;
+        if(material.mtoon){const auto& authored=*material.mtoon;status.support=authored.render_mode==vrm::MToonRenderMode::Opaque?MToonMaterialSupport::Opaque:
+            authored.render_mode==vrm::MToonRenderMode::Cutout?MToonMaterialSupport::Cutout:material.alpha==vrm::AlphaMode::Blend&&native_mtoon_forward_supported(authored)?MToonMaterialSupport::TransparentForward:MToonMaterialSupport::Transparent;
+            status.outline=authored.outline_mode!=vrm::MToonOutlineMode::None&&authored.outline_width>0;
+            status.legacy_world_outline=status.outline&&authored.version==vrm::MToonVersion::Vrm0&&authored.outline_mode==vrm::MToonOutlineMode::World;}
+        mtoon->push_back(status);}
+    result->mtoon_materials=std::move(mtoon);
     vrm::SourcePose rest;for(const auto& joint:result->asset->humanoid){const auto& world=result->asset->nodes.at(joint.second).world;rest.rest[joint.first]=world;rest.current[joint.first]=world;}
     const auto pose=vrm::retarget(*result->asset,rest);if(!pose)return {{},"Avatar rest pose: "+pose.error};
     auto skin=std::make_shared<const NativeSkinAsset>(make_native_skin_asset(*result->asset,pose));

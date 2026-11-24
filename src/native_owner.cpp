@@ -21,6 +21,20 @@ struct NativeOwnerCachePrefix {
     std::vector<std::pair<std::uint64_t,std::uint64_t>> executable;
     std::size_t guard_count=0;
 };
+// Only independent capture constructs these immutable owned observations.
+// Actor owners and context never point back to this proof, avoiding a cycle.
+struct NativePlayerExclusionProof {
+    struct Actor {
+        NativePlayerIdentity identity;
+        NativeOwnerCandidate owner;
+        std::vector<std::uint8_t> equipment,presence;
+        std::uint64_t table=0,occupancy=0,keys=0,capacity=0;
+        bool absent=false;
+    };
+    NativeOwnerCandidate context;
+    NativeOwnerGuards context_guards,guards;
+    std::vector<Actor> actors;
+};
 namespace {
 namespace p=native_owner_profile;
 namespace o=p::ownerLayout;
@@ -38,46 +52,53 @@ U mul(U a,U b){need(!b||a<=std::numeric_limits<U>::max()/b,"size overflow");retu
 template<class T> T get(const Bytes& data,std::size_t offset){need(offset<=data.size()&&sizeof(T)<=data.size()-offset,"field outside structure");T value;std::memcpy(&value,data.data()+offset,sizeof value);return value;}
 std::uint32_t fnv(const std::string& name){std::uint32_t h=2166136261u;for(unsigned char c:name)h=(h^c)*16777619u;return h;}
 void reason_set(std::string& out,const char* why)noexcept{try{out=why;}catch(...){out.clear();}}
-// Ephemeral to ONE verify() call. Physical reads can include small gaps between
-// known spans, but never cross a4096-byte region. Only original guards compare;
+// Fresh scratch for ONE verify() call. Physical reads can include small gaps between
+// known spans, but never cross a64KiB region or the configured max_read. Only
+// original guards compare;
 // gaps are neither interpreted nor retained in the candidate.
 struct OwnerReadBatches {
-    static constexpr std::uint16_t absent=65535;
-    struct Group {U address=0;std::size_t size=0,offset=0;unsigned state=0;};
-    std::vector<std::uint16_t> lookup;
-    std::vector<Group> groups;
+    using Plan=NativeOwnerReadBatchPlan;
+    const Plan* cached=nullptr;
+    Plan transient;
+    std::vector<std::uint8_t> states;
     Bytes data;
+    Bytes* shared_data=nullptr;
+    std::uint8_t* pointer()noexcept{return shared_data?shared_data->data():data.data();}
+    const Plan& layout()const noexcept{return cached?*cached:transient;}
     static OwnerReadBatches prepare(const NativeOwnerMemory& memory,const NativeOwnerLimits& limits,
-                                   std::size_t used_calls,std::size_t used_bytes,const std::vector<NativeOwnerGuard>& saved)noexcept{
+                                   std::size_t used_calls,std::size_t used_bytes,const std::vector<NativeOwnerGuard>& saved,
+                                   const Plan* cached,Bytes* workspace=nullptr)noexcept{
         try{
             if(saved.size()<64||saved.size()>16384||!memory.permit_read_ahead(0,0)||used_calls>limits.max_calls||used_bytes>limits.max_bytes)return {};
             const auto available_calls=limits.max_calls-used_calls,available_bytes=limits.max_bytes-used_bytes;
             if(saved.size()>available_calls)return {};
-            std::size_t exact_bytes=0;
-            struct Request {U address,end;std::size_t ordinal;};
-            std::vector<Request> requests;requests.reserve(saved.size());
-            for(std::size_t i=0;i<saved.size();++i){const auto& g=saved[i];
-                // A malformed later guard must not preempt an earlier mismatch.
-                if(g.bytes.empty()||g.bytes.size()>limits.max_read||!range(g.address,g.bytes.size())||g.bytes.size()>available_bytes-exact_bytes)return {};
-                exact_bytes+=g.bytes.size();const U end=g.address+g.bytes.size();
-                if(g.bytes.size()<=512&&g.address/4096==(end-1)/4096)requests.push_back({g.address,end,i});
+            OwnerReadBatches batches;batches.cached=cached;
+            if(!cached){
+                std::vector<Plan::Request> ordered;ordered.reserve(saved.size());
+                for(std::size_t i=0;i<saved.size();++i)ordered.push_back({saved[i].address,i});
+                std::sort(ordered.begin(),ordered.end(),[](const auto& a,const auto& b){return a.address<b.address;});
+                batches.transient=Plan::prepare(saved,limits.max_read,ordered);
             }
-            std::sort(requests.begin(),requests.end(),[](const auto& a,const auto& b){return a.address<b.address;});
-            OwnerReadBatches plan;plan.lookup.assign(saved.size(),absent);plan.groups.reserve(512);std::size_t total=0;
-            for(std::size_t first=0;first<requests.size();){
-                std::size_t last=first+1;U end=requests[first].end;
-                while(last<requests.size()&&requests[last].address/4096==requests[first].address/4096){end=std::max(end,requests[last].end);++last;}
-                const auto size=std::size_t(end-requests[first].address);
-                if(last-first>1&&plan.groups.size()<512&&size<=limits.max_read){
-                    const auto group=static_cast<std::uint16_t>(plan.groups.size());
-                    plan.groups.push_back({requests[first].address,size,total,0});total+=size;
-                    for(auto i=first;i<last;++i)plan.lookup[requests[i].ordinal]=group;
+            const auto& plan=batches.layout();
+            // Current permission and remaining budgets are never cached. Reserve
+            // every exact fallback, even after a failed optional wider read.
+            if(!plan.valid||plan.groups.empty()||plan.exact_bytes>available_bytes||plan.groups.size()>available_calls-saved.size()||
+               plan.data_bytes>available_bytes-plan.exact_bytes||
+               !memory.permit_read_ahead(saved.size()+plan.groups.size(),plan.exact_bytes+plan.data_bytes))return {};
+            // Success/failure states are new on every pass. Reusing initialized
+            // allocation space avoids repeated commit/zero/copy overhead, but
+            // no byte is consumed until that group is fully read in THIS pass.
+            batches.states.resize(plan.groups.size(),0);
+            if(workspace){
+                if(workspace->size()<plan.data_bytes){
+                    // Current budgets above cap data_bytes below64MiB. Exact
+                    // replacement sizing avoids vector growth doubling that cap.
+                    Bytes expanded((plan.data_bytes+65535)/65536*65536);
+                    workspace->swap(expanded);
                 }
-                first=last;
-            }
-            if(plan.groups.empty()||plan.groups.size()>available_calls-saved.size()||total>available_bytes-exact_bytes||
-                !memory.permit_read_ahead(saved.size()+plan.groups.size(),exact_bytes+total))return {};
-            plan.data.resize(total);return plan;
+                batches.shared_data=workspace;
+            }else batches.data.resize(plan.data_bytes);
+            return batches;
         }catch(...){return {};}// Optional allocation/planning never changes exact-read acceptance.
     }
 };
@@ -88,8 +109,9 @@ struct Reader {
     NativeOwnerObservationStats* stats;
     std::size_t calls=0,bytes=0;
     std::vector<NativeOwnerGuard> guards;
+    Bytes* read_scratch=nullptr;
     Phase current_phase=Phase::image;
-    Reader(const NativeOwnerMemory& m,const NativeOwnerLimits& l,NativeOwnerObservationStats* out):memory(m),limits(l),started(m.work_milliseconds()),stats(out){
+    Reader(const NativeOwnerMemory& m,const NativeOwnerLimits& l,NativeOwnerObservationStats* out,Bytes* scratch=nullptr):memory(m),limits(l),started(m.work_milliseconds()),stats(out),read_scratch(scratch){
         location(Location::validation);
         need(l.max_read&&l.max_read<=65536&&l.max_bytes&&l.max_bytes<=64*1024*1024&&l.max_calls&&l.max_calls<=100000&&l.max_milliseconds&&l.max_milliseconds<=30000,"invalid read budget");
     }
@@ -115,24 +137,27 @@ struct Reader {
         return result;
     }
     template<class T=U> T scalar(U address){return get<T>(span(address,sizeof(T)),0);}
-    void verify(const std::vector<NativeOwnerGuard>& saved){
+    void verify(const NativeOwnerGuards& saved){verify(saved.view(),saved.read_batch_plan(limits.max_read));}
+    void verify(const std::vector<NativeOwnerGuard>& saved,const NativeOwnerReadBatchPlan* plan=nullptr){
         std::size_t ordinal=0;if(stats)stats->guard_total=saved.size();
         // Every retained range still compares in its original order. Batched
-        // bytes are freshly read in this pass and destroyed on return.
+        // bytes are freshly read in this pass. Optional retained allocation
+        // carries no success state or ownership acceptance across calls.
         Bytes current(limits.max_read);
-        auto batches=OwnerReadBatches::prepare(memory,limits,calls,bytes,saved);
+        auto batches=OwnerReadBatches::prepare(memory,limits,calls,bytes,saved,plan,read_scratch);
+        const auto& layout=batches.layout();
         for(const auto& g:saved){if(stats)stats->guard_ordinal=ordinal;location(Location::validation);
             need(!g.bytes.empty()&&g.bytes.size()<=limits.max_read,"invalid owned guard");
             if(stats){stats->guard_capture_phase=g.capture_phase;stats->guard_span_bytes=g.bytes.size();stats->guard_difference_offset=0;}
             bool from_batch=false;
-            const auto group=batches.lookup.empty()?OwnerReadBatches::absent:batches.lookup[ordinal];
-            if(group!=OwnerReadBatches::absent){auto& batch=batches.groups[group];
-                if(!batch.state){
-                    const bool readable=try_read(batch.address,batches.data.data()+batch.offset,batch.size);
+            const auto group=layout.lookup.empty()?NativeOwnerReadBatchPlan::absent:layout.lookup[ordinal];
+            if(group!=NativeOwnerReadBatchPlan::absent){const auto& batch=layout.groups[group];auto& state=batches.states[group];
+                if(!state){
+                    const bool readable=try_read(batch.address,batches.pointer()+batch.offset,batch.size);
                     if(!readable)check(Location::postcheck);
-                    batch.state=readable?1:2;
+                    state=readable?1:2;
                 }
-                if(batch.state==1){check();std::memcpy(current.data(),batches.data.data()+batch.offset+std::size_t(g.address-batch.address),g.bytes.size());check(Location::postcheck);from_batch=true;}
+                if(state==1){check();std::memcpy(current.data(),batches.pointer()+batch.offset+std::size_t(g.address-batch.address),g.bytes.size());check(Location::postcheck);from_batch=true;}
             }
             if(!from_batch)read(g.address,current.data(),g.bytes.size());
             location(Location::compare);
@@ -145,7 +170,7 @@ struct Reader {
         check(Location::finalcheck);location(Location::none);
     }
 };
-bool image_identity(const NativeOwnerImage& image){return range(image.base,image.size)&&image.size==p::image_size&&image.timestamp==p::image_timestamp&&std::equal(image.sha256.begin(),image.sha256.end(),std::begin(p::image_sha256));}
+bool image_identity(const NativeOwnerImage& image){return range(image.base,image.size)&&image.size==p::image_size&&image.timestamp==p::image_timestamp&&image.steam_build_id==p::steam_build_id;}
 struct Image {
     Reader& m;const NativeOwnerImage& image;
     std::vector<std::pair<U,U>> executable;
@@ -153,7 +178,7 @@ struct Image {
     bool code(U address)const{for(auto r:executable)if(r.first<=address&&address<r.second)return true;return false;}
     Image(Reader& r,const NativeOwnerImage& i,const NativeOwnerCachePrefix& verified):m(r),image(i),executable(verified.executable){}
     Image(Reader& r,const NativeOwnerImage& i):m(r),image(i){
-        need(image_identity(image),"unsupported image SHA/timestamp/size");auto dos=m.span(image.base,64);need(dos[0]=='M'&&dos[1]=='Z',"DOS header mismatch");
+        need(image_identity(image),"unsupported Steam build/timestamp/image size");auto dos=m.span(image.base,64);need(dos[0]=='M'&&dos[1]=='Z',"DOS header mismatch");
         U nt=add(image.base,get<std::uint32_t>(dos,0x3C));need(inside(nt,24),"PE header outside image");auto pe=m.span(nt,24);need(get<std::uint32_t>(pe,0)==0x4550&&get<std::uint16_t>(pe,4)==0x8664,"PE signature/machine mismatch");
         U count=get<std::uint16_t>(pe,6),optional=get<std::uint16_t>(pe,20);need(count&&count<=96&&optional>=64&&optional<=512&&inside(add(nt,24),optional),"invalid PE dimensions");auto opt=m.span(add(nt,24),optional);
         need(get<std::uint16_t>(opt,0)==0x20B&&get<std::uint32_t>(pe,8)==image.timestamp&&get<std::uint32_t>(opt,56)==image.size,"loaded PE identity mismatch");
@@ -281,10 +306,10 @@ void service_owners(Reader& m,Image& image,NativeOwnerCandidate& candidate,bool 
             const auto bytes=m.span(at,pin.size);need(std::memcmp(bytes.data(),pin.bytes,pin.size)==0,"original player identity code mismatch");}
     }
 }
-void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& handles_input,NativeOwnerCandidate& c){
+void model_allocation(Reader& m,Image& image,const std::vector<std::uint32_t>& handles_input,NativeOwnerCandidate& c,bool context_only=false){
     U records=m.scalar(add(c.model_manager,0x1B0)),record_bytes=m.scalar(add(c.model_manager,0x1B8));U generations=m.scalar(add(c.model_manager,0x1C8)),capacity=m.scalar(add(c.model_manager,0x1D0));
     need(record_bytes&&record_bytes%432==0&&record_bytes/432==capacity&&capacity&&capacity<=131072&&m.scalar<std::uint32_t>(add(c.model_manager,0x48))==capacity,"model allocation dimensions mismatch");need(range(records,record_bytes)&&range(generations,capacity),"model allocation range invalid");std::set<std::uint32_t> handles,indices;
-    for(unsigned slot=0;slot<handles_input.size();++slot){auto handle=handles_input[slot];if(!handle)continue;auto index=handle&0xFFFFFF,generation=handle>>24;need(handles.insert(handle).second&&indices.insert(index).second,"duplicate equipment model handle/index");need(index<capacity,"model handle index outside allocation");need(m.scalar<std::uint8_t>(add(generations,index))==generation,"model handle generation mismatch");c.models.push_back({slot,handle,index,generation,add(records,mul(index,432))});}need(!c.models.empty(),"no selected equipment model handles");c.writer=m.scalar(add(c.model_manager,0x948));
+    for(unsigned slot=0;slot<handles_input.size();++slot){auto handle=handles_input[slot];if(!handle)continue;auto index=handle&0xFFFFFF,generation=handle>>24;need(handles.insert(handle).second&&indices.insert(index).second,"duplicate equipment model handle/index");need(index<capacity,"model handle index outside allocation");need(m.scalar<std::uint8_t>(add(generations,index))==generation,"model handle generation mismatch");c.models.push_back({slot,handle,index,generation,add(records,mul(index,432))});}need(context_only||!c.models.empty(),"no selected equipment model handles");c.writer=m.scalar(add(c.model_manager,0x948));
     // Pinned 208-byte writer: stable owner/resource prefix [0,112), dimensions
     // [192,200). Intervening update payload is not an identity guard.
     auto resources=m.span(c.writer,0x70),dimensions=m.span(add(c.writer,0xC0),8);U total=get<std::uint32_t>(resources,0x48);c.instance_capacity=get<std::uint32_t>(dimensions,0);c.instance_extra=get<std::uint32_t>(dimensions,4);
@@ -380,7 +405,7 @@ bool same_native_menu_owner(const NativeMenuOwnerCandidate& a,const NativeMenuOw
             a.preview.models[i].record!=b.preview.models[i].record)return false;
     }
     return !a.guards.empty()&&!b.guards.empty()&&a.image.base==b.image.base&&a.image.size==b.image.size&&
-        a.image.timestamp==b.image.timestamp&&a.image.sha256==b.image.sha256&&a.root==b.root&&a.client==b.client&&
+        a.image.timestamp==b.image.timestamp&&a.image.steam_build_id==b.image.steam_build_id&&a.image.sha256==b.image.sha256&&a.root==b.root&&a.client==b.client&&
         a.controller==b.controller&&a.scene_owner==b.scene_owner&&a.scene_entries==b.scene_entries&&a.scene_capacity==b.scene_capacity;
 }
 namespace {
@@ -426,8 +451,8 @@ bool capture_native_owner(const NativeOwnerMemory& memory,const NativeOwnerImage
 }
 namespace {
 template<class T> T guarded_value(const NativeOwnerCandidate& c,U address){
-    for(const auto& g:c.guards)if(address>=g.address&&sizeof(T)<=g.bytes.size()&&address-g.address<=g.bytes.size()-sizeof(T)){
-        T value;std::memcpy(&value,g.bytes.data()+std::size_t(address-g.address),sizeof value);return value;}
+    if(const auto* guard=c.guards.covering(address,sizeof(T))){
+        T value;std::memcpy(&value,guard->bytes.data()+std::size_t(address-guard->address),sizeof value);return value;}
     need(false,"player owner metadata lacks consumed guard");return T{};
 }
 void player_candidate_metadata(const NativeOwnerCandidate& c){
@@ -472,7 +497,7 @@ bool revalidate_native_owner(const NativeOwnerMemory& memory,NativeOwnerCandidat
             need(now>=started&&now-started<bounded.max_milliseconds,"player owner metadata deadline exceeded");
             bounded.max_milliseconds-=now-started;
         }
-        Reader m(memory,bounded,stats);m.verify(candidate.guards.view());return true;
+        Reader m(memory,bounded,stats);m.verify(candidate.guards);return true;
     }catch(const Rejected& failure){reason_set(why,failure.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"owner revalidation allocation/internal failure");}candidate={};return false;
 }
 namespace {
@@ -507,7 +532,7 @@ struct OwnerCallBudget final:NativeOwnerMemory {
     }
 };
 bool same_owner_image(const NativeOwnerImage& a,const NativeOwnerImage& b) {
-    return a.base==b.base&&a.size==b.size&&a.timestamp==b.timestamp&&a.sha256==b.sha256;
+    return a.base==b.base&&a.size==b.size&&a.timestamp==b.timestamp&&a.steam_build_id==b.steam_build_id&&a.sha256==b.sha256;
 }
 }
 bool NativeOwnerCache::capture(const NativeOwnerMemory& memory,const NativeOwnerImage& image,NativeOwnerCandidate& out,
@@ -568,7 +593,7 @@ bool capture_player_group(const NativeOwnerMemory& memory,const NativeOwnerImage
         Reader m(memory,limits,stats);const bool reuse=source==&memory&&decoded&&!saved.guards.empty()&&same_owner_image(saved.image,image_identity_copy);
         if(!reuse){saved={};decoded.reset();source=nullptr;}
         NativeOwnerCandidate prefix;
-        if(reuse){m.phase(Phase::capture_verify);m.verify(saved.guards.view());prefix=saved;m.guards.assign(saved.guards.begin(),saved.guards.end());}
+        if(reuse){m.phase(Phase::capture_verify);m.verify(saved.guards);prefix=saved;m.guards.assign(saved.guards.begin(),saved.guards.end());}
         else {
             prefix.image=image_identity_copy;Image image(m,prefix.image);m.phase(Phase::owners);owners(m,prefix.image,prefix);
             m.phase(Phase::registry);auto registrations=registry(m,image,prefix.registry);m.phase(Phase::services);service_owners(m,image,prefix,true);
@@ -646,6 +671,276 @@ NativePlayerOwnerBatch NativeOwnerCache::capture_available_players(const NativeO
     }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){reason_set(why,"available player owner batch unavailable");}
     return {};
 }
+namespace {
+using PlayerExclusion=NativePlayerExclusionProof::Actor;
+// This output-only counter sits below Readers. Even an allocation/transfer
+// exception cannot hide physical work from a caller's remaining allowance.
+struct IndependentOwnerReads final:NativeOwnerMemory {
+    struct SharedSpan {U address=0,end=0,prefix_end=0;const std::uint8_t* data=nullptr;};
+    const NativeOwnerMemory& source;
+    mutable std::size_t calls=0,bytes=0,completed_calls=0,completed_bytes=0;
+    std::vector<SharedSpan> shared_spans;
+    bool watching_row=false;
+    mutable U last_failed_address=0;
+    mutable std::size_t last_failed_count=0;
+    mutable bool shared_contradiction=false;
+    explicit IndependentOwnerReads(const NativeOwnerMemory& value):source(value){}
+    void prepare_shared(const NativeOwnerGuards& guards){
+        std::vector<SharedSpan> spans;spans.reserve(guards.size());
+        for(const auto& guard:guards){need(!guard.bytes.empty()&&range(guard.address,guard.bytes.size()),"invalid retained exclusion span");spans.push_back({guard.address,guard.address+guard.bytes.size(),0,guard.bytes.data()});}
+        std::sort(spans.begin(),spans.end(),[](const auto& a,const auto& b){return a.address<b.address;});
+        U end=0;for(auto& span:spans){end=std::max(end,span.end);span.prefix_end=end;}shared_spans=std::move(spans);
+    }
+    void begin_row()noexcept{last_failed_address=0;last_failed_count=0;shared_contradiction=false;watching_row=true;}
+    void end_row()noexcept{watching_row=false;}
+    bool failed_read_overlaps_shared()const noexcept{
+        if(!range(last_failed_address,last_failed_count))return false;const U end=last_failed_address+last_failed_count;
+        auto at=std::upper_bound(shared_spans.begin(),shared_spans.end(),last_failed_address,[](U value,const auto& span){return value<span.prefix_end;});
+        for(;at!=shared_spans.end()&&at->address<end;++at)if(at->end>last_failed_address)return true;return false;
+    }
+    void observe_shared(U address,const void* data,std::size_t count)const noexcept{
+        if(shared_contradiction||!range(address,count))return;const U end=address+count;
+        auto at=std::upper_bound(shared_spans.begin(),shared_spans.end(),address,[](U value,const auto& span){return value<span.prefix_end;});
+        for(;at!=shared_spans.end()&&at->address<end;++at){const U first=std::max(address,at->address),last=std::min(end,at->end);if(first>=last)continue;
+            if(std::memcmp(static_cast<const std::uint8_t*>(data)+std::size_t(first-address),at->data+std::size_t(first-at->address),std::size_t(last-first))){shared_contradiction=true;return;}
+        }
+    }
+    bool read(U address,void* out,std::size_t count)const noexcept override{
+        ++calls;bytes+=count;const bool result=source.read(address,out,count);
+        if(result){++completed_calls;completed_bytes+=count;if(watching_row)observe_shared(address,out,count);}
+        else{last_failed_address=address;last_failed_count=count;}return result;
+    }
+    U milliseconds()const noexcept override{return source.milliseconds();}
+    U work_milliseconds()const noexcept override{return source.work_milliseconds();}
+    bool permit_read_ahead(std::size_t wanted_calls,std::size_t wanted_bytes)const noexcept override{return source.permit_read_ahead(wanted_calls,wanted_bytes);}
+    void report(NativeOwnerObservationStats& stats)const noexcept{
+        stats.attempted_calls=calls;stats.attempted_bytes=bytes;stats.completed_calls=completed_calls;stats.completed_bytes=completed_bytes;
+    }
+};
+// This route proves all possible model-index claims without asking whether the
+// actor is ready for a replacement. Input/PlayerState prerequisites, allocation
+// generations and GPU resources belong to that actor's positive proof instead.
+Bytes player_exclusion_equipment(Reader& m,const std::vector<Registration>& registrations,PlayerExclusion& entry){
+    auto& c=entry.owner;
+    const auto equipment=std::find_if(registrations.begin(),registrations.end(),[](const auto& r){return r.storage.name=="keen::ecs::RenderEquipment";});
+    need(equipment!=registrations.end()&&equipment->storage.structure&&equipment->size==788,"selected equipment registration missing");
+    c.equipment_registration=equipment->index;
+    const U capacity=m.scalar(c.entity_manager+e::entityManagerCount);
+    need(capacity&&capacity<=e::maximumEntities&&!(capacity&(capacity-1)),"invalid entity table capacity");
+    const U table=m.scalar(c.entity_manager+e::entityManagerTable),occupancy=m.scalar(c.entity_manager+e::entityManagerOccupancy),keys=m.scalar(c.entity_manager+e::entityManagerKeys);
+    entry.capacity=capacity;entry.table=table;entry.occupancy=occupancy;entry.keys=keys;
+    need(range(table,mul(capacity,8))&&range(keys,mul(capacity,4))&&range(occupancy,((capacity+63)/64)*8),"invalid entity map ranges");
+    std::uint32_t hash=c.entity_id;for(unsigned i=0;i<2;++i)hash=((hash>>16)^hash)*0x45D9F3Bu;
+    const U start=(hash^(hash>>16))&(capacity-1);bool found=false;
+    for(U probe=0;probe<std::min<U>(capacity,8192);++probe){const U slot=(start+probe)&(capacity-1);const auto occupied=m.scalar<std::uint8_t>(add(occupancy,slot/8));
+        if(!((occupied>>(slot%8))&1)){entry.absent=true;return {};}
+        if(m.scalar<std::uint32_t>(add(keys,slot*4))!=c.entity_id)continue;
+        c.entity=m.scalar(add(table,slot*8));c.entity_slot=static_cast<std::uint32_t>(slot);found=true;break;
+    }
+    need(found,"player exclusion hash probe bound exceeded");need(range(c.entity,52),"selected entity range invalid");
+    const auto header=m.span(add(c.entity,16),36);need(get<std::uint32_t>(header,0)==c.entity_id,"player exclusion entity ID mismatch");
+    c.entity_generation=get<std::uint32_t>(header,4);c.entity_layout=get<U>(header,8);c.entity_storage=get<U>(header,16);c.entity_row=get<std::uint32_t>(header,32);
+    need(range(c.entity_layout,1)&&range(c.entity_storage,1)&&c.entity_row<=1u<<24,"invalid selected entity layout/storage/row");
+    const U bit_size=((registrations.size()+63)/64)*8;
+    need(bit_size<=e::componentOffsets&&registrations.size()*2<=e::componentStrides-e::componentOffsets,"component layout arrays overlap");
+    entry.presence=m.span(c.entity_layout,bit_size);const auto& presence=entry.presence;
+    // The guarded presence bitmap can prove no equipment claim even while an
+    // actor is still being initialized. No component address/stride is consumed.
+    if(!((presence[equipment->index/8]>>(equipment->index%8))&1))return Bytes(24u*sizeof(std::uint32_t));
+    const U offset=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentOffsets+equipment->index*2));
+    const U stride=m.scalar<std::uint16_t>(add(c.entity_layout,e::componentStrides+equipment->index*2));
+    need(stride==equipment->size,"player exclusion equipment stride mismatch");
+    c.equipment=add(add(c.entity_storage,offset),mul(c.entity_row,stride));need(range(c.equipment,stride),"player exclusion equipment address invalid");
+    return m.span(c.equipment,24u*sizeof(std::uint32_t));
+}
+bool same_player_identity(const NativePlayerIdentity& a,const NativePlayerIdentity& b){
+    return a.account==b.account&&a.entity_id==b.entity_id&&a.connection==b.connection&&a.local==b.local;
+}
+bool same_player_context(const NativeOwnerCandidate& a,const NativeOwnerCandidate& b){
+    return same_owner_image(a.image,b.image)&&a.root==b.root&&a.client==b.client&&a.controller==b.controller&&
+        a.main==b.main&&a.execution==b.execution&&a.registry==b.registry&&a.entity_manager==b.entity_manager&&
+        a.local_player_data==b.local_player_data&&a.player_infos==b.player_infos&&a.render_scene==b.render_scene&&
+        a.model_manager==b.model_manager&&a.writer==b.writer&&a.resource_object==b.resource_object&&
+        a.native_buffer==b.native_buffer&&a.native_buffer_bytes==b.native_buffer_bytes&&
+        a.instance_capacity==b.instance_capacity&&a.instance_extra==b.instance_extra;
+}
+bool same_player_entity(const NativeOwnerCandidate& a,const NativeOwnerCandidate& b){
+    return a.account==b.account&&a.connection==b.connection&&a.player_record==b.player_record&&a.entity_id==b.entity_id&&
+        a.entity==b.entity&&a.entity_generation==b.entity_generation&&a.entity_slot==b.entity_slot&&a.entity_row==b.entity_row&&
+        a.entity_layout==b.entity_layout&&a.entity_storage==b.entity_storage&&a.equipment==b.equipment&&
+        a.equipment_registration==b.equipment_registration;
+}
+// Compare covered bytes rather than assuming two captures split ranges alike.
+// The usual identical ordering uses one linear pass; the fallback handles
+// overlaps/segmentation without interpreting gaps as captured authority.
+bool guard_spans_match(const NativeOwnerGuards& saved,const NativeOwnerGuards& fresh){
+    for(const auto& old:saved){if(old.bytes.empty()||!range(old.address,old.bytes.size()))return false;
+        std::size_t offset=0;while(offset<old.bytes.size()){bool covered=false;const U address=old.address+offset;
+            for(const auto& now:fresh)if(!now.bytes.empty()&&range(now.address,now.bytes.size())&&address>=now.address&&address-now.address<now.bytes.size()){
+                const auto at=static_cast<std::size_t>(address-now.address),count=std::min(old.bytes.size()-offset,now.bytes.size()-at);
+                if(std::memcmp(old.bytes.data()+offset,now.bytes.data()+at,count))return false;offset+=count;covered=true;break;
+            }
+            if(!covered)return false;
+        }
+    }return true;
+}
+bool same_guard_bytes(const NativeOwnerGuards& a,const NativeOwnerGuards& b){
+    if(a.empty()||b.empty())return false;
+    if(a.size()==b.size()){bool ordered=true;for(std::size_t i=0;i<a.size();++i){
+        if(a[i].address!=b[i].address||a[i].bytes.size()!=b[i].bytes.size()){ordered=false;break;}
+        if(a[i].bytes!=b[i].bytes)return false;
+    }if(ordered)return true;}
+    return guard_spans_match(a,b)&&guard_spans_match(b,a);
+}
+bool retained_exclusion_prefix(const NativeOwnerCandidate& candidate){
+    if(!candidate.exclusions||candidate.exclusions->guards.empty()||candidate.guards.size()<candidate.exclusions->guards.size())return false;
+    for(std::size_t i=0;i<candidate.exclusions->guards.size();++i){const auto& saved=candidate.exclusions->guards[i];
+        if(candidate.guards[i].address!=saved.address||candidate.guards[i].bytes!=saved.bytes)return false;
+    }return true;
+}
+bool shared_guard_failure(const std::vector<NativeOwnerGuard>& bank,const NativeOwnerGuards& shared,const NativeOwnerObservationStats& stats,Phase phase,Location failure)noexcept{
+    if((failure!=Location::read&&failure!=Location::compare)||stats.phase!=phase||stats.failure_location!=failure||
+       stats.guard_total!=bank.size()||stats.guard_ordinal>=bank.size()||shared.empty())return false;
+    const auto& failed=bank[stats.guard_ordinal];
+    if(failed.bytes.empty()||stats.guard_span_bytes!=failed.bytes.size()||!range(failed.address,failed.bytes.size()))return false;
+    if(failure==Location::compare){if(stats.guard_difference_offset>=failed.bytes.size())return false;}
+    else if(stats.guard_difference_offset)return false;
+    const U address=failed.address+(failure==Location::compare?stats.guard_difference_offset:0);
+    const U end=failure==Location::compare?address+1:failed.address+failed.bytes.size();bool overlaps=false;
+    for(const auto& guard:shared){
+        if(guard.bytes.empty()||!range(guard.address,guard.bytes.size()))return false;
+        if(address<guard.address+guard.bytes.size()&&guard.address<end)overlaps=true;
+    }return overlaps;
+}
+}
+bool native_player_owner_matches_exclusions(const NativeOwnerCandidate& candidate,const NativePlayerExclusionProof& fresh)noexcept{
+    try{
+        need(retained_exclusion_prefix(candidate)&&!fresh.guards.empty(),"player exclusion binding missing");
+        player_candidate_metadata(candidate);const auto& previous=*candidate.exclusions;
+        if(!same_player_context(candidate,previous.context)||!same_player_context(previous.context,fresh.context)||
+           !same_guard_bytes(previous.context_guards,fresh.context_guards))return false;
+        const auto old=std::find_if(previous.actors.begin(),previous.actors.end(),[&](const auto& actor){return actor.identity.account==candidate.account&&actor.identity.entity_id==candidate.entity_id&&actor.identity.connection==candidate.connection;});
+        if(old==previous.actors.end()||old->absent||!same_player_entity(candidate,old->owner))return false;
+        const auto current=std::find_if(fresh.actors.begin(),fresh.actors.end(),[&](const auto& actor){return same_player_identity(actor.identity,old->identity);});
+        if(current==fresh.actors.end()||current->absent||!same_player_entity(old->owner,current->owner)||old->equipment!=current->equipment||old->presence!=current->presence||
+           old->table!=current->table||old->keys!=current->keys||old->occupancy!=current->occupancy||old->capacity!=current->capacity)return false;
+        for(const auto& actor:fresh.actors){if(&actor==&*current||actor.absent)continue;
+            if(actor.equipment.size()!=24u*sizeof(std::uint32_t))return false;
+            for(unsigned slot=0;slot<24;++slot){const auto handle=get<std::uint32_t>(actor.equipment,slot*4);if(!handle)continue;
+                for(const auto& model:candidate.models)if((handle&0xFFFFFF)==model.index)return false;
+            }
+        }return true;
+    }catch(...){return false;}
+}
+bool native_player_owner_shared_read_failed(const NativeOwnerCandidate& candidate,const NativeOwnerObservationStats& stats)noexcept{
+    return stats.phase==Phase::submission_verify&&stats.failure_location==Location::read&&retained_exclusion_prefix(candidate)&&
+        shared_guard_failure(candidate.guards.view(),candidate.exclusions->guards,stats,Phase::submission_verify,Location::read);
+}
+bool native_player_owner_shared_compare_failed(const NativeOwnerCandidate& candidate,const NativeOwnerObservationStats& stats)noexcept{
+    return stats.phase==Phase::submission_verify&&stats.failure_location==Location::compare&&retained_exclusion_prefix(candidate)&&
+        shared_guard_failure(candidate.guards.view(),candidate.exclusions->guards,stats,Phase::submission_verify,Location::compare);
+}
+NativePlayerOwnerBatch NativeOwnerCache::capture_independent_players(const NativeOwnerMemory& memory,const NativeOwnerImage& image,const std::vector<NativePlayerIdentity>& targets,std::string& why,const NativeOwnerLimits& requested,NativeOwnerObservationStats* stats)noexcept {
+    const auto identity=image;why.clear();NativeOwnerObservationStats shared_stats,progress;if(stats)*stats={};
+    const U started=memory.work_milliseconds();IndependentOwnerReads observed(memory);
+    try{
+        validate_player_targets(targets);auto limits=requested;limits.max_milliseconds=std::min<U>(limits.max_milliseconds,40);
+        Reader shared(observed,limits,&shared_stats,&player_read_scratch_);
+        const bool reuse=player_source_==&memory&&player_decoded_&&!player_prefix_.guards.empty()&&same_owner_image(player_prefix_.image,identity);
+        if(!reuse){player_prefix_={};player_decoded_.reset();player_source_=nullptr;}
+        NativeOwnerCandidate prefix;
+        if(reuse){shared.phase(Phase::capture_verify);shared.verify(player_prefix_.guards);prefix=player_prefix_;shared.guards.assign(prefix.guards.begin(),prefix.guards.end());}
+        else{
+            prefix.image=identity;Image loaded(shared,prefix.image);shared.phase(Phase::owners);owners(shared,prefix.image,prefix);
+            shared.phase(Phase::registry);auto registrations=registry(shared,loaded,prefix.registry);shared.phase(Phase::services);service_owners(shared,loaded,prefix,true);
+            auto decoded=std::make_shared<NativeOwnerCachePrefix>();decoded->registrations=std::move(registrations);decoded->executable=std::move(loaded.executable);decoded->guard_count=shared.guards.size();player_decoded_=std::move(decoded);
+        }
+        const auto prefix_count=shared.guards.size();Image loaded_context(shared,prefix.image,*player_decoded_);
+        shared.phase(Phase::models);prefix.model_manager=shared.scalar(add(prefix.render_scene,0x98));model_allocation(shared,loaded_context,{},prefix,true);
+        const auto context_count=shared.guards.size();shared.phase(Phase::census);
+        const auto local=shared.scalar<std::uint32_t>(add(prefix.local_player_data,4));need(local&&local<=16,"explicit local actor selector absent or outside roster");
+        std::vector<PlayerExclusion> ledger;std::set<U> accounts;std::set<std::uint32_t> connections;unsigned local_count=0;
+        for(unsigned slot=0;slot<16;++slot){const auto bytes=shared.span(add(prefix.player_infos,U(slot)*160),16);
+            const auto actor=get<std::uint32_t>(bytes,0),connection=get<std::uint32_t>(bytes,4);const U account=get<U>(bytes,8);
+            if(!connection){need(!actor,"inactive player actor mismatch");continue;}
+            need(actor==slot+1&&(connection&63)==slot&&account,"original connection/actor/slot mapping mismatch");
+            need(accounts.insert(account).second&&connections.insert(connection).second,"ambiguous player account/connection association");
+            PlayerExclusion entry;entry.identity={account,actor,connection,actor==local};entry.owner=prefix;entry.owner.guards={};
+            entry.owner.account=account;entry.owner.connection=connection;entry.owner.entity_id=actor;entry.owner.player_record=add(prefix.player_infos,U(slot)*160);
+            local_count+=entry.identity.local;ledger.push_back(std::move(entry));
+        }
+        need(local_count==1,"local selector has no unique current player association");
+        // Bit masks distinguish actors, so duplicate handles within one actor
+        // remain its positive failure rather than creating a false other claim.
+        std::map<std::uint32_t,unsigned> claims;
+        for(std::size_t i=0;i<ledger.size();++i){auto& entry=ledger[i];entry.equipment=player_exclusion_equipment(shared,player_decoded_->registrations,entry);
+            for(unsigned slot=0;!entry.absent&&slot<24;++slot){const auto handle=get<std::uint32_t>(entry.equipment,slot*4);if(handle)claims[handle&0xFFFFFF]|=1u<<i;}
+        }
+        shared.phase(Phase::capture_verify);shared.verify(shared.guards);shared.check(Location::finalcheck);
+        NativePlayerOwnerBatch batch;batch.proof=std::move(shared.guards);batch.players.reserve(targets.size());
+        auto exclusions=std::make_shared<NativePlayerExclusionProof>();exclusions->context=prefix;exclusions->context.guards={};
+        exclusions->context_guards=std::vector<NativeOwnerGuard>(batch.proof.begin(),batch.proof.begin()+context_count);
+        exclusions->guards=batch.proof;exclusions->actors=ledger;batch.exclusions=std::move(exclusions);
+        if(!reuse){std::vector<NativeOwnerGuard> guards(batch.proof.begin(),batch.proof.begin()+prefix_count);prefix.guards=std::move(guards);player_prefix_=prefix;player_source_=&memory;}
+        // Index only captured spans; gaps are never interpreted. Preparing this
+        // observer is shared work, while every comparison runs in its row clock.
+        observed.prepare_shared(batch.proof);
+        // Publishing immutable metadata is shared work too. Charge all its
+        // allocations/transfers before any actor's independent clock starts.
+        shared.check(Location::finalcheck);const U shared_finished=memory.work_milliseconds();
+        need(shared_finished>=started&&shared_finished-started<limits.max_milliseconds,"player exclusion deadline exceeded");
+        const U shared_elapsed=shared_finished-started;shared_stats.elapsed_milliseconds=shared_elapsed;progress=shared_stats;
+        U last_clock=shared_finished;
+        for(const auto& target:targets){NativePlayerOwnerResult row;row.identity=target;row.observation=shared_stats;row.observation.elapsed_milliseconds=shared_elapsed;
+            const auto found=std::find_if(ledger.begin(),ledger.end(),[&](const auto& entry){return same_player_identity(entry.identity,target);});
+            if(found==ledger.end()){batch.players.push_back(std::move(row));continue;}
+            if(found->absent){row.status=NativePlayerOwnerStatus::EntityAbsent;batch.players.push_back(std::move(row));continue;}
+            row.status=NativePlayerOwnerStatus::OwnerUnavailable;bool collision=false;
+            const auto actor_bit=1u<<std::size_t(found-ledger.begin());
+            for(unsigned slot=0;slot<24;++slot){const auto handle=get<std::uint32_t>(found->equipment,slot*4);if(handle&&(claims.at(handle&0xFFFFFF)&~actor_bit))collision=true;}
+            if(collision){row.observation.phase=Phase::census;row.observation.failure_location=Location::validation;batch.players.push_back(std::move(row));continue;}
+            const U row_started=memory.work_milliseconds();need(row_started>=last_clock,"player observation clock regressed");
+            bool shared_uncertain=false;observed.begin_row();
+            try{
+                auto bounded=limits;bounded.max_milliseconds-=shared_elapsed;Reader m(observed,bounded,&row.observation,&player_read_scratch_);
+                // Shared work is charged to every actor; other actors' positive
+                // work never advances this Reader's start or read counters.
+                m.calls=shared.calls;m.bytes=shared.bytes;m.guards.assign(batch.proof.begin(),batch.proof.end());
+                auto candidate=found->owner;candidate.models.clear();Image loaded(m,prefix.image,*player_decoded_);m.phase(Phase::census);
+                const auto equipment=entity_equipment(m,player_decoded_->registrations,candidate);
+                m.phase(Phase::models);models_and_buffer(m,loaded,equipment,candidate);
+                m.phase(Phase::capture_verify);
+                try{m.verify(m.guards);m.check(Location::finalcheck);}
+                catch(...){shared_uncertain=shared_guard_failure(m.guards,batch.proof,row.observation,Phase::capture_verify,row.observation.failure_location);throw;}
+                candidate.guards=std::move(m.guards);candidate.exclusions=batch.exclusions;candidate.read_calls=m.calls;candidate.read_bytes=m.bytes;
+                candidate.elapsed_milliseconds=shared_elapsed+row.observation.elapsed_milliseconds;
+                row.candidate=std::move(candidate);row.status=NativePlayerOwnerStatus::Ready;
+            }catch(const Rejected&){row.candidate={};}
+             catch(...){row.candidate={};row.observation.failure_location=Location::internal;}
+            observed.end_row();
+            shared_uncertain=shared_uncertain||observed.shared_contradiction||
+                (row.observation.failure_location==Location::read&&observed.failed_read_overlaps_shared());
+            const U row_finished=memory.work_milliseconds();
+            row.observation.elapsed_milliseconds=shared_elapsed+(row_finished>=row_started?row_finished-row_started:0);
+            progress.phase=row.observation.phase;progress.failure_location=row.observation.failure_location;
+            progress.guard_ordinal=row.observation.guard_ordinal;progress.guard_total=row.observation.guard_total;
+            progress.guard_capture_phase=row.observation.guard_capture_phase;progress.guard_span_bytes=row.observation.guard_span_bytes;
+            progress.guard_difference_offset=row.observation.guard_difference_offset;
+            progress.clock_regressed=progress.clock_regressed||row.observation.clock_regressed||row_finished<row_started;
+            need(!progress.clock_regressed,"player observation clock regressed");last_clock=row_finished;
+            need(!shared_uncertain,"player exclusion evidence unavailable during positive verification");
+            // Include the final transfer/check in this actor's same allowance.
+            if(row.observation.elapsed_milliseconds>=limits.max_milliseconds){row.candidate={};row.status=NativePlayerOwnerStatus::OwnerUnavailable;row.observation.failure_location=Location::finalcheck;}
+            batch.players.push_back(std::move(row));
+        }
+        const U finished=memory.work_milliseconds();need(finished>=last_clock,"player observation clock regressed");
+        progress.elapsed_milliseconds=finished-started;observed.report(progress);batch.valid=true;if(stats)*stats=progress;return batch;
+    }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){progress.failure_location=Location::internal;reason_set(why,"independent player ownership unavailable");}
+    if(progress.attempted_calls<shared_stats.attempted_calls)progress=shared_stats;
+    observed.report(progress);const U finished=memory.work_milliseconds();progress.clock_regressed=progress.clock_regressed||finished<started;
+    progress.elapsed_milliseconds=finished>=started?finished-started:0;
+    if(stats)*stats=progress;player_prefix_={};player_decoded_.reset();player_source_=nullptr;return {};
+}
 bool NativeOwnerCache::capture_player(const NativeOwnerMemory& memory,const NativeOwnerImage& image,const NativePlayerIdentity& requested,NativeOwnerCandidate& out,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)noexcept {
     const auto target=requested;const auto identity=image;out={};
     try{std::vector<NativeOwnerCandidate> candidates;
@@ -662,7 +957,7 @@ bool capture_native_player_owner(const NativeOwnerMemory& memory,const NativeOwn
 }
 
 namespace evrm {
-bool revalidate_native_player_owners(const NativeOwnerMemory& memory,std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& requested,NativeOwnerObservationStats* stats)noexcept {
+bool revalidate_native_player_owners(const NativeOwnerMemory& memory,std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& requested,NativeOwnerObservationStats* stats,Bytes* read_workspace)noexcept {
     const U started=memory.work_milliseconds();why.clear();if(stats){*stats={};stats->phase=Phase::submission_verify;stats->failure_location=Location::validation;}
     try{
         need(!candidates.empty()&&candidates.size()<=16,"player owner batch size invalid");
@@ -676,7 +971,7 @@ bool revalidate_native_player_owners(const NativeOwnerMemory& memory,std::vector
         }
         auto limits=requested;limits.max_milliseconds=std::min<U>(limits.max_milliseconds,40);const U now=memory.work_milliseconds();
         need(now>=started&&now-started<limits.max_milliseconds,"player owner batch deadline exceeded");limits.max_milliseconds-=now-started;
-        Reader m(memory,limits,stats);m.phase(Phase::submission_verify);m.verify(first.guards.view());
+        Reader m(memory,limits,stats,read_workspace);m.phase(Phase::submission_verify);m.verify(first.guards);
         const U finished=memory.work_milliseconds();if(stats){stats->elapsed_milliseconds=finished>=started?finished-started:0;stats->clock_regressed=stats->clock_regressed||finished<started;}
         need(finished>=started&&finished-started<std::min<U>(requested.max_milliseconds,40),"player owner batch deadline exceeded");return true;
     }catch(const Rejected& error){reason_set(why,error.reason);}catch(...){if(stats)stats->failure_location=Location::internal;reason_set(why,"player owner batch revalidation unavailable");}

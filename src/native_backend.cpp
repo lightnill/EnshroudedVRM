@@ -1,6 +1,19 @@
 #define VK_NO_PROTOTYPES
 #include "native_backend.hpp"
 #include "native_surface_material.hpp"
+#include "native_mtoon_probe_graph.hpp"
+#include "native_mtoon_probe_graph_backing.hpp"
+#include "native_mtoon_probe_use.hpp"
+#include "native_mtoon_scene.hpp"
+#include "native_mtoon_scene_backing.hpp"
+#include "native_mtoon_scene_view.hpp"
+#include "native_mtoon_probe_program_cache.hpp"
+#include "native_mtoon_shade_program_cache.hpp"
+#include "native_mtoon_raster_program.hpp"
+#include "native_mtoon_frame.hpp"
+#include "native_mtoon_composite_program_cache.hpp"
+#include "native_mtoon_composite_features.hpp"
+#include "native_mtoon_visibility.hpp"
 #include "avatar_runtime.hpp"
 #include "fallback_diagnostics.hpp"
 #include "native_draw.hpp"
@@ -24,10 +37,12 @@
 #include "native_avatar_material.hpp"
 #include "mouth_publication.hpp"
 #include "native_volume_snapshot.hpp"
+#include "native_private_buffer_pool.hpp"
 #include "native_oit_draw.hpp"
 #include "native_player_commit.hpp"
 #include "native_prepare_player.hpp"
 #include "runtime_log.hpp"
+#include "native_pose_age.hpp"
 #include "debug_report_sources.hpp"
 #include <algorithm>
 #include <array>
@@ -53,7 +68,9 @@ void log_submit_timing(const NativeSubmitReport& report)noexcept {
             " worst-tick="+std::to_string(worst.tick)+" legacy="+std::to_string(worst.legacy)+
             " commands="+std::to_string(worst.commands)+" bundles="+std::to_string(worst.bundles)+
             " menus="+std::to_string(worst.menus)+" refreshes="+std::to_string(worst.refreshes);
-        for(unsigned n=0;n<native_submit_stage_count;++n){
+        if(report.details)text+=" mtoon-detail=1 mtoon-observed="+std::to_string(report.observed)+" mtoon-worst-observed="+std::to_string(worst.observed);
+        const auto count=report.details?native_submit_stage_count:native_submit_base_stage_count;
+        for(unsigned n=0;n<count;++n){
             text+=" "+std::string(native_submit_stage_name(static_cast<NativeSubmitStage>(n)))+
                 "={mean:"+std::to_string(report.phase_ms[n]/report.samples)+",worst:"+std::to_string(worst.phase_ms[n])+"}";
         }
@@ -87,28 +104,97 @@ const char* image_disable_name(NativeImageDisableReason reason)noexcept{
 }
 struct Context {
     VkDevice device{};PFN_vkGetDeviceProcAddr get{};VkPhysicalDeviceMemoryProperties memory{};bool uncertain=false;
+    // Idle leased private storage only; see lease_buffer/lease_control_buffer. Declared after the
+    // device/resolver it is destroyed with, and never copied with a Context.
+    NativePrivateBufferPool idle_buffers;
     template<class T>T fn(const char* name)const{return reinterpret_cast<T>(get(device,name));}
     uint32_t memory_type(uint32_t bits,VkMemoryPropertyFlags flags)const {
         for(uint32_t i=0;i<memory.memoryTypeCount;++i)if((bits&(1u<<i))&&(memory.memoryTypes[i].propertyFlags&flags)==flags)return i;
         throw std::runtime_error("Native private memory type unavailable");
     }
+    // The same three driver calls, in the same order, as ~PrivateBuffer.
+    void destroy_buffer(const NativePrivateBufferPool::Entry& entry)const noexcept {
+        if(entry.mapped)fn<PFN_vkUnmapMemory>("vkUnmapMemory")(device,entry.memory);
+        if(entry.handle)fn<PFN_vkDestroyBuffer>("vkDestroyBuffer")(device,entry.handle,nullptr);
+        if(entry.memory)fn<PFN_vkFreeMemory>("vkFreeMemory")(device,entry.memory,nullptr);
+    }
+    // Disabled replacement and teardown keep no idle private memory. Under
+    // uncertain completion the entries are abandoned without any Vulkan call,
+    // exactly like every other private object; device destruction reclaims them.
+    void discard_idle_buffers(bool retain)noexcept {
+        NativePrivateBufferPool::Entries entries;const auto count=idle_buffers.drain(retain,entries);
+        if(uncertain||!device||!get)return;
+        for(std::size_t n=0;n<count;++n)destroy_buffer(entries[n]);
+    }
+    std::size_t evict_idle_buffers()noexcept {
+        if(uncertain||!device||!get)return 0;
+        NativePrivateBufferPool::Entries entries;const auto count=idle_buffers.evict(entries);
+        for(std::size_t n=0;n<count;++n)destroy_buffer(entries[n]);
+        return count;
+    }
+    Context()=default;Context(const Context&)=delete;Context& operator=(const Context&)=delete;
+    ~Context(){discard_idle_buffers(false);}
 };
 #define F(n) context.fn<PFN_##n>(#n)
 struct PrivateBuffer {
-    Context& context;VkBuffer handle{};VkDeviceMemory memory{};void* mapped{};VkDeviceSize size=0;
+    Context& context;VkBuffer handle{};VkDeviceMemory memory{};void* mapped{};VkDeviceSize size=0,allocation_size=0;
+    // Set only by lease_buffer, after complete construction. Control-buffer
+    // contents and authority are fresh even when physical storage is reissued.
+    VkBufferUsageFlags usage=0;bool leased=false;
     explicit PrivateBuffer(Context& c):context(c){}
-    ~PrivateBuffer(){if(context.uncertain)return;if(mapped)F(vkUnmapMemory)(context.device,memory);if(handle)F(vkDestroyBuffer)(context.device,handle,nullptr);if(memory)F(vkFreeMemory)(context.device,memory,nullptr);}
+    ~PrivateBuffer(){if(context.uncertain)return;
+        if(leased){
+            // This is the existing destruction point: every command, view,
+            // history and readback lease of this buffer has already retired.
+            NativePrivateBufferPool::Entry displaced;
+            const auto kept=context.idle_buffers.keep({handle,memory,mapped,size,usage,0,allocation_size},displaced);
+            if(kept==NativePrivateBufferPool::Kept::displaced)context.destroy_buffer(displaced);
+            if(kept!=NativePrivateBufferPool::Kept::no)return;
+        }
+        if(mapped)F(vkUnmapMemory)(context.device,memory);
+        if(handle)F(vkDestroyBuffer)(context.device,handle,nullptr);
+        if(memory)F(vkFreeMemory)(context.device,memory,nullptr);
+    }
 };
 std::unique_ptr<PrivateBuffer> make_buffer(Context& context,VkDeviceSize size,VkBufferUsageFlags usage) {
     auto out=std::make_unique<PrivateBuffer>(context);out->size=size;
     VkBufferCreateInfo info{};info.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;info.size=size;info.usage=usage;
     checked(F(vkCreateBuffer)(context.device,&info,nullptr,&out->handle),"Native buffer");
-    VkMemoryRequirements req{};F(vkGetBufferMemoryRequirements)(context.device,out->handle,&req);
+    VkMemoryRequirements req{};F(vkGetBufferMemoryRequirements)(context.device,out->handle,&req);out->allocation_size=req.size;
     VkMemoryAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;allocation.allocationSize=req.size;
     allocation.memoryTypeIndex=context.memory_type(req.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     checked(F(vkAllocateMemory)(context.device,&allocation,nullptr,&out->memory),"Native buffer memory");
     checked(F(vkBindBufferMemory)(context.device,out->handle,out->memory,0),"Native buffer bind");
     checked(F(vkMapMemory)(context.device,out->memory,0,size,0,&out->mapped),"Native buffer map");std::memset(out->mapped,0,static_cast<size_t>(size));return out;
+}
+// Per-recording DATA buffers (prepared frame, materials, body mask, CPU
+// geometry, surface uniforms). An idle buffer of the exact size and usage is
+// reissued instead of a create/allocate/bind/map and a later unmap/destroy/free
+// on the render thread. The complete mapping is zero-filled again, so the
+// caller receives what make_buffer returns; only driver handles are reused,
+// never contents, descriptors, permits, poses, owners or history. Uncertain
+// contexts neither reissue nor retain.
+std::unique_ptr<PrivateBuffer> lease_buffer(Context& context,VkDeviceSize size,VkBufferUsageFlags usage) {
+    NativePrivateBufferPool::Entry idle;
+    if(!context.uncertain&&context.idle_buffers.take(size,usage,idle)){
+        std::unique_ptr<PrivateBuffer> out;
+        try{out=std::make_unique<PrivateBuffer>(context);}catch(...){context.destroy_buffer(idle);throw;}
+        out->handle=idle.handle;out->memory=idle.memory;out->mapped=idle.mapped;out->size=size;out->allocation_size=idle.allocation_size;out->usage=usage;out->leased=true;
+        std::memset(out->mapped,0,static_cast<size_t>(size));return out;
+    }
+    auto out=make_buffer(context,size,usage);out->usage=usage;out->leased=true;return out;
+}
+// Reuse only physical storage after its final original lease retires. Every
+// byte is reset before the unchanged per-player/submit validation writes it.
+std::unique_ptr<PrivateBuffer> lease_control_buffer(Context& context,VkDeviceSize size,VkBufferUsageFlags usage) {
+    try{return lease_buffer(context,size,usage);}
+    catch(...){
+        // A differently shaped idle allocation must not make a cold control
+        // fail under pressure. Release only idle storage, preserve retention
+        // mode, then retry once. Live players and fresh permits are untouched.
+        if(!context.evict_idle_buffers())throw;
+        return lease_buffer(context,size,usage);
+    }
 }
 struct PrivateImage {
     Context& context;VkImage image{};VkDeviceMemory memory{};VkImageView view{};
@@ -120,18 +206,55 @@ struct CompatibleLayout {
     explicit CompatibleLayout(Context& c):context(c){}
     ~CompatibleLayout(){if(handle&&!context.uncertain)F(vkDestroyPipelineLayout)(context.device,handle,nullptr);}
 };
+// The cache retains handles only, never buffers, models, publications or authority.
+// Caller serialization plus the ordinary Bundle/command leases establish reuse:
+// a cache-only bank has no recorded/submitted consumer left. No pool reset or
+// early recycling on fence observations, failed submission, or actor decline.
+struct MainDrawDescriptors {
+    Context& context;VkDescriptorPool pool{};
+    std::vector<VkDescriptorSetLayout> layouts;std::vector<VkDescriptorSet> sets;
+    bool quarantined=false;
+    explicit MainDrawDescriptors(Context& c):context(c){}
+    ~MainDrawDescriptors(){if(pool&&!quarantined&&!context.uncertain)F(vkDestroyDescriptorPool)(context.device,pool,nullptr);}
+};
+using MainDrawDescriptorCache=std::vector<std::shared_ptr<MainDrawDescriptors>>;
+std::shared_ptr<MainDrawDescriptors> main_draw_descriptors(Context& context,MainDrawDescriptorCache& cache,
+    std::uint32_t count,VkDescriptorSetLayout prepare,VkDescriptorSetLayout draw,VkDescriptorSetLayout clip){
+    // Asset staging admits at most 4096 materials, plus its fallback row.
+    if(context.uncertain||!count||count>4097||!prepare||!draw)throw std::runtime_error("Native bundle descriptor ownership");
+    std::vector<VkDescriptorSetLayout> layouts(count+1,draw);layouts[0]=prepare;if(clip)layouts.push_back(clip);
+    for(const auto& bank:cache)if(bank.use_count()==1&&!bank->quarantined&&bank->layouts==layouts)return bank;
+    auto bank=std::make_shared<MainDrawDescriptors>(context);bank->layouts=std::move(layouts);bank->sets.resize(bank->layouts.size());
+    const auto replacement=clip?1u:0u;
+    const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,65+2*count+replacement},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6+2*count+replacement},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,count},{VK_DESCRIPTOR_TYPE_SAMPLER,count}}};
+    VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=static_cast<std::uint32_t>(bank->sets.size());
+    pool.poolSizeCount=static_cast<std::uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();
+    checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&bank->pool),"Native bundle pool");
+    VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocation.descriptorPool=bank->pool;
+    allocation.descriptorSetCount=pool.maxSets;allocation.pSetLayouts=bank->layouts.data();
+    checked(F(vkAllocateDescriptorSets)(context.device,&allocation,bank->sets.data()),"Native bundle sets");
+    // Bound both retained driver objects and aggregate material-dependent size.
+    // Overflow remains a private uncached lease; retention failure is optional.
+    constexpr std::size_t max_banks=32,max_sets=8192;std::size_t retained=0;
+    for(const auto& entry:cache)retained+=entry->sets.size();
+    if(cache.size()<max_banks&&bank->sets.size()<=max_sets-retained)try{cache.push_back(bank);}catch(...){}
+    return bank;
+}
 // No Bundle reference: commands retain one previous immutable emission without
 // retaining its predecessor, descriptors, or native source resources.
 struct SubmittedHistory {
     std::shared_ptr<PrivateBuffer> frame;
     std::shared_ptr<const NativeSkinGpuGeometry> geometry;
+    std::shared_ptr<const NativeSkinGpuOutlineRig> outline_rig;
     std::shared_ptr<const NativeAvatarPublication> pose;
     NativeOwnerCandidate owner;
     NativeMenuOwnerCandidate menu_owner;
     bool menu_preview=false;
     NativeBufferBinding instances;
     VkExtent2D extent{};
-    float probe_mode=0;
+    float probe_mode=0,mtoon_seconds=0;bool mtoon_rendered=false;
+    std::shared_ptr<const NativeMToonRequest> mtoon_request;std::vector<unsigned> mtoon_outline_materials;
 };
 struct Bundle {
     Context& context;std::shared_ptr<const NativeAvatarPublication> pose;std::shared_ptr<NativeAvatarGpuAssets> assets;
@@ -141,15 +264,20 @@ struct Bundle {
     VkDeviceSize surface_stride=0;
     VkDescriptorPool surface_pool{};
     std::shared_ptr<NativeSkinGpuFrame> skin;
+    std::shared_ptr<const NativeSkinGpuOutlineRig> outline_rig;
     std::shared_ptr<PrivateBuffer> frame;
     std::shared_ptr<SubmittedHistory> previous,emission;
     std::unique_ptr<PrivateBuffer> body_bits;
+    std::shared_ptr<MainDrawDescriptors> draw_descriptors;
     VkDescriptorPool pool{};VkDescriptorSet prepare{};std::vector<NativeDrawCall> calls;
     VkDescriptorSet clip_set{};
     NativeMaterialPlan material_plan;
     std::shared_ptr<NativeVolumeSnapshot> volume_snapshot;
     std::vector<std::shared_ptr<Bundle>> subjects;
     std::unique_ptr<PrivateBuffer> common_gate;
+    std::shared_ptr<PrivateBuffer> common_bits;
+    std::array<std::uint64_t,2> player_test_marker{};
+    std::vector<NativeOitView> common_shadow_depths;std::uint64_t common_shadow_clips=0;
     std::shared_ptr<NativePlayerCommitBatch> common_commit;
     bool pass_drawn=false;std::size_t shadow_view_start=0;
     std::array<NativeStorageImageBinding,2> volume_storage;
@@ -194,13 +322,17 @@ struct Bundle {
     unsigned shadow_probe_draws=0;
     struct ShadowView {NativeBufferBinding source;NativeOitView depth;NativeRasterState raster;VkRect2D area{};VkDescriptorSet set{};};
     VkDescriptorPool shadow_pool{};std::vector<ShadowView> shadow_views;std::vector<NativeDrawCall> shadow_calls;
+    std::vector<unsigned> mtoon_caster_draws;std::vector<NativeDrawCall> mtoon_generic_casters;
+    bool mtoon_caster_qualified=false;unsigned mtoon_caster_views=0;
+    std::array<std::uint64_t,64> mtoon_material_bits{},mtoon_outline_bits{};
+    std::array<std::uint64_t,64> mtoon_forward_material_bits{};unsigned mtoon_forward_actor=0;VkDescriptorBufferInfo mtoon_forward_capture{},mtoon_forward_packets{};
     bool first_regions_open=true,recorded=false,ended=false,submitted=false,invalid=false;
     bool awaiting_submit_result=false,failed_submit=false;
     bool retry_safe=false;
     bool completion_observed=false,history_completion_observed=false;
     VkQueue submitted_queue{};
     explicit Bundle(Context& c):context(c){}
-    ~Bundle(){if(context.uncertain){if(volume_snapshot)volume_snapshot->quarantine();if(common_commit)common_commit->quarantine();return;}if(surface_pool)F(vkDestroyDescriptorPool)(context.device,surface_pool,nullptr);if(shadow_pool)F(vkDestroyDescriptorPool)(context.device,shadow_pool,nullptr);if(oit_pool)F(vkDestroyDescriptorPool)(context.device,oit_pool,nullptr);if(pool)F(vkDestroyDescriptorPool)(context.device,pool,nullptr);}
+    ~Bundle(){if(context.uncertain){if(draw_descriptors)draw_descriptors->quarantined=true;if(volume_snapshot)volume_snapshot->quarantine();if(common_commit)common_commit->quarantine();return;}if(surface_pool)F(vkDestroyDescriptorPool)(context.device,surface_pool,nullptr);if(shadow_pool)F(vkDestroyDescriptorPool)(context.device,shadow_pool,nullptr);if(oit_pool)F(vkDestroyDescriptorPool)(context.device,oit_pool,nullptr);if(pool&&!draw_descriptors)F(vkDestroyDescriptorPool)(context.device,pool,nullptr);}
 };
 struct Recording {
     bool eligible=false,tainted=false,compute_producer=false,pass_active=false,pass_drawn=false;
@@ -216,6 +348,40 @@ struct Recording {
     VkPipeline native_restore{};
     // Read-only discovery is independent of every render/ownership decision.
     NativeTransparencyRecording transparency;
+    std::shared_ptr<NativeMToonProbeGraph> mtoon_probe_graph;
+    NativeMToonProbeGraphBacking mtoon_probe_backing;
+    NativeMToonProbeBufferBacking mtoon_probe_buffers;
+    std::unique_ptr<NativeMToonFrame> mtoon_frame;
+    std::shared_ptr<CompatibleLayout> mtoon_final_restore;bool mtoon_visibility_recorded=false,mtoon_gbuffer_recorded=false;
+    NativeMToonRasterView mtoon_raster;NativeMToonSceneCandidate mtoon_scene;NativeMToonSceneBacking mtoon_scene_backing;
+    unsigned mtoon_raster_passes=0,mtoon_lighting_passes=0;
+    // Immediate original primary/one-time/outside-rendering scope metadata.
+    // No resource initialization/use/queue/lifetime or scene authority follows.
+    std::uint32_t mtoon_scope_family=UINT32_MAX;
+    NativeMToonSceneView mtoon_scene_view;
+    std::vector<std::unique_ptr<NativeMToonShadePass>> mtoon_shades,mtoon_forward_finishes;
+    bool mtoon_forward_prepared=false,mtoon_forward_finished=false,mtoon_forward_volume_at_deferred=false;
+    // Aggregate only; no native identifiers/handles, input authority or new work.
+    // actors,invalid,no-volume,no-copy,no-id,draws,built,recorded,exceptions,ready,after-active
+    std::array<std::uint32_t,11> mtoon_forward_finish_facts{};
+    std::uint32_t mtoon_forward_finished_actors=0;
+    std::unique_ptr<NativeMToonCompositePass> mtoon_composite;
+    std::shared_ptr<CompatibleLayout> mtoon_compute_restore;
+    bool mtoon_lighting_attempted=false,mtoon_lighting_recorded=false,mtoon_armed=false,mtoon_active=false;
+    bool mtoon_observation_recorded=false,mtoon_observation_harvested=false;
+    // Diagnostic-only immutable command-pool-family evidence; never admission.
+    std::uint32_t mtoon_profile_family=UINT32_MAX;
+    bool mtoon_profile_family_conflict=false,mtoon_profile_harvested=false;
+    unsigned mtoon_composition_checkpoint=0,mtoon_fallback_facts=0;
+    NativeMToonSceneBackingDiagnostic mtoon_backing_diagnostic;
+    std::uint64_t mtoon_original_use_serial=0; // successful immediate original-use transaction receipt
+    std::unique_ptr<NativeMToonProbeUse> mtoon_probe_use;
+    bool mtoon_probe_backing_attempted=false,mtoon_probe_layout_qualified=false;
+    std::shared_ptr<NativeMToonProbeFrame> mtoon_probe_snapshot;
+    std::shared_ptr<PrivateBuffer> mtoon_probe_permit;
+    std::shared_ptr<CompatibleLayout> mtoon_probe_restore;
+    VkQueue mtoon_probe_queue{};
+    bool mtoon_probe_attempted=false,mtoon_probe_armed=false,mtoon_probe_pending=false,mtoon_probe_failed=false,mtoon_probe_retry_safe=false;
     NativeOitView observed_gbuffer_depth;VkExtent2D observed_gbuffer_extent{};
     NativeOitView mixed_gbuffer_depth;VkExtent2D mixed_gbuffer_extent{};
     bool observed_oit_active=false,observation_failed=false;
@@ -248,28 +414,10 @@ VkDescriptorBufferInfo index_binding(const Bundle& b){return b.skin?b.assets->sk
 }
 
 struct NativeBackend::Impl {
-    Context context;NativeState metadata;PFN_vkSetDeviceLoaderData set_loader{};std::filesystem::path shader_directory;
+    Context context;MainDrawDescriptorCache draw_descriptor_banks;NativeState metadata;PFN_vkSetDeviceLoaderData set_loader{};std::filesystem::path shader_directory;
     std::filesystem::path artifact_probe_file;
-    std::uint64_t artifact_probe_checked=0;
-    unsigned artifact_probe_value=0;
-    bool artifact_probe_read=false,artifact_probe_announced=false;
     float artifact_mode(std::uint64_t now)noexcept {
-        if(artifact_probe_file.empty())return 0.f;
-        if(!artifact_probe_read||now<artifact_probe_checked||now-artifact_probe_checked>=500) {
-            artifact_probe_read=true;artifact_probe_checked=now;
-            unsigned value=0;
-            try {
-                std::ifstream input(artifact_probe_file,std::ios::binary);
-                char data[3]{};input.read(data,sizeof data);const auto bytes=input.gcount();
-                if((bytes==1||(bytes==2&&data[1]=='\n'))&&data[0]>='0'&&data[0]<='5')value=unsigned(data[0]-'0');
-            }catch(...){}
-            if(!artifact_probe_announced||value!=artifact_probe_value) {
-                try{log_event(value==5?"avatar.artifact-probe mode=vrm-shadow-caster":value==4?"avatar.artifact-probe mode=source-shadow-off":value==3?"avatar.artifact-probe mode=geometry-offset":value==2?"avatar.artifact-probe mode=diffuse-only":value==1?"avatar.artifact-probe mode=emissive-only":"avatar.artifact-probe mode=normal-lit");}catch(...){}
-                artifact_probe_announced=true;
-            }
-            artifact_probe_value=value;
-        }
-        return static_cast<float>(artifact_probe_value);
+        (void)now;return 0.f;
     }
     VkInstance instance{};VkPhysicalDevice physical{};PFN_vkGetInstanceProcAddr get_instance{};
     std::unique_ptr<NativeClipPipelines> clips;
@@ -277,6 +425,9 @@ struct NativeBackend::Impl {
     std::unique_ptr<NativeImageMemory> image_memory;
     bool image_disable_notice=false;
     std::unique_ptr<NativeOwnerProcess> owner_process;
+    // Final submission only, under mutex; capture owns a separate workspace.
+    // Bounded by the existing read budget. Every pass freshly reads all guards.
+    mutable std::vector<std::uint8_t> submission_read_workspace;
     NativeToolSlots tool_slots;
     // Copied values for private, permit-zero preparation only. Every accepted
     // submission still revalidates the complete retained guard set. Atomic
@@ -337,6 +488,11 @@ struct NativeBackend::Impl {
                 std::atomic_store(&submitted_histories,std::shared_ptr<const HistoryBank>(std::move(bank)));}
         }catch(...){revoke_preparation();}
     }
+    void revoke_subject_preparation(const NativeBufferBinding& source,VkExtent2D extent,const NativeAvatarPublication* pose)noexcept {
+        if(!pose){revoke_preparation(source);return;}
+        try{tool_slots.disable_subject(pose->subject);update_history(history_key(source.info.buffer,extent,pose),{});}
+        catch(...){revoke_preparation();}
+    }
     bool hint_source_current(const OwnerPreparationHint& hint,const NativeBufferBinding& source)const noexcept {
         return same_binding(hint.source,metadata.buffer(source.info.buffer))&&
             hint.source.size==source.size&&hint.source.usage==source.usage&&metadata.live(hint.source)&&
@@ -386,6 +542,7 @@ struct NativeBackend::Impl {
     bool replacement=false,mesh_enabled=false,replacement_enabled=true;
     std::uint64_t coverage_models=0,coverage_independent=0,coverage_uncovered=0,coverage_sources=0,coverage_accepted=0,coverage_declined=0;
     VkPhysicalDeviceLimits limits{};std::mutex mutex;
+    bool profiling_requested=false; // Shared opt-in; initialization is owned by the profiling integration.
     NativeSubmitTiming submit_timing;
     std::map<VkCommandBuffer,Recording> commands;
     std::map<VkCommandBuffer,std::vector<Recording>> completed_views;
@@ -394,9 +551,34 @@ struct NativeBackend::Impl {
         const auto current=commands.find(command);if(current!=commands.end())visit(command,current->second);
     }
     template<class F>void each_recording(F&& visit){for(auto& current:commands)each_view(current.first,visit);}
+    void arm_mtoon_submission(VkCommandBuffer command,bool shape,VkQueue submitted_queue){
+        NativeSubmitStageScope tail(submit_timing,NativeSubmitStage::MToonTail);
+        each_view(command,[&](VkCommandBuffer,Recording& item){
+            arm_mtoon_probe(item,shape,submitted_queue);arm_mtoon_composition(item,shape,submitted_queue);
+            NativeSubmitStageScope diagnostics(submit_timing,NativeSubmitStage::MToonDiagnostics);
+            report_mtoon_diagnostics(item,shape,submitted_queue);
+        });
+    }
     void retire_views(VkCommandBuffer command,const char* completion){
-        each_view(command,[&](VkCommandBuffer native,Recording& recording){each_subject(recording,[&](Recording& s){harvest_mixed(native,s,completion);});transparency_trace.reset(recording.transparency);});
+        each_view(command,[&](VkCommandBuffer native,Recording& recording){harvest_mtoon_observation(recording,completion);harvest_mtoon_profile(recording,completion);each_subject(recording,[&](Recording& s){harvest_mixed(native,s,completion);});transparency_trace.reset(recording.transparency);});
         completed_views.erase(command);commands.erase(command);
+    }
+    NativePoseAgeHistogram pose_age;
+    bool pose_age_enabled=false;
+    void observe_pose_age(const Bundle& b,std::uint64_t now)noexcept{
+        if(!pose_age_enabled||b.menu_preview||!b.pose||!b.pose->subject.empty())return;
+        if(!pose_age.observe(b.pose->presentation_serial,b.pose->published_milliseconds,now))return;
+        try{
+            const auto& w=pose_age.window();std::string bins;
+            for(std::size_t n=0;n<w.ages.size();++n)if(w.ages[n]){if(!bins.empty())bins+=',';bins+=std::to_string(n)+':'+std::to_string(w.ages[n]);}
+            log_event("pose-age.window source=accepted-local-world unit=ms samples="+std::to_string(w.samples)+
+                " first-tick="+std::to_string(w.first_tick)+" last-tick="+std::to_string(w.last_tick)+
+                " sum-ms="+std::to_string(w.sum)+" min-ms="+std::to_string(w.minimum)+
+                " p50-ms="+std::to_string(NativePoseAgeHistogram::quantile(w,50))+
+                " p95-ms="+std::to_string(NativePoseAgeHistogram::quantile(w,95))+
+                " max-ms="+std::to_string(w.maximum)+" invalid="+std::to_string(w.invalid)+" dropped-old="+std::to_string(w.dropped_old)+" bins="+bins);
+        }catch(...){} // Observation cannot change a committed permit.
+        pose_age.clear();
     }
     void next_view(VkCommandBuffer command,const NativePassState& pass){
         auto& recording=commands.at(command);
@@ -404,7 +586,9 @@ struct NativeBackend::Impl {
         auto& previous=completed_views[command];
         if(previous.size()>=3||recording.native_restore){recording.tainted=true;unknown_ownership(recording,"view-budget-or-restore");return;}
         const bool eligible=recording.eligible,producer=recording.compute_producer;
+        const auto profile_family=recording.mtoon_profile_family;const bool profile_conflict=recording.mtoon_profile_family_conflict;
         previous.push_back(std::move(recording));recording={};recording.eligible=eligible;recording.compute_producer=producer;
+        recording.mtoon_profile_family=profile_family;recording.mtoon_profile_family_conflict=profile_conflict;
         transparency_trace.begin(recording.transparency,command);
     }
     std::map<VkCommandBuffer,VkCommandPool> pools;
@@ -422,7 +606,8 @@ struct NativeBackend::Impl {
         if(!source||!metadata.live(source)){unknown_ownership(r,"source-not-current");return;}
         if(!r.ownership_instances){
             r.ownership_instances=source;
-            if(const auto view=publication_for(source.info.buffer)){r.ownership_window=view->serial;r.ownership_presentation=view->presentation_serial;}
+            if(const auto view=publication_for(source.info.buffer)){
+                r.ownership_window=view->serial;r.ownership_presentation=view->presentation_serial;}
             // An absent pose never removes the primary from its presentation.
         }
         if(std::none_of(r.ownership_sources.begin(),r.ownership_sources.end(),[&](const auto& previous){return same_binding(previous,source);})){
@@ -458,9 +643,20 @@ struct NativeBackend::Impl {
     VkPipelineLayout surface_layout{},surface_oit_layout{};
     VkPipeline surface_prepare{},surface_menu_prepare{};
     std::array<VkShaderModule,5> surface_shaders{};
-    bool surface_failed=false,surface_menu_failed=false,surface_oit_failed=false;
+    bool surface_failed=false,surface_prepare_failed=false,surface_menu_failed=false,surface_oit_failed=false;
     std::unique_ptr<NativeAvatarAssetStager> surface_stager;
-    NativeVolumeSnapshotCapabilities snapshot_caps;std::vector<std::uint32_t> snapshot_words;
+    NativeVolumeSnapshotCapabilities snapshot_caps;std::vector<std::uint32_t> snapshot_words;std::shared_ptr<NativeVolumeSnapshotReuse> snapshot_reuse;bool private_reuse_enabled=true;
+    void retain_private_storage(bool retain)noexcept{private_reuse_enabled=retain;if(snapshot_reuse)snapshot_reuse->retain(retain);if(mtoon_probe_reuse)mtoon_probe_reuse->retain(retain);}
+    std::uint64_t private_reuse_passes=0;
+    // Called once per command-pool reset. One log line at passes 1024, 2048, 4096, ...: enough to see whether storage is reissued and how much is idle, without filling the log.
+    void release_expired_private_storage()noexcept{if(!snapshot_reuse&&!mtoon_probe_reuse)return;if(snapshot_reuse)snapshot_reuse->release_expired();if(mtoon_probe_reuse)mtoon_probe_reuse->release_expired();
+        if(++private_reuse_passes<1024||(private_reuse_passes&(private_reuse_passes-1)))return;
+        log_event_lazy([&]{const auto count=[](std::uint64_t n){return std::to_string(n);};
+            return "native-private.reuse passes="+count(private_reuse_passes)+" enabled="+count(private_reuse_enabled?1:0)+
+                " volume-created="+count(snapshot_reuse?snapshot_reuse->created_storages():0)+" volume-reissued="+count(snapshot_reuse?snapshot_reuse->reissued_storages():0)+
+                " volume-idle="+count(snapshot_reuse?snapshot_reuse->idle_storages():0)+" volume-idle-bytes="+count(snapshot_reuse?snapshot_reuse->idle_bytes():0)+
+                " probe-created="+count(mtoon_probe_reuse?mtoon_probe_reuse->created_storages():0)+" probe-reissued="+count(mtoon_probe_reuse?mtoon_probe_reuse->reissued_storages():0)+
+                " probe-idle="+count(mtoon_probe_reuse?mtoon_probe_reuse->idle_storages():0)+" probe-idle-bytes="+count(mtoon_probe_reuse?mtoon_probe_reuse->idle_bytes():0);});}
     bool mixed_initialized=false,mixed_failed=false;
     VkQueue queue{};uint32_t family=UINT32_MAX;bool initialized=false,disabled=false,independent_blend=false,partially_bound=false;std::string last_reason;uint64_t permits=0;
     VkResult last_submit_error=VK_ERROR_UNKNOWN;
@@ -507,6 +703,7 @@ struct NativeBackend::Impl {
         b.history_completion_observed=true;
         std::array<uint32_t,4> gpu{};
         std::memcpy(gpu.data(),static_cast<const unsigned char*>(b.frame->mapped)+offsetof(NativePreparedFrame,control),sizeof gpu);
+        report_player_test(recording.bundle);
         ++history_completed;if(gpu[0]==1)++history_gpu_committed;if(gpu[0]==1&&gpu[1]==1)++history_gpu_valid;
         const auto event=gpu[0]==1?completion_gaps.recovery(GetTickCount64()):completion_gaps.failure(GetTickCount64(),
             1u|(!gpu[1]?2u:0u)|(!gpu[2]?4u:0u)|(!gpu[3]?8u:0u),"gpu-commit-declined");
@@ -766,12 +963,12 @@ struct NativeBackend::Impl {
         observation_refreshed=pose_owner_state.remember_observation(fresh,source,epoch,GetTickCount64());
         trace.observation_retained=observation_refreshed;
         // Capturing cannot renew source lifetimes, a prepared mask/qualifier,
-        // or the immutable pose's original 250ms lifetime.
+        // or the immutable pose's original 500ms lifetime.
         if(!sources_current(bundle.sources)||!source_current(bundle.gbuf_camera)||!source_current(bundle.owner)){
             reason="owner census refresh render source changed";return false;}
         const auto current=publication_for(bundle.instances.info.buffer);
         if(!current||current->asset!=bundle.pose->asset||epoch!=bundle.pose->source_buffer_epoch){reason="owner census refresh source publication changed";return false;}
-        if(pose_age()>250){reason="owner census refresh pose expired";return false;}
+        if(pose_age()>native_pose_max_age_ms){reason="owner census refresh pose expired";return false;}
         if(bundle.material_plan.mixed&&(!mixed_current(bundle)||!bundle.oit_window.complete())){reason="owner census refresh mixed source changed";return false;}
         for(const auto& source:bundle.excluded_transforms)if(!metadata.live(source)||
             !memory.disjoint(bundle.instances.info.buffer,0,bundle.instances.size,source.info.buffer,source.info.offset,source.info.range)){
@@ -1036,12 +1233,14 @@ struct NativeBackend::Impl {
     }
 #include "native_player_backend.inl"
 #include "native_surface_backend.inl"
+#include "native_mtoon_backend.inl"
     std::shared_ptr<Bundle> make_bundle(Recording& recording,VkCommandBuffer command,
-        std::shared_ptr<const NativeAvatarPublication> selected={},std::shared_ptr<NativeAvatarGpuAssets> selected_assets={}) {
+        std::shared_ptr<const NativeAvatarPublication> selected={},std::shared_ptr<NativeAvatarGpuAssets> selected_assets={},bool* individual_decline=nullptr) {
         struct Preparation {
-            Impl& impl;NativeBufferBinding source;bool complete=false;
-            ~Preparation(){if(impl.replacement&&!complete)impl.revoke_preparation(source);}
-        } preparation{*this,{}};
+            Impl& impl;NativeBufferBinding source;VkExtent2D extent{};const NativeAvatarPublication* pose=nullptr;bool* individual=nullptr;bool complete=false;
+            ~Preparation(){if(impl.replacement&&!complete){if(individual&&*individual)impl.revoke_subject_preparation(source,extent,pose);else impl.revoke_preparation(source);}}
+        } preparation{*this,{},recording.pass.extent,selected.get(),individual_decline};
+        if(individual_decline)*individual_decline=false;
         const auto bundle_started=std::chrono::steady_clock::now();
         const auto graphics_source=metadata.buffer_binding(metadata.bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS),2,4);
         const auto latest=selected?selected:(replacement?publication_for(graphics_source.info.buffer):this->latest);
@@ -1049,6 +1248,9 @@ struct NativeBackend::Impl {
         const auto extent=std::to_string(recording.pass.extent.width)+"x"+std::to_string(recording.pass.extent.height);
         if(!initialized||!latest||!assets||latest->asset!=assets->avatar()||context.uncertain||commands.size()>512){
             notice("context-lifecycle extent="+extent+" initialized="+std::to_string(initialized)+" pose="+std::to_string(static_cast<bool>(latest))+" assets="+std::to_string(static_cast<bool>(assets))+" same-asset="+std::to_string(latest&&assets&&latest->asset==assets->avatar())+" uncertain="+std::to_string(context.uncertain)+" commands="+std::to_string(commands.size()),"context-lifecycle-"+extent);return{};}
+        // Both replacement and the retained additive path consume parts[0]
+        // and a fixed64-part control array below. Validate before either path.
+        if(!latest->geometry||latest->geometry->vertices.empty()||latest->geometry->indices.empty()||latest->parts.empty()||latest->parts.size()>64){if(individual_decline)*individual_decline=true;return {};}
         size_t active=0;each_recording([&](VkCommandBuffer,const Recording& item){if(item.bundle)++active;});if(active>=16){notice("context-bundle-budget active="+std::to_string(active));return{};}
         const auto graphics=metadata.bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS),compute=metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);
         if(!graphics.valid||graphics.pipeline.kind!=NativePipelineKind::visibility||!compute.valid||!compatible(graphics)||!compatible(compute)){
@@ -1062,7 +1264,7 @@ struct NativeBackend::Impl {
             if(!latest){report("no current publication for this native view allocation");return{};}
         }
         auto bundle=std::make_shared<Bundle>(context);bundle->pose=latest;bundle->assets=assets;bundle->compute_restore=compatible(compute);bundle->first_pass=recording.pass;
-        if(!publication_material_plan(*latest,bundle->material_plan,assets&&assets->skin()&&assets->skin()->mouth_available())){report("native material partition declined");return{};}
+        if(!publication_material_plan(*latest,bundle->material_plan,assets&&assets->skin()&&assets->skin()->mouth_available())){if(individual_decline)*individual_decline=true;report("native material partition declined");return{};}
         if(bundle->material_plan.mixed&&!replacement){report("mixed path requires shared replacement commit");return{};}
         bundle->instances=metadata.buffer_binding(graphics,2,4);bundle->culled=metadata.buffer_binding(graphics,2,5);bundle->vis_camera=metadata.buffer_binding(graphics,1,4);
         bundle->indirect=metadata.buffer(recording.first_indirect);bundle->counts=metadata.buffer(recording.first_count);bundle->arena=metadata.buffer(bundle->vis_camera.info.buffer);
@@ -1073,8 +1275,7 @@ struct NativeBackend::Impl {
            bundle->instances.info.range>limits.maxStorageBufferRange||bundle->culled.info.range>limits.maxStorageBufferRange||
            bundle->indirect.info.range>limits.maxStorageBufferRange||bundle->counts.info.range>limits.maxStorageBufferRange||
            !(bundle->arena.usage&VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)||(bundle->arena.usage&~(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT))||
-           bundle->arena.size>4*1024*1024||bundle->arena.size<65536||bundle->arena.size%65536||bundle->vis_camera.info.offset>UINT32_MAX||
-           !latest->geometry||latest->geometry->vertices.empty()||latest->geometry->indices.empty()||latest->parts.empty()||latest->parts.size()>64){
+           bundle->arena.size>4*1024*1024||bundle->arena.size<65536||bundle->arena.size%65536||bundle->vis_camera.info.offset>UINT32_MAX){
             const auto key="context-sources-"+extent;if(wants_notice(key)){
                 const auto describe=[](const NativeBufferBinding& b){return std::to_string(static_cast<bool>(b))+":"+std::to_string(b.info.offset)+","+std::to_string(b.info.range)+","+std::to_string(b.size)+","+std::to_string(b.usage);};
                 notice("context-sources extent="+extent+" (valid:offset,range,size,usage) instances="+describe(bundle->instances)+" culled="+describe(bundle->culled)+" camera="+describe(bundle->vis_camera)+" arena="+describe(bundle->arena)+" indirect="+describe(bundle->indirect)+" counts="+describe(bundle->counts)+" parts="+std::to_string(latest->parts.size())+" geometry="+std::to_string(static_cast<bool>(latest->geometry))+" | "+metadata.buffer_binding_diagnostic(graphics,2,4)+" | "+metadata.buffer_binding_diagnostic(graphics,2,5)+" | "+metadata.buffer_binding_diagnostic(graphics,1,4),key);
@@ -1096,6 +1297,7 @@ struct NativeBackend::Impl {
             if(!owner_supported()){
                 revoke_preparation();report("replacement owner context unavailable: "+(owner_process?owner_process->reason():std::string("adapter missing")));return{};
             }
+            if(individual_decline)*individual_decline=true;
             std::string reason;
             NativeOwnerObservationStats owner_stats;
             const bool explicit_owner=latest->pose_owner&&latest->player_identity.account;
@@ -1128,14 +1330,15 @@ struct NativeBackend::Impl {
                         "frontend menu preview selected; no gameplay equipment writes","menu-preview-ready");
                 }
             }
-            if(!selected||!memory.valid(bundle->instances.info.buffer,0,bundle->instances.size)) {
+            if(!memory.valid(bundle->instances.info.buffer,0,bundle->instances.size)){if(individual_decline)*individual_decline=false;return {}; }
+            if(!selected) {
                 report("replacement owner link declined: "+reason);
                 if(!owner_captured)owner_diagnostic("capture",owner_stats);
                 return{};
             }
             bundle->publication_source=latest_source;
             if(!metadata.live(bundle->publication_source)||bundle->publication_source.info.buffer!=bundle->instances.info.buffer||
-                bundle->publication_source.generation!=bundle->instances.generation) {report("replacement publication source generation changed");return{};}
+                bundle->publication_source.generation!=bundle->instances.generation) {if(individual_decline)*individual_decline=false;report("replacement publication source generation changed");return{};}
             if(bundle->menu_preview&&bundle->menu_owner.kind==NativeMenuOwnerKind::character){
                 native_preview_trace_source(bundle->menu_owner.image,bundle->menu_owner.preview.native_buffer,bundle->menu_owner.preview.main);
                 native_preview_handoff_history().configure(bundle->menu_owner.client,bundle->menu_owner.preview.main,
@@ -1162,18 +1365,18 @@ struct NativeBackend::Impl {
            (bundle->surface.any()&&!initialize_surface(bundle->menu_preview,bundle->material_plan.mixed)))
             bundle->surface=make_native_surface_selection(*latest->asset,&fast_surface_appearance());
         const auto resources_started=std::chrono::steady_clock::now();
-        bundle->control=make_buffer(context,sizeof(NativePrepareControl),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-        bundle->frame=make_buffer(context,bundle->material_plan.mixed?native_oit_prepared_bytes:
+        bundle->control=lease_control_buffer(context,sizeof(NativePrepareControl),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        bundle->frame=lease_buffer(context,bundle->material_plan.mixed?native_oit_prepared_bytes:
             bundle->menu_preview?native_menu_prepared_bytes:sizeof(NativePreparedFrame),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         if(!latest->skinning){
-            bundle->vertices=make_buffer(context,latest->geometry->vertices.size()*sizeof(NativeAvatarVertex),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-            bundle->indices=make_buffer(context,latest->geometry->indices.size()*4,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            bundle->vertices=lease_buffer(context,latest->geometry->vertices.size()*sizeof(NativeAvatarVertex),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            bundle->indices=lease_buffer(context,latest->geometry->indices.size()*4,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             if(bundle->vertices->size>limits.maxStorageBufferRange||bundle->indices->size>limits.maxStorageBufferRange)return{};
             std::memcpy(bundle->vertices->mapped,latest->geometry->vertices.data(),static_cast<size_t>(bundle->vertices->size));std::memcpy(bundle->indices->mapped,latest->geometry->indices.data(),static_cast<size_t>(bundle->indices->size));
         }else if(!skinning_gpu||!assets->skin()){report("GPU skin asset unavailable");return{};}
         const auto alignment=std::max<VkDeviceSize>(16,limits.minUniformBufferOffsetAlignment);const auto stride=(sizeof(NativeMaterial)+alignment-1)/alignment*alignment;
         bundle->material_stride=stride;
-        const auto material_count=assets->avatar()->materials.size()+1;bundle->materials=make_buffer(context,stride*material_count,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        const auto material_count=assets->avatar()->materials.size()+1;bundle->materials=lease_buffer(context,stride*material_count,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         const auto probe_mode=artifact_mode(GetTickCount64());
         bundle->probe_mode=probe_mode;
         const auto previous=history_for(bundle->instances.info.buffer,recording.pass.extent,bundle->pose.get());
@@ -1183,7 +1386,7 @@ struct NativeBackend::Impl {
                 previous->pose->serial<UINT64_MAX&&previous->pose->serial+1==latest->serial)&&
            same_binding(previous->instances,bundle->instances)&&same_selection(*previous,*bundle)&&
            previous->extent.width==recording.pass.extent.width&&previous->extent.height==recording.pass.extent.height&&
-           previous->pose->height_scale==latest->height_scale&&previous->pose->basis_xz==latest->basis_xz&&
+           previous->pose->height_scale==latest->height_scale&&previous->pose->forward_sign==latest->forward_sign&&
            previous->pose->diagnostic_x==latest->diagnostic_x&&previous->probe_mode==probe_mode&&
            previous->pose->geometry&&
            (latest->skinning?(previous->pose->skinning&&previous->geometry&&previous->pose->geometry==latest->geometry&&previous->pose->skinning->asset==latest->skinning->asset):
@@ -1199,7 +1402,7 @@ struct NativeBackend::Impl {
         make_skin_frame(*bundle);
         try {
             bundle->emission=std::make_shared<SubmittedHistory>();bundle->emission->frame=bundle->frame;
-            if(bundle->skin)bundle->emission->geometry=bundle->skin->geometry();
+            if(bundle->skin){bundle->emission->geometry=bundle->skin->geometry();bundle->emission->outline_rig=bundle->outline_rig;}
             bundle->emission->pose=bundle->pose;bundle->emission->instances=bundle->instances;
             bundle->emission->extent=recording.pass.extent;bundle->emission->probe_mode=probe_mode;
         }catch(...){bundle->emission.reset();} // Optional history cannot abandon a visible bundle.
@@ -1210,12 +1413,11 @@ struct NativeBackend::Impl {
             std::memcpy(static_cast<uint8_t*>(bundle->materials->mapped)+stride*i,&material,sizeof material);
         }
         const auto count=static_cast<uint32_t>(material_count);
-        const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,65+2*count+(replacement?1u:0u)},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6+2*count+(replacement?1u:0u)},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,count},{VK_DESCRIPTOR_TYPE_SAMPLER,count}}};
-        VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=count+1+(replacement?1u:0u);pool.poolSizeCount=static_cast<uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&bundle->pool),"Native bundle pool");
-        std::vector<VkDescriptorSetLayout> set_layouts(count+1,draw_set);set_layouts[0]=prepare_set;std::vector<VkDescriptorSet> sets(count+1);
-        if(replacement){set_layouts.push_back(clips->private_layout());sets.resize(set_layouts.size());}
-        // Asset staging caps materials at 4096; fallback/prepare/clip add at most 3 sets.
-        VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;allocation.descriptorPool=bundle->pool;allocation.descriptorSetCount=static_cast<uint32_t>(sets.size());allocation.pSetLayouts=set_layouts.data();checked(F(vkAllocateDescriptorSets)(context.device,&allocation,sets.data()),"Native bundle sets");bundle->prepare=sets[0];
+        bundle->draw_descriptors=main_draw_descriptors(context,draw_descriptor_banks,count,prepare_set,draw_set,
+            replacement?clips->private_layout():VK_NULL_HANDLE);
+        bundle->pool=bundle->draw_descriptors->pool;const auto& sets=bundle->draw_descriptors->sets;bundle->prepare=sets[0];
+        // Every binding is rewritten below, including on a cache hit. A bank
+        // conveys no prior player/assignment/source/permit or history state.
         std::array<VkDescriptorBufferInfo,71> buffers{};buffers[0]={bundle->control->handle,0,sizeof(NativePrepareControl)};buffers[1]=bundle->instances.info;buffers[2]=bundle->culled.info;buffers[3]=bundle->indirect.info;buffers[4]=bundle->counts.info;buffers[5]={bundle->frame->handle,0,bundle->frame->size};
         for(uint32_t i=0;i<64;++i)buffers[6+i]={bundle->arena.info.buffer,i*65536ull<bundle->arena.size?i*65536ull:0,65536};
         // When history is absent this valid alias is dynamically unused. The
@@ -1226,10 +1428,10 @@ struct NativeBackend::Impl {
         // The caller holds Impl::mutex from the final backing/generation check
         // through this write. Native destroy/free hold that same mutex through
         // their driver call, so a stale handle cannot enter a new descriptor.
-        if(!sources_current(bundle->sources)){report("source backing changed before descriptor construction");return{};}
+        if(!sources_current(bundle->sources)){if(individual_decline)*individual_decline=false;report("source backing changed before descriptor construction");return{};}
         F(vkUpdateDescriptorSets)(context.device,static_cast<uint32_t>(writes.size()),writes.data(),0,nullptr);
         if(replacement) {
-            bundle->body_bits=make_buffer(context,sizeof(bundle->body_mask.words),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            bundle->body_bits=lease_buffer(context,sizeof(bundle->body_mask.words),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             std::memcpy(bundle->body_bits->mapped,bundle->body_mask.words.data(),sizeof(bundle->body_mask.words));bundle->clip_set=sets.back();
             const std::array<VkDescriptorBufferInfo,2> clip_buffers={{{bundle->frame->handle,0,sizeof(NativePreparedFrame)},
                 {bundle->body_bits->handle,0,sizeof(bundle->body_mask.words)}}};
@@ -1256,7 +1458,7 @@ struct NativeBackend::Impl {
         bundle->data.permit[1]=static_cast<uint32_t>(qualified.size());bundle->data.permit[2]=static_cast<uint32_t>(bundle->instances.info.range/128);
         bundle->data.offsets[0]=static_cast<uint32_t>(bundle->vis_camera.info.offset);bundle->data.offsets[3]=static_cast<uint32_t>(bundle->arena.size);
         bundle->data.extent[0]=recording.pass.extent.width;bundle->data.extent[1]=recording.pass.extent.height;
-        bundle->data.config[0]=latest->height_scale;bundle->data.config[1]=latest->basis_xz;bundle->data.config[2]=replacement?0:latest->diagnostic_x;
+        bundle->data.config[0]=latest->height_scale;bundle->data.config[1]=latest->forward_sign;bundle->data.config[2]=replacement?0:latest->diagnostic_x;
         if(bundle->material_plan.mixed){bundle->data.blend[0]=1;std::copy(bundle->material_plan.blend_min.begin(),bundle->material_plan.blend_min.end(),bundle->data.blend_min);std::copy(bundle->material_plan.blend_max.begin(),bundle->material_plan.blend_max.end(),bundle->data.blend_max);std::copy(bundle->material_plan.base_max.begin(),bundle->material_plan.base_max.end(),bundle->data.blend_base_max);std::copy(bundle->material_plan.emissive_max.begin(),bundle->material_plan.emissive_max.end(),bundle->data.blend_emissive_max);}
         for(size_t i=0;i<qualified.size();++i)std::copy(qualified[i].begin(),qualified[i].end(),bundle->data.parts[i]);
         resource_timing(1,resources_started);resource_timing(0,bundle_started);
@@ -1267,13 +1469,23 @@ struct NativeBackend::Impl {
         const auto idle=F(vkQueueWaitIdle)(submitted_queue);
         if(idle!=VK_SUCCESS&&idle!=VK_ERROR_DEVICE_LOST){context.uncertain=true;if(clips)clips->quarantine();return;}
         if(idle==VK_SUCCESS)each_subject_recording([&](VkCommandBuffer command,Recording& item){if(item.bundle&&item.bundle->submitted_queue==submitted_queue)harvest_mixed(command,item,"queue-idle-success");});
+        each_recording([&](VkCommandBuffer,Recording& item){if(item.mtoon_probe_failed&&item.mtoon_probe_queue==submitted_queue){
+            if(item.mtoon_probe_permit)std::memset(item.mtoon_probe_permit->mapped,0,16);
+            // Controls are immutable while completion is uncertain. Only this
+            // proven-idle/device-lost recovery may withdraw a failed submit.
+            if(item.mtoon_frame)item.mtoon_frame->set_active(false);item.mtoon_active=false;item.mtoon_probe_retry_safe=true;
+        }});
         each_subject_recording([&](VkCommandBuffer,Recording& item){if(item.bundle) {
             auto& b=*item.bundle;
-            if(b.failed_submit&&b.submitted_queue==submitted_queue){b.data.permit[0]=0;std::memcpy(b.control->mapped,&b.data,sizeof b.data);b.retry_safe=true;if(b.common_gate)*static_cast<std::uint32_t*>(b.common_gate->mapped)=0;}
+            if(b.failed_submit&&b.submitted_queue==submitted_queue){b.data.permit[0]=0;std::memcpy(b.control->mapped,&b.data,sizeof b.data);b.retry_safe=true;if(b.common_gate)static_cast<std::uint32_t*>(b.common_gate->mapped)[48]=0;}
         }});
     }
     VkResult retry_gate(VkQueue attempted_queue,VkCommandBuffer command) {
         VkResult result=VK_SUCCESS;
+        each_view(command,[&](VkCommandBuffer,Recording& item){if(item.mtoon_probe_failed&&!item.mtoon_probe_retry_safe){
+            if(item.mtoon_probe_queue==attempted_queue)recover_submission(attempted_queue);
+            if(!item.mtoon_probe_retry_safe)result=last_submit_error;
+        }});
         // The caller holds this queue's external synchronization lock. Never
         // wait a different queue under the wrong lock.
         each_view(command,[&](VkCommandBuffer,Recording& item){if(item.bundle){auto& b=*item.bundle;
@@ -1289,7 +1501,7 @@ struct NativeBackend::Impl {
         ++submission_decline_samples;
         try {
             const auto now=GetTickCount64();
-            const bool age=now>=b.pose->published_milliseconds&&now-b.pose->published_milliseconds<=250;
+            const bool age=native_pose_is_fresh(b.pose->published_milliseconds,now);
             bool shadows=true,excluded=true,colors=true;unsigned competing=0;std::string sibling_facts;
             for(const auto& v:b.shadow_views)shadows=shadows&&same_image(v.depth,metadata.attachment_view(v.depth.view));
             for(const auto& v:b.oit_colors)colors=colors&&same_image(v,metadata.attachment_view(v.view));
@@ -1364,7 +1576,7 @@ struct NativeBackend::Impl {
                 b.gbuf_camera.generation==b.arena.generation&&b.owner.generation==b.arena.generation,Gate::Arena)&&
             decision.check(b.gbuf_camera.info.offset<=UINT32_MAX&&b.owner.info.offset<=UINT32_MAX,Gate::Offsets)&&
             decision.check(latest&&latest->asset==b.pose->asset,Gate::Latest)&&
-            decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::PoseAge);
+            decision.check(native_pose_is_fresh(b.pose->published_milliseconds,GetTickCount64()),Gate::PoseAge);
         ready=ready&&decision.check(sources_current(b.sources),Gate::Sources)&&decision.check(source_current(b.gbuf_camera),Gate::CameraSource)&&decision.check(source_current(b.owner),Gate::OwnerSource);
         if(players_managed)ready=ready&&player_current(*b.pose);
         for(const auto& view:b.shadow_views){const auto current=metadata.attachment_view(view.depth.view);ready=ready&&decision.check(current.current&&
@@ -1424,16 +1636,16 @@ struct NativeBackend::Impl {
         b.data.offsets[1]=static_cast<uint32_t>(b.gbuf_camera.info.offset);b.data.offsets[2]=static_cast<uint32_t>(b.owner.info.offset);b.data.permit[0]=ready?1:0;
         if(replacement){
             if(b.menu_preview){if(!character_preview)tool_slots.disable();}
-            else if(ready&&owner_process&&!verifying_player_group){const auto started=std::chrono::steady_clock::now();tool_slots.publish(*owner_process,b.cpu_owner,b.pose,b.instances.generation);resource_timing(3,started);}else if(!ready)revoke_preparation(b.instances);
+            else if(ready&&owner_process&&!verifying_player_group){const auto started=std::chrono::steady_clock::now();tool_slots.publish(*owner_process,b.cpu_owner,b.pose,b.instances.generation);resource_timing(3,started);}else if(!ready)revoke_subject_preparation(b.instances,b.first_pass.extent,b.pose.get());
             // Initial hook installation may take time. It cannot extend the
             // original pose age accepted by either CPU or tool authorization.
-            ready=ready&&decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::AgeAfterTool);
-            if(!ready)revoke_preparation(b.instances);
+            ready=ready&&decision.check(native_pose_is_fresh(b.pose->published_milliseconds,GetTickCount64()),Gate::AgeAfterTool);
+            if(!ready)revoke_subject_preparation(b.instances,b.first_pass.extent,b.pose.get());
             if(ready&&!verifying_player_group)retain_owner_hint(b);
             // Optional first-seed allocation/copy is bounded in size, not time.
             // It must not carry an otherwise fresh pose across the age limit.
-            ready=ready&&decision.check(GetTickCount64()>=b.pose->published_milliseconds&&GetTickCount64()-b.pose->published_milliseconds<=250,Gate::AgeAfterSeed);
-            if(!ready)revoke_preparation(b.instances);
+            ready=ready&&decision.check(native_pose_is_fresh(b.pose->published_milliseconds,GetTickCount64()),Gate::AgeAfterSeed);
+            if(!ready)revoke_subject_preparation(b.instances,b.first_pass.extent,b.pose.get());
             b.data.permit[0]=ready?1:0;
         }
         b.data.history[0]=ready&&b.previous&&b.previous==history_for(b.instances.info.buffer,b.first_pass.extent,b.pose.get())&&latest&&
@@ -1487,17 +1699,29 @@ struct NativeBackend::Impl {
         coverage_report();
         tool_slots.clear();
         const auto idle=context.device?F(vkDeviceWaitIdle)(context.device):VK_SUCCESS;
+        if(context.device&&idle==VK_SUCCESS)each_recording([&](VkCommandBuffer,Recording& item){harvest_mtoon_observation(item,"device-idle-success");harvest_mtoon_profile(item,"device-idle-success");});
         if(context.device&&idle==VK_SUCCESS)each_subject_recording([&](VkCommandBuffer command,Recording& item){harvest_mixed(command,item,"device-idle-success");});
         if(idle!=VK_SUCCESS&&idle!=VK_ERROR_DEVICE_LOST)context.uncertain=true;else context.uncertain=false;
+        retain_private_storage(false); // Idle storage has no consumer; in-flight objects are destroyed at their own retirement below.
         // Stop naturally before releasing any borrowed module/layout/device.
         if(prepare_worker)prepare_worker->shutdown(context.uncertain);
+        if(mtoon_composite_programs)mtoon_composite_programs->shutdown(context.uncertain);
+        mtoon_composite_programs.reset();
+        if(mtoon_raster_programs)mtoon_raster_programs->shutdown(context.uncertain);
+        mtoon_raster_programs.reset();
+        if(mtoon_forward_shade_programs)mtoon_forward_shade_programs->shutdown(context.uncertain);
+        mtoon_forward_shade_programs.reset();
+        if(mtoon_forward_finish_programs)mtoon_forward_finish_programs->shutdown(context.uncertain);
+        mtoon_forward_finish_programs.reset();
+        if(mtoon_shade_programs)mtoon_shade_programs->shutdown(context.uncertain);
+        mtoon_shade_programs.reset();
         if(clips&&context.uncertain)clips->quarantine();
         if(player_commit&&context.uncertain)player_commit->quarantine();
         if(asset_stager&&!context.uncertain)asset_stager->device_idle_complete();
         asset_stager.reset();
         if(surface_stager&&!context.uncertain)surface_stager->device_idle_complete();
         surface_stager.reset();
-        discard_history();completed_views.clear();commands.clear();latest.reset();assets.reset();player_models.clear();player_upload.reset();player_commit.reset();layouts.clear();
+        discard_history();completed_views.clear();commands.clear();draw_descriptor_banks.clear();mtoon_frame_pool.reset();latest.reset();assets.reset();player_models.clear();player_upload.reset();player_commit.reset();layouts.clear();
         clips.reset();
         if(context.uncertain){draw_pipelines.release();oit_pipelines.release();shadow_pipeline.release();return;}
         shadow_pipeline.reset();for(auto s:shadow_shaders)if(s)F(vkDestroyShaderModule)(context.device,s,nullptr);
@@ -1549,7 +1773,7 @@ struct NativeBackend::Impl {
             s.offset.x>=0&&s.offset.y>=0&&s.extent.width&&s.extent.height&&
             std::uint64_t(s.offset.x)+s.extent.width<=d.extent.width&&std::uint64_t(s.offset.y)+s.extent.height<=d.extent.height;
     }
-    void caster_shadow_draw(Recording& r,VkCommandBuffer command,bool clip_native=true){
+    void caster_shadow_draw(Recording& r,VkCommandBuffer command,bool clip_native=true,NativeMToonFrame* mtoon_frame=nullptr){
         if(!r.pass_active||!r.shadow_pass||!r.bundle||r.native_restore||context.uncertain)return;
         if(!character_subject_draw(*r.bundle))return;
         auto& b=*r.bundle;if((!artifact_probe_file.empty()&&b.probe_mode!=5.f)||b.invalid||!b.clip_set||!b.body_bits||!clips)return;
@@ -1594,7 +1818,17 @@ struct NativeBackend::Impl {
             function<PFN_vkUpdateDescriptorSets>("vkUpdateDescriptorSets")(context.device,1,&write,0,nullptr);
             b.graphics_restore.push_back(restore);b.shadow_views.push_back(view);
             b.data.shadow[0]=1;b.data.shadow[1]=static_cast<std::uint32_t>(b.shadow_views.size());b.data.shadowViews[b.shadow_views.size()-1][0]=static_cast<std::uint32_t>(source.info.offset);
-            if(!shadow_pipeline->record(command,view.set,b.shadow_calls.data(),static_cast<std::uint32_t>(b.shadow_calls.size()),state.pipeline.pipeline,restore->handle,static_cast<std::uint32_t>(state.sets.size()),state.sets.data())){b.invalid=true;return;}
+            if(mtoon_frame&&!b.mtoon_caster_draws.empty()&&b.mtoon_caster_qualified&&mtoon_frame->has_shadows()){
+                // Replace selected casters, rather than adding a second cutout
+                // over an already solid generic shadow. Other and blended
+                // materials keep their exact existing generic caster calls.
+                if((!b.mtoon_generic_casters.empty()&&!shadow_pipeline->record(command,view.set,b.mtoon_generic_casters.data(),unsigned(b.mtoon_generic_casters.size()),state.pipeline.pipeline,restore->handle,unsigned(state.sets.size()),state.sets.data()))||
+                    !mtoon_frame->record_shadow(command,view.set,b.mtoon_caster_draws.data(),unsigned(b.mtoon_caster_draws.size()),state.pipeline.pipeline,restore->handle,unsigned(state.sets.size()),state.sets.data())){b.invalid=true;return;}
+                ++b.mtoon_caster_views;
+            }else{
+                if(!b.mtoon_caster_draws.empty())b.mtoon_caster_qualified=false;
+                if(!shadow_pipeline->record(command,view.set,b.shadow_calls.data(),static_cast<std::uint32_t>(b.shadow_calls.size()),state.pipeline.pipeline,restore->handle,static_cast<std::uint32_t>(state.sets.size()),state.sets.data())){b.invalid=true;return;}
+            }
             ++shadow_caster_views;if(shadow_caster_views==1||shadow_caster_views%300==0)try{log_event("native-shadow.caster-view count="+std::to_string(shadow_caster_views)+" loaded-draws="+std::to_string(b.shadow_calls.size())+" common-frame=1");}catch(...){}
         }
         // Geometry deduplication never discards a native descriptor certificate:
@@ -1603,6 +1837,24 @@ struct NativeBackend::Impl {
         function<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline->handle);
         function<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline->layout,5,1,&b.clip_set,0,nullptr);
         ++b.shadow_probe_draws;++shadow_caster_draws;
+    }
+    void clip_player_group_shadow(Recording& r,VkCommandBuffer command){
+        if(!r.bundle||!r.bundle->common_commit||!r.pass_active||!r.shadow_pass||r.native_restore||r.tainted||context.uncertain||!clips)return;
+        auto& b=*r.bundle;const auto state=metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);if(!state.valid||state.pipeline.graphics_stage_count!=1)return;
+        const auto instances=metadata.observed_buffer_binding(state,2,4);if(!same_binding(instances,b.instances)||instances.size!=b.instances.size)return;
+        const auto pipeline=clips->pipeline(state.pipeline.pipeline);if(!pipeline||pipeline->kind!=NativeClipKind::shadow||pipeline->mesh)return;
+        const auto source=metadata.observed_buffer_binding(state,1,4),culled=metadata.observed_buffer_binding(state,2,5);const auto restore=compatible(state);
+        if(!state.pipeline.shadow_compatible||!restore||!b.clip_set||!b.common_bits||!b.common_gate||!source_current(instances)||!memory.valid(instances.info.buffer,0,instances.size)||
+            !source||!(source.usage&VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)||!source_current(source)||source.info.buffer!=b.arena.info.buffer||source.generation!=b.arena.generation||source.size!=b.arena.size||
+            source.info.range==VK_WHOLE_SIZE||source.info.range<352||source.info.offset>UINT32_MAX||source.info.offset>source.size||source.info.range>source.size-source.info.offset||
+            !limits.minUniformBufferOffsetAlignment||source.info.offset%limits.minUniformBufferOffsetAlignment||!shadow_raster_current(r,metadata.raster(command))||
+            !culled||!(culled.usage&VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)||culled.info.range==VK_WHOLE_SIZE||culled.info.range%8||!source_current(culled)||b.common_shadow_clips>=128||b.sources.size()>2044){r.tainted=true;return;}
+        bool known=false;for(const auto& depth:b.common_shadow_depths)known=known||same_image(depth,r.shadow_depth);
+        if(!known){if(b.common_shadow_depths.size()>=32){r.tainted=true;return;}b.common_shadow_depths.push_back(r.shadow_depth);}
+        b.sources.push_back(source);b.sources.push_back(instances);b.sources.push_back(culled);b.clip_leases.push_back(pipeline);b.graphics_restore.push_back(restore);
+        r.native_restore=state.pipeline.pipeline;
+        function<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline->handle);
+        function<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline->layout,5,1,&b.clip_set,0,nullptr);++b.common_shadow_clips;
     }
     void diagnostic_shadow_draw(Recording& r,VkCommandBuffer command) {
         if(r.bundle&&!character_subject_draw(*r.bundle))return;
@@ -1626,7 +1878,7 @@ struct NativeBackend::Impl {
     }
     void cover_native_draw(Recording& r,VkCommandBuffer command) {
         if(!r.bundle||!r.pass_active||!r.pass.supported||r.tainted)return;
-        auto& b=*r.bundle;if(b.invalid)return;
+        auto& b=*r.bundle;if(b.invalid&&!b.common_commit)return;
         const auto decline=[&](const char* why){++coverage_sources;r.tainted=true;r.ownership_unknown=true;b.invalid=true;notice(why);};
         if(r.native_restore||b.sources.size()>=2048||b.clip_leases.size()>=512||b.excluded_transforms.size()>=512){decline("replacement draw budget or restoration state declined");return;}
         const auto state=metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);
@@ -1679,15 +1931,19 @@ struct NativeBackend::Impl {
 
 };
 
-NativeBackend::NativeBackend(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr get_instance,PFN_vkGetDeviceProcAddr get,PFN_vkSetDeviceLoaderData loader,const std::filesystem::path& shaders,bool independent_blend,bool replacement,bool partially_bound,bool mesh_enabled):impl(std::make_unique<Impl>()) {
+NativeBackend::NativeBackend(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr get_instance,PFN_vkGetDeviceProcAddr get,PFN_vkSetDeviceLoaderData loader,const std::filesystem::path& shaders,bool independent_blend,bool replacement,bool partially_bound,bool mesh_enabled,const DeviceFeaturesObservation* original_features,std::uint32_t request_api_version):impl(std::make_unique<Impl>()) {
     impl->context.device=device;impl->context.get=get;impl->set_loader=loader;impl->shader_directory=shaders;
-    try {
-        wchar_t probe_path[32768]{};
-        const auto length=GetEnvironmentVariableW(L"ENSHROUDED_VRM_ARTIFACT_PROBE_FILE",probe_path,32768);
-        if(length>0&&length<32768)impl->artifact_probe_file=std::filesystem::path(probe_path);
+    try{
+        std::ifstream marker(shaders.parent_path()/L"pose-latency.mode",std::ios::binary);char bytes[9]{};
+        marker.read(bytes,sizeof bytes);impl->pose_age_enabled=marker.gcount()==8&&std::memcmp(bytes,"pose-v1\n",8)==0;
+        if(impl->pose_age_enabled)log_event("pose-age.enabled period=300 source=accepted-local-world unit=ms");
     }catch(...){}
+    // One fixed, opt-in local diagnostic flag. Missing/unreadable stays off.
+    {std::error_code error;impl->profiling_requested=std::filesystem::is_regular_file(shaders.parent_path()/"native-profile.enabled",error)&&!error;
+        impl->submit_timing.set_detail_enabled(impl->profiling_requested);}
     impl->instance=instance;impl->physical=physical;impl->get_instance=get_instance;
     impl->independent_blend=independent_blend;impl->partially_bound=partially_bound;impl->mesh_enabled=mesh_enabled;
+    if(original_features)impl->mtoon_enabled=*original_features;impl->mtoon_api_version=request_api_version;
     const auto memory=reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(get_instance(instance,"vkGetPhysicalDeviceMemoryProperties"));memory(physical,&impl->context.memory);
     const auto properties=reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(get_instance(instance,"vkGetPhysicalDeviceProperties"));VkPhysicalDeviceProperties value{};properties(physical,&value);impl->limits=value.limits;
     if(value.apiVersion<VK_API_VERSION_1_3)throw std::runtime_error("Native shaders require a Vulkan 1.3 physical device");
@@ -1706,6 +1962,21 @@ NativeState& NativeBackend::state()noexcept{return impl->metadata;}
 NativeClipPipelines* NativeBackend::clipping()noexcept{return impl->clips.get();}
 NativeBufferMemory* NativeBackend::buffer_memory()noexcept{return impl->replacement||impl->partially_bound?&impl->memory:nullptr;}
 NativeImageMemory* NativeBackend::image_memory()noexcept{return impl->image_memory.get();}
+bool NativeBackend::private_reuse_sample(NativePrivateReuseSample& out)const noexcept {
+    out={};
+    // Every lock on this path is tried, never waited for. The backend lock keeps both reuse objects alive while they are read.
+    try{std::unique_lock<std::mutex> guard(impl->mutex,std::try_to_lock);if(!guard.owns_lock())return false;
+        out.enabled=impl->private_reuse_enabled;
+        const auto read=[](const auto& reuse,NativePrivateReusePool& pool)noexcept{
+            if(!reuse){pool.available=true;return;}
+            std::size_t idle=0;VkDeviceSize bytes=0;if(!reuse->try_idle(idle,bytes))return;
+            pool.available=true;pool.created=reuse->created_storages();pool.reissued=reuse->reissued_storages();pool.idle=idle;pool.idle_bytes=bytes;};
+        read(impl->snapshot_reuse,out.volume);read(impl->mtoon_probe_reuse,out.probe);
+        std::size_t entries=0;VkDeviceSize bytes=0;
+        if(impl->context.idle_buffers.try_idle(entries,bytes)){out.buffer.available=true;out.buffer.idle=entries;out.buffer.idle_bytes=bytes;}
+        return true;
+    }catch(...){out={};return false;}
+}
 bool NativeBackend::mouth_gpu_unavailable()const noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
         const auto local=impl->player_models.find(std::string{});
@@ -1758,11 +2029,47 @@ void NativeBackend::set_replacement_enabled(bool enabled)noexcept {
     try{std::lock_guard<std::mutex> guard(impl->mutex);
         if(impl->replacement_enabled==enabled)return;
         impl->replacement_enabled=enabled;
+        if(!enabled)std::vector<std::uint8_t>{}.swap(impl->submission_read_workspace);
+        // Off keeps no idle private buffers; leases still held by recorded or
+        // submitted bundles are destroyed at their normal retirement.
+        impl->context.discard_idle_buffers(enabled);impl->retain_private_storage(enabled);
         if(!enabled&&impl->surface_stager){impl->surface_stager->cancel();impl->surface_upload={};impl->surface_failures.clear();}
         if(!enabled){native_preview_subjects().retire_owner(reinterpret_cast<std::uintptr_t>(impl.get()));impl->latest.reset();impl->view_publications.reset();impl->revoke_preparation();impl->tool_slots.disable();}
         // Recorded/submitted bundles retain their leases until normal retirement.
         // The common submit permit disables both replacement and native clipping.
     }catch(...){}
+}
+// Menu-only diagnostics: never blocks rendering, starts a worker or driver
+// call, or changes an original-use/common permit. Retained frames are bounded
+// by the existing3-bank pool; old appearances and stale poses cannot look ready.
+MToonMenuStatus NativeBackend::mtoon_menu_status(const std::shared_ptr<const AvatarAppearance>& appearance,const std::string& subject)const noexcept{
+    MToonMenuStatus out;if(!appearance)return out;bool requested=appearance->whole==AvatarShaderPreset::MToon||appearance->whole==AvatarShaderPreset::MToonOutline;
+    for(const auto p:appearance->materials)requested=requested||avatar_preset_is_toon(p);if(!requested)return out;
+    out.state=MToonMenuState::WorldUnavailable;if(!impl){out.state=MToonMenuState::RendererUnavailable;return out;}
+    try{
+        std::unique_lock<std::mutex> lock(impl->mutex,std::try_to_lock);if(!lock.owns_lock()){out.state=MToonMenuState::Preparing;return out;}
+        if(impl->disabled||impl->context.uncertain){out.state=MToonMenuState::RendererUnavailable;return out;}
+        const auto now=GetTickCount64();std::uint32_t latest=0;
+        impl->each_recording([&](VkCommandBuffer,const Recording& r){if(!r.mtoon_frame||r.mtoon_frame->generation()<=latest)return;
+            impl->each_bundle(r.bundle,[&](const Bundle& b){if(!b.pose||b.pose->appearance!=appearance||b.pose->subject!=subject||!b.submitted||b.awaiting_submit_result||b.failed_submit||
+                now<b.pose->published_milliseconds||now-b.pose->published_milliseconds>native_pose_max_age_ms)return;
+                latest=r.mtoon_frame->generation();out.state=r.mtoon_active?MToonMenuState::WorldReady:MToonMenuState::WorldUnavailable;out.materials=b.mtoon_material_bits;out.outlines=b.mtoon_outline_bits;});});
+        if(latest)return out;
+        bool bank=false,observed=false;unsigned examined=0;
+        const auto publication=[&](const std::shared_ptr<const NativeAvatarPublication>& p){if(!p||++examined>64||p->appearance!=appearance||p->subject!=subject)return;observed=true;
+            const auto* target=impl->surface_target(*p);bank=bank||(target&&*target&&(*target)->mtoon()&&native_mtoon_request_matches((*target)->mtoon_request(),p->asset,appearance.get()));};
+        const auto view=[&](const std::shared_ptr<const NativeAvatarPublication>& p){if(!p)return;publication(p);for(const auto& child:p->additional_subjects){if(examined>=64)break;publication(child);}};
+        view(impl->latest);if(impl->latest)for(const auto& v:impl->latest->additional_views){if(examined>=64)break;view(v);}
+        if(observed&&!bank){out.state=MToonMenuState::Preparing;return out;}
+        if(bank){
+            if((impl->mtoon_raster_shader_attempted&&!impl->mtoon_raster_programs)||(impl->mtoon_shade_shader_attempted&&!impl->mtoon_shade_programs)||(impl->mtoon_composite_shader_attempted&&!impl->mtoon_composite_programs)||
+                impl->mtoon_raster_menu_state==NativeMToonRasterProgramStatus::failed||impl->mtoon_shade_menu_state==NativeMToonShadeProgramStatus::failed||impl->mtoon_composite_menu_state==NativeMToonCompositeProgramStatus::failed||
+                (impl->mtoon_raster_shader_attempted&&impl->mtoon_raster_menu_state==NativeMToonRasterProgramStatus::unsupported)||(impl->mtoon_shade_shader_attempted&&impl->mtoon_shade_menu_state==NativeMToonShadeProgramStatus::unsupported)||(impl->mtoon_composite_shader_attempted&&impl->mtoon_composite_menu_state==NativeMToonCompositeProgramStatus::unsupported)||
+                impl->mtoon_api_version<VK_API_VERSION_1_2||!impl->partially_bound||!native_rendering_environment_supported(impl->mtoon_api_version,impl->mtoon_enabled)||!native_mtoon_fragment_identity_supported(impl->mtoon_enabled)||!native_mtoon_composite_features_supported(impl->mtoon_enabled))out.state=MToonMenuState::RendererUnavailable;
+            else if(impl->mtoon_raster_menu_state==NativeMToonRasterProgramStatus::pending||impl->mtoon_shade_menu_state==NativeMToonShadeProgramStatus::pending||impl->mtoon_composite_menu_state==NativeMToonCompositeProgramStatus::pending)out.state=MToonMenuState::Preparing;
+        }
+        return out;
+    }catch(...){out.state=MToonMenuState::WorldUnavailable;return out;}
 }
 void NativeBackend::publish(VkQueue queue,uint32_t family,std::shared_ptr<const NativeAvatarPublication> publication,std::uint64_t source_buffer_epoch)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);if(!impl->replacement_enabled)return;impl->observe_image_disable();impl->latest=std::move(publication);if(!impl->latest||impl->disabled||impl->context.uncertain){impl->view_publications.reset();impl->revoke_preparation();return;}
@@ -1849,7 +2156,7 @@ void NativeBackend::command_reset(VkCommandBuffer command)noexcept {
 void NativeBackend::pool_reset(VkCommandPool pool)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);for(const auto& item:impl->pools)if(item.second==pool){
         impl->metadata.command_freed(1,&item.first);impl->retire_views(item.first,"valid-original-pool-retirement");
-    }}catch(...){} }
+    }impl->release_expired_private_storage();}catch(...){} }
 void NativeBackend::pool_destroyed(VkCommandPool pool)noexcept {pool_reset(pool);try{std::lock_guard<std::mutex> lock(impl->mutex);for(auto i=impl->pools.begin();i!=impl->pools.end();)if(i->second==pool)i=impl->pools.erase(i);else++i;}catch(...){} }
 void NativeBackend::incoming_rendering(VkCommandBuffer command,const VkRenderingInfo& info)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;
@@ -1860,7 +2167,7 @@ void NativeBackend::incoming_rendering(VkCommandBuffer command,const VkRendering
             (info.pDepthAttachment->imageLayout==VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL||info.pDepthAttachment->imageLayout==VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
         r.shadow_depth=r.shadow_pass?impl->metadata.attachment_view(info.pDepthAttachment->imageView):NativeOitView{};
         r.shadow_area=info.renderArea;r.shadow_view_start=r.bundle?r.bundle->shadow_views.size():0;
-        impl->observe_rendering(r,info);
+        impl->observe_rendering(r,info);impl->begin_mtoon_raster(r,command,info);
         if(r.bundle)impl->each_subject(r,[&](Recording& subject){impl->mixed_rendering(subject,info);});else impl->mixed_rendering(r,info);
         if(impl->replacement&&r.pass.supported) {
             const auto view=r.ownership_instances?impl->publication_for(r.ownership_instances.info.buffer):impl->view_publications;
@@ -1879,6 +2186,7 @@ void NativeBackend::before_attachment_clear(VkCommandBuffer command)noexcept {
         auto& recording=found->second;
         // A depth clear can erase already emitted caster pixels. Begin a fresh
         // emission epoch without changing the common permit or native clear.
+        if(recording.pass_active&&recording.mtoon_frame)impl->each_bundle(recording.bundle,[](Bundle& b){b.invalid=true;});
         if(recording.pass_active&&recording.shadow_pass&&recording.bundle)
             impl->each_bundle(recording.bundle,[](Bundle& b){b.shadow_view_start=b.shadow_views.size();});
     }catch(...){scope_unsupported(command,"shadow clear observation failed");}
@@ -1894,21 +2202,23 @@ void NativeBackend::before_rendering(VkCommandBuffer command,const VkRenderingIn
         auto b=impl->make_player_bundle(r,command);if(!b){r.tainted=true;impl->notice("current native preparation context unavailable","context-unavailable");return;}
         const auto compute=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);auto& context=impl->context;
         r.bundle=b;impl->each_bundle(b,[](Bundle& subject){subject.visibility_passes=1;}); // Retain before the first recorded private command.
+        (void)impl->prepare_mtoon_frame(r,command);
         VkMemoryBarrier before{};before.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER;before.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;before.dstAccessMask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_UNIFORM_READ_BIT;
         context.fn<PFN_vkCmdPipelineBarrier>("vkCmdPipelineBarrier")(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&before,0,nullptr,0,nullptr);
         impl->each_subject(r,[&](Recording& subject){const auto& b=subject.bundle;
-        context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->surface.any()?
+        context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,(b->surface.any()||r.mtoon_frame)?
             (b->menu_preview?impl->surface_menu_prepare:impl->surface_prepare):(b->menu_preview?impl->menu_prepare_pipeline:impl->prepare_pipeline));
         context.fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,impl->prepare_layout,0,1,&b->prepare,0,nullptr);
         context.fn<PFN_vkCmdDispatch>("vkCmdDispatch")(command,1,1,1);
         if(b->skin)impl->skinning_gpu->record(command,b->skin);
         });
         if(b->common_commit&&!impl->player_commit->record(command,*b->common_commit))throw std::runtime_error("Player common commit unavailable");
-        before.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;before.dstAccessMask=VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_HOST_READ_BIT;
+        before.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;before.dstAccessMask=VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_HOST_READ_BIT;
         context.fn<PFN_vkCmdPipelineBarrier>("vkCmdPipelineBarrier")(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_HOST_BIT|(impl->mesh_enabled?VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT:0),0,1,&before,0,nullptr,0,nullptr);
         context.fn<PFN_vkCmdBindPipeline>("vkCmdBindPipeline")(command,VK_PIPELINE_BIND_POINT_COMPUTE,compute.pipeline.pipeline);
         // NativeState accepts complete bound states with at most 32 descriptor sets.
         context.fn<PFN_vkCmdBindDescriptorSets>("vkCmdBindDescriptorSets")(command,VK_PIPELINE_BIND_POINT_COMPUTE,b->compute_restore->handle,0,static_cast<uint32_t>(compute.sets.size()),compute.sets.data(),0,nullptr);
+        if(r.mtoon_frame&&!r.mtoon_frame->initialize(command))throw std::runtime_error("Native MToon view initialization unavailable");
         impl->each_bundle(b,[](Bundle& subject){subject.recorded=true;});
     }catch(const std::exception& e){scope_unsupported(command);try{impl->report(e.what());}catch(...){}}catch(...){scope_unsupported(command);}
 }
@@ -1954,38 +2264,51 @@ void NativeBackend::render_current(VkCommandBuffer command)noexcept {
         if(r.pass.kind==NativePipelineKind::gbuffer&&!b.gbuf_camera)b.gbuf_camera=impl->metadata.buffer_binding(bound,1,16);
         b.graphics_restore.push_back(restore);
         // The validated material plan caps draws at 4096; NativeState caps sets at 32.
-        if(!impl->draw_pipelines->record(command,r.pass.kind==NativePipelineKind::gbuffer,b.calls.data(),static_cast<uint32_t>(b.calls.size()),bound.pipeline.pipeline,restore->handle,static_cast<uint32_t>(bound.sets.size()),bound.sets.data())){b.invalid=true;return;}
+        if(r.mtoon_frame){
+            if(r.pass.kind==NativePipelineKind::visibility&&!r.mtoon_visibility_recorded){
+                if(!r.mtoon_frame->record_raster(command,false,bound.pipeline.pipeline,restore->handle,static_cast<uint32_t>(bound.sets.size()),bound.sets.data())){b.invalid=true;return;}
+                r.mtoon_visibility_recorded=true;
+            }
+            // GBuffer is emitted once after the last native draw, below. The
+            // final ID must describe the final matching owned native outputs.
+        }else if(!impl->draw_pipelines->record(command,r.pass.kind==NativePipelineKind::gbuffer,b.calls.data(),static_cast<uint32_t>(b.calls.size()),bound.pipeline.pipeline,restore->handle,static_cast<uint32_t>(bound.sets.size()),bound.sets.data())){b.invalid=true;return;}
         const auto instance=impl->metadata.buffer_binding(bound,2,4);
         if(!same_binding(b.instances,instance))b.invalid=true;
         b.sources.push_back(instance);
-        r.pass_drawn=true;if(r.pass.kind==NativePipelineKind::visibility)++b.visibility_draws;else if(r.pass.kind==NativePipelineKind::gbuffer)++b.gbuffer_draws;
+        r.pass_drawn=true;if(r.pass.kind==NativePipelineKind::visibility)++b.visibility_draws;else if(r.pass.kind==NativePipelineKind::gbuffer&&!r.mtoon_frame)++b.gbuffer_draws;
         });
     }catch(...){scope_unsupported(command);}
 }
 void NativeBackend::before_end_rendering(VkCommandBuffer command)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end())impl->each_subject(found->second,[&](Recording& subject){impl->mixed_end(subject,command);});}catch(...){scope_unsupported(command,"mixed OIT insertion failed");}
+    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end()){impl->each_subject(found->second,[&](Recording& subject){impl->mixed_end(subject,command);});impl->finish_mtoon_gbuffer(found->second,command);}}catch(...){scope_unsupported(command,"mixed OIT insertion failed");}
 }
-void NativeBackend::end_rendering(VkCommandBuffer command)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){auto& r=found->second;impl->each_bundle(r.bundle,[](Bundle& b){if(b.material_plan.mixed&&b.oit_window.active){b.oit_window.end(false);b.invalid=true;}});if(r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer)r.view_gbuffer=true;r.pass_active=false;r.observed_oit_active=false;}}catch(...){} }
+void NativeBackend::end_rendering(VkCommandBuffer command)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){auto& r=found->second;impl->each_bundle(r.bundle,[](Bundle& b){if(b.material_plan.mixed&&b.oit_window.active){b.oit_window.end(false);b.invalid=true;}});if(r.pass.supported&&r.pass.kind==NativePipelineKind::gbuffer)r.view_gbuffer=true;impl->end_mtoon_raster(r);r.pass_active=false;r.observed_oit_active=false;}}catch(...){} }
 bool NativeBackend::pose_capture_boundary(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);
         return impl->replacement_enabled&&found!=impl->commands.end()&&found->second.eligible&&found->second.pass_active&&
             found->second.pass.supported&&found->second.pass.kind==NativePipelineKind::gbuffer&&!impl->context.uncertain;
     }catch(...){return false;}
 }
-void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uint32_t x,std::uint32_t y,std::uint32_t z)noexcept {
+void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uint32_t x,std::uint32_t y,std::uint32_t z,std::uint32_t observed_family)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;r.compute_producer=true;
+        if(impl->profiling_requested&&observed_family!=UINT32_MAX){
+            if(r.mtoon_profile_family!=UINT32_MAX&&r.mtoon_profile_family!=observed_family)r.mtoon_profile_family_conflict=true;
+            else r.mtoon_profile_family=observed_family;
+        }
         if(debug_report_sources_pending())try{const auto bound=impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);
             if(bound.valid&&native_volume_producer(bound.pipeline.compute_bytes,bound.pipeline.compute_digest)==NativeVolumeProducer::populate){
                 const auto sampled=impl->metadata.observed_sampled_image_binding(bound,2,3);const auto storage=impl->metadata.observed_storage_image_binding(bound,2,3);
                 if(sampled||storage){const auto& view=sampled?sampled.view:storage.view;debug_report_observe_lighting({view.extent.width,view.extent.height,view.extent.depth});}}
         }catch(...){} // Diagnostic observations cannot change the native permit.
+        impl->observe_mtoon_probe(r,command);
+        impl->observe_mtoon_scene(r,command,observed_family);
+        impl->record_mtoon_composition(r,command);
         if(!impl->replacement_enabled&&!r.bundle)return;
         // A single proven volume snapshot is shared by all BLEND subjects.
-        std::shared_ptr<Bundle> volume;
-        impl->each_subject(r,[&](Recording& subject){auto& b=*subject.bundle;if(!b.material_plan.mixed)return;
-            if(!volume){impl->mixed_dispatch(subject,command,capture_owner,x,y,z);volume=subject.bundle;}
-            else impl->share_player_volume(b,*volume);
+        impl->capture_player_volumes(r,[&](Recording& subject){
+            impl->mixed_dispatch(subject,command,capture_owner,x,y,z);
         });
+        impl->record_mtoon_forward_finish(r,command);
         impl->observe_volume(r,command,capture_owner,x,y,z);
         if(!r.bundle || !capture_owner)return;
         const auto bound=impl->metadata.bound(command,VK_PIPELINE_BIND_POINT_COMPUTE);if(!bound.valid||bound.pipeline.kind!=NativePipelineKind::lighting)return;
@@ -1996,10 +2319,10 @@ void NativeBackend::dispatch(VkCommandBuffer command,bool capture_owner,std::uin
 }
 void NativeBackend::barriers(VkCommandBuffer command,VkPipelineStageFlags source,VkPipelineStageFlags destination,VkDependencyFlags flags,
     std::uint32_t memory_count,const VkMemoryBarrier* memory,std::uint32_t buffer_count,const VkBufferMemoryBarrier* buffers,std::uint32_t image_count,const VkImageMemoryBarrier* images)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end())impl->transparency_trace.legacy(found->second.transparency,source,destination,flags,memory_count,memory,buffer_count,buffers,image_count,images);}catch(...){}
+    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end()){impl->transparency_trace.legacy(found->second.transparency,source,destination,flags,memory_count,memory,buffer_count,buffers,image_count,images);impl->mtoon_probe_barriers(found->second,buffer_count,buffers,image_count,images);}}catch(...){}
 }
 void NativeBackend::barriers2(VkCommandBuffer command,const VkDependencyInfo* info)noexcept {
-    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end())impl->transparency_trace.sync2(found->second.transparency,info);}catch(...){}
+    try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);if(found!=impl->commands.end()){impl->transparency_trace.sync2(found->second.transparency,info);impl->mtoon_probe_barriers2(found->second,info);}}catch(...){}
 }
 void NativeBackend::unsupported_draw(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);const auto found=impl->commands.find(command);
@@ -2059,7 +2382,10 @@ void NativeBackend::uncovered_draw(VkCommandBuffer command,const char* command_n
 }
 void NativeBackend::before_native_draw(VkCommandBuffer command)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);
-        if(debug_report_sources_pending())try{const auto bound=impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);debug_report_observe_scene(bound.valid?classify_debug_report_scene(body_identity(bound.pipeline)):DebugReportSceneFamily::Unknown);}catch(...){}
+        bool observe_scene=debug_report_sources_pending();
+        if(observe_scene)try{const auto bound=impl->metadata.observed_bound(command,VK_PIPELINE_BIND_POINT_GRAPHICS);const auto family=bound.valid?classify_debug_report_scene(body_identity(bound.pipeline)):DebugReportSceneFamily::Unknown;
+            if(debug_report_sources_pending())debug_report_observe_scene(family);
+        }catch(...){}
         if(!impl->replacement)return;
         const auto found=impl->commands.find(command);if(found==impl->commands.end())return;auto& r=found->second;
         if(!impl->replacement_enabled&&!r.bundle)return;
@@ -2068,8 +2394,8 @@ void NativeBackend::before_native_draw(VkCommandBuffer command)noexcept {
         impl->cover_native_draw(r,command);
         impl->diagnostic_shadow_draw(r,command);
         {const auto root=r.bundle;impl->each_subject(r,[&](Recording& subject){
-            impl->caster_shadow_draw(subject,command,subject.bundle==root);
-        },true);}
+            impl->caster_shadow_draw(subject,command,subject.bundle==root&&!root->common_commit,r.mtoon_frame.get());
+        },true);impl->clip_player_group_shadow(r,command);}
     }catch(...){scope_unsupported(command);}
 }
 void NativeBackend::after_native_draw(VkCommandBuffer command)noexcept {
@@ -2082,30 +2408,38 @@ void NativeBackend::after_native_draw(VkCommandBuffer command)noexcept {
 }
 void NativeBackend::scope_unsupported(VkCommandBuffer command,const char* reason)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);auto found=impl->commands.find(command);if(found!=impl->commands.end()){
     found->second.tainted=true;impl->unknown_ownership(found->second,"unsupported-scope");if(reason)impl->notice("tainted-command "+std::string(reason));}}catch(...){} }
-void NativeBackend::command_end(VkCommandBuffer command,VkResult result)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->each_view(command,[&](VkCommandBuffer,Recording& r){r.ownership_closed=result==VK_SUCCESS&&!r.pass_active;impl->each_bundle(r.bundle,[&](Bundle& b){b.ended=result==VK_SUCCESS;});impl->finish_transparency(r,result);});}catch(...){} }
+void NativeBackend::command_end(VkCommandBuffer command,VkResult result)noexcept {try{std::lock_guard<std::mutex> lock(impl->mutex);impl->each_view(command,[&](VkCommandBuffer,Recording& r){r.ownership_closed=result==VK_SUCCESS&&!r.pass_active;impl->each_bundle(r.bundle,[&](Bundle& b){b.ended=result==VK_SUCCESS;if(r.mtoon_frame&&(!r.mtoon_visibility_recorded||!r.mtoon_gbuffer_recorded))b.invalid=true;});impl->finish_transparency(r,result);});}catch(...){} }
 VkResult NativeBackend::before_submit(VkQueue queue,uint32_t count,const VkSubmitInfo* submits)noexcept {
     const auto started=std::chrono::steady_clock::now();const auto tick=GetTickCount64();
     try{std::lock_guard<std::mutex> lock(impl->mutex);
-        impl->owner_work_started=Impl::owner_clock_milliseconds();
         NativeSubmitCall call(impl->submit_timing,started,tick,true);
         {NativeSubmitStageScope retry(impl->submit_timing,NativeSubmitStage::Retry);
             for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBuffers[j]);if(gate!=VK_SUCCESS)return gate;}}
+        Impl::PlayerSubmissionScope player_submission(*impl);
         {NativeSubmitStageScope views(impl->submit_timing,NativeSubmitStage::Views);
             for(uint32_t i=0;i<count;++i){const auto& s=submits[i];const bool shape=native_legacy_submit_supported(s)&&queue==impl->queue&&!impl->disabled&&!impl->context.uncertain;
                 for(uint32_t j=0;j<s.commandBufferCount;++j){impl->submit_timing.command();impl->submit_command(s.pCommandBuffers[j],shape,queue);}}}
+        impl->finish_player_submission();
         {NativeSubmitStageScope history(impl->submit_timing,NativeSubmitStage::History);impl->finish_history_submission(queue);}
+        for(uint32_t i=0;i<count;++i){const auto& submission=submits[i];const bool shape=native_legacy_submit_supported(submission)&&queue==impl->queue&&!impl->disabled&&!impl->context.uncertain;
+            for(uint32_t j=0;j<submission.commandBufferCount;++j)impl->arm_mtoon_submission(submission.pCommandBuffers[j],shape,queue);}
+        impl->finish_player_submission(false);
         return VK_SUCCESS;}catch(...){impl->discard_history();return VK_ERROR_OUT_OF_HOST_MEMORY;}
 }
 VkResult NativeBackend::before_submit2(VkQueue queue,uint32_t count,const VkSubmitInfo2* submits)noexcept {
     const auto started=std::chrono::steady_clock::now();const auto tick=GetTickCount64();
     try{std::lock_guard<std::mutex> lock(impl->mutex);
-        impl->owner_work_started=Impl::owner_clock_milliseconds();
         NativeSubmitCall call(impl->submit_timing,started,tick,false);
         {NativeSubmitStageScope retry(impl->submit_timing,NativeSubmitStage::Retry);
             for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j){const auto gate=impl->retry_gate(queue,submits[i].pCommandBufferInfos[j].commandBuffer);if(gate!=VK_SUCCESS)return gate;}}
+        Impl::PlayerSubmissionScope player_submission(*impl);
         {NativeSubmitStageScope views(impl->submit_timing,NativeSubmitStage::Views);
             for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j){impl->submit_timing.command();impl->submit_command(submits[i].pCommandBufferInfos[j].commandBuffer,false,queue);}}
+        impl->finish_player_submission();
         {NativeSubmitStageScope history(impl->submit_timing,NativeSubmitStage::History);impl->finish_history_submission(queue);}
+        for(uint32_t i=0;i<count;++i)for(uint32_t j=0;j<submits[i].commandBufferInfoCount;++j)
+            impl->arm_mtoon_submission(submits[i].pCommandBufferInfos[j].commandBuffer,false,queue);
+        impl->finish_player_submission(false);
         return VK_SUCCESS;
     }catch(...){return VK_ERROR_OUT_OF_HOST_MEMORY;}
 }
@@ -2114,11 +2448,16 @@ void NativeBackend::submission_result(VkQueue queue,VkResult result)noexcept {
     try{std::lock_guard<std::mutex> lock(impl->mutex);bool failed=false;
         struct Result {unsigned observed=0,candidates=0;std::shared_ptr<SubmittedHistory> emission;};
         std::map<Impl::HistoryKey,Result> views;
+        impl->each_recording([&](VkCommandBuffer,Recording& item){if(item.mtoon_probe_pending&&item.mtoon_probe_queue==queue){
+            item.mtoon_probe_pending=false;if(result!=VK_SUCCESS){item.mtoon_probe_failed=true;failed=true;}
+            else if(item.mtoon_active)impl->each_bundle(item.bundle,[](Bundle& b){if(b.emission&&b.emission->mtoon_request)b.emission->mtoon_rendered=true;});
+        }});
         impl->each_subject_recording([&](VkCommandBuffer,Recording& item){if(item.bundle){auto& b=*item.bundle;if(b.awaiting_submit_result&&b.submitted_queue==queue){
             auto& view=views[Impl::history_key(b.instances.info.buffer,b.first_pass.extent,b.pose.get())];
             ++view.observed;b.awaiting_submit_result=false;
             if(result!=VK_SUCCESS){b.failed_submit=b.invalid=true;failed=true;}
             else{
+                if(b.data.permit[0])impl->observe_pose_age(b,GetTickCount64());
                 if(b.data.permit[0])impl->log_owner_mapping(b);
                 if(b.data.permit[0]&&b.emission&&impl->publication_for(b.instances.info.buffer)&&impl->publication_for(b.instances.info.buffer)->serial==b.pose->serial){
                     ++view.candidates;view.emission=b.emission;view.emission->owner=std::move(b.cpu_owner);

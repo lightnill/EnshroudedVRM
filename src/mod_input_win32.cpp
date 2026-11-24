@@ -43,8 +43,9 @@ struct Window {
     std::array<unsigned short,256> raw_counts{};
     std::atomic<bool> keyboard_supported{true};
     RAWINPUTHEADER last_header{};
-    std::atomic<bool> capturing{false},allowed{true};
+    std::atomic<bool> menu_visible{false},capturing{false},allowed{true};
     std::atomic<std::uint64_t> admission{0};
+    bool awaiting_activation=false,background_frame_reset=false;
     RECT game_clip{};bool clip_null=false,cursor_owned=false;POINT saved_position{};
     HCURSOR game_cursor=nullptr;unsigned show_calls=0;
     HWND game_capture=nullptr;
@@ -144,7 +145,9 @@ LRESULT WINAPI game_default(HWND window,UINT message,WPARAM w,LPARAM l)noexcept 
 }
 Window* cursor_owner()noexcept {
     auto* state=current.load(std::memory_order_acquire);
-    return state&&state->capturing.load(std::memory_order_acquire)&&focused(state->handle)?state:nullptr;
+    // The game's own cursor requests must stay off the desktop while a
+    // visible menu is suspended. Other applications use their own imports.
+    return state&&state->menu_visible.load(std::memory_order_acquire)?state:nullptr;
 }
 BOOL WINAPI game_clip(const RECT* rectangle)noexcept {
     if(auto* state=cursor_owner()){std::lock_guard<std::recursive_mutex> guard(state->mutex);
@@ -195,10 +198,10 @@ bool initialize_imports(){
     const auto limit=nt.OptionalHeader.SizeOfImage;const auto directory=nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
     if(!directory.VirtualAddress||directory.Size<sizeof(IMAGE_IMPORT_DESCRIPTOR)||directory.Size>128*1024||
        directory.VirtualAddress>limit||directory.Size>limit-directory.VirtualAddress)return false;
-    const std::array<const char*,7> names={{"GetRawInputData","ClipCursor","SetCursorPos","SetCursor","DefWindowProcW","SetCapture","ReleaseCapture"}};
-    const std::array<void*,7> expected={{reinterpret_cast<void*>(originals.raw),reinterpret_cast<void*>(originals.clip),reinterpret_cast<void*>(originals.warp),reinterpret_cast<void*>(originals.cursor),reinterpret_cast<void*>(originals.def),reinterpret_cast<void*>(originals.capture),reinterpret_cast<void*>(originals.release)}};
-    const std::array<void*,7> replacements={{reinterpret_cast<void*>(&game_raw),reinterpret_cast<void*>(&game_clip),reinterpret_cast<void*>(&game_warp),reinterpret_cast<void*>(&game_cursor),reinterpret_cast<void*>(&game_default),reinterpret_cast<void*>(&game_capture),reinterpret_cast<void*>(&game_release)}};
-    std::bitset<7> found;std::vector<Import> pending;
+    std::vector<const char*> names={"GetRawInputData","ClipCursor","SetCursorPos","SetCursor","DefWindowProcW","SetCapture","ReleaseCapture"};
+    std::vector<void*> expected={reinterpret_cast<void*>(originals.raw),reinterpret_cast<void*>(originals.clip),reinterpret_cast<void*>(originals.warp),reinterpret_cast<void*>(originals.cursor),reinterpret_cast<void*>(originals.def),reinterpret_cast<void*>(originals.capture),reinterpret_cast<void*>(originals.release)};
+    std::vector<void*> replacements={reinterpret_cast<void*>(&game_raw),reinterpret_cast<void*>(&game_clip),reinterpret_cast<void*>(&game_warp),reinterpret_cast<void*>(&game_cursor),reinterpret_cast<void*>(&game_default),reinterpret_cast<void*>(&game_capture),reinterpret_cast<void*>(&game_release)};
+    std::bitset<14> found;std::vector<Import> pending;
     for(unsigned d=0;d<128&&std::size_t(d+1)*sizeof(IMAGE_IMPORT_DESCRIPTOR)<=directory.Size;++d){
         IMAGE_IMPORT_DESCRIPTOR descriptor{};if(!image_copy(image,directory.VirtualAddress+d*sizeof descriptor,&descriptor,sizeof descriptor,limit))return false;
         if(!descriptor.Name)break;
@@ -221,7 +224,7 @@ bool initialize_imports(){
             }
         }
     }
-    if(!found.all())return false;
+    for(unsigned k=0;k<names.size();++k)if(!found[k])return false;
     for(const auto& entry:pending){if(entry.expected==entry.replacement)continue;
         DWORD protection=0;if(!VirtualProtect(entry.slot,sizeof(void*),PAGE_READWRITE,&protection))return false;
         const auto observed=InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile*>(entry.slot),entry.replacement,entry.expected);
@@ -255,7 +258,7 @@ void restore_cursor(Window& state,bool normal)noexcept {
     state.capturing.store(false,std::memory_order_release);if(!state.cursor_owned)return;
     state.cursor_owned=false;
     if(normal&&focused(state.handle)){real_clip(state.clip_null?nullptr:&state.game_clip);real_warp(state.saved_position.x,state.saved_position.y);real_cursor(state.game_cursor);if(state.game_capture==state.handle)real_capture(state.handle);}
-    else{real_clip(nullptr);if(capture_window()==state.handle)real_release();}
+    else if(capture_window()==state.handle)real_release();
     while(state.show_calls){--state.show_calls;show_cursor(false);}
 }
 void relay(Window& state,const RAWINPUT& packet)noexcept {
@@ -284,8 +287,29 @@ void releases(Window& state,const ModInputTransition& change)noexcept {
 }
 void apply(Window& state,const ModInputTransition& change,bool normal=true){
     releases(state,change);
-    if(change.opened)begin_cursor(state);
-    if(change.closed)restore_cursor(state,normal);
+    if(change.opened){state.menu_visible=true;begin_cursor(state);}
+    if(change.closed){state.menu_visible=false;restore_cursor(state,normal);}
+}
+void lose_focus(Window& state,std::uint32_t time)noexcept {
+    const auto change=state.input.focus_lost(time);
+    releases(state,change);
+    restore_cursor(state,false);
+    if(state.menu_visible){
+        state.raw_down.reset();state.raw_latched.reset();state.raw_counts.fill(0);
+    }
+}
+void resume_menu(Window& state,std::uint32_t time){
+    std::bitset<256> keys;std::bitset<5> buttons;
+#ifndef EVRM_MOD_INPUT_TESTING
+    for(unsigned key=0;key<keys.size();++key)keys[key]=(GetAsyncKeyState(int(key))&0x8000)!=0;
+    constexpr unsigned mouse_keys[]={VK_LBUTTON,VK_RBUTTON,VK_MBUTTON,VK_XBUTTON1,VK_XBUTTON2};
+    for(unsigned n=0;n<buttons.size();++n)buttons[n]=keys[mouse_keys[n]];
+    // The focus notification may be synchronous. Its GetMessageTime() can
+    // precede mouse or keyboard messages still queued from the former focus.
+    time=GetTickCount();
+#endif
+    state.input.resume(time,keys,buttons);
+    begin_cursor(state);
 }
 bool raw_packet(LPARAM l,RAWINPUT& packet)noexcept {
     UINT size=sizeof packet;const auto read=owned_read(reinterpret_cast<HRAWINPUT>(l),RID_INPUT,&packet,&size,sizeof(RAWINPUTHEADER));
@@ -305,14 +329,34 @@ LRESULT CALLBACK procedure(HWND window,UINT message,WPARAM w,LPARAM l)noexcept {
         if(message==close_message){
             if(l&&std::uint64_t(l)!=state->admission.load(std::memory_order_acquire))return 0;
             if(w)state->allowed.store(false,std::memory_order_release);
-            apply(*state,state->input.close(time));return 0;}
-        if(message==WM_KILLFOCUS||(message==WM_ACTIVATEAPP&&!w)||message==WM_NCDESTROY){
-            apply(*state,state->input.focus_lost(time),false);
-            if(message==WM_NCDESTROY){state->allowed=false;RemovePropW(window,property_name);auto* expected=state;current.compare_exchange_strong(expected,nullptr);}
+            state->menu_visible=false;apply(*state,state->input.close(time));return 0;}
+        if(message==WM_KILLFOCUS||(message==WM_ACTIVATEAPP&&!w)||(message==WM_ACTIVATE&&LOWORD(w)==WA_INACTIVE)||message==WM_NCDESTROY){
+            state->awaiting_activation=true;
+            lose_focus(*state,time);
+            if(message==WM_NCDESTROY){state->menu_visible=false;state->allowed=false;RemovePropW(window,property_name);auto* expected=state;current.compare_exchange_strong(expected,nullptr);}
             return CallWindowProcW(state->previous,window,message,w,l);
         }
-        if(!focused(window)&&state->input.open())apply(*state,state->input.focus_lost(time),false);
-        const auto hotkey=state->allowed.load(std::memory_order_acquire)&&focused(window)?mod_settings_snapshot().hotkey:0x1000u;
+        const bool foreground=focused(window);
+        if(message==WM_SETFOCUS||(message==WM_ACTIVATEAPP&&w)||(message==WM_ACTIVATE&&LOWORD(w)!=WA_INACTIVE))state->awaiting_activation=false;
+        if(state->menu_visible){
+            if(!foreground&&state->input.open())lose_focus(*state,time);
+            const bool sink=message==WM_INPUT&&GET_RAWINPUT_CODE_WPARAM(w)==RIM_INPUTSINK;
+            if(foreground&&!state->awaiting_activation&&!state->input.open()&&!sink){
+                // Deactivation can dispatch nested messages before Windows
+                // finishes changing foreground. Resume only on actual return.
+                bool returning=message==WM_SETFOCUS||(message==WM_ACTIVATEAPP&&w);
+#ifndef EVRM_MOD_INPUT_TESTING
+                returning=returning||GetFocus()==window;
+#endif
+                if(returning)resume_menu(*state,time);
+            }
+            if(!state->input.open()||sink){
+                if(message==WM_INPUT)return real_default(window,message,w,l);
+                if((message>=WM_KEYFIRST&&message<=WM_KEYLAST)||(message>=WM_MOUSEFIRST&&message<=WM_MOUSELAST)||message==WM_UNICHAR)return 0;
+                if(message==WM_SETCURSOR)return TRUE;
+            }
+        }
+        const auto hotkey=state->allowed.load(std::memory_order_acquire)&&foreground?mod_settings_snapshot().hotkey:0x1000u;
         if(message==WM_INPUT){RAWINPUT packet{};
             if(raw_packet(l,packet)){
                 state->last_header=packet.header;
@@ -365,7 +409,7 @@ LRESULT CALLBACK procedure(HWND window,UINT message,WPARAM w,LPARAM l)noexcept {
             if(message==WM_MOUSEMOVE||message==WM_CHAR||message==WM_SYSCHAR||message==WM_UNICHAR||message==WM_INPUT_DEVICE_CHANGE)return 0;
         }
         return CallWindowProcW(state->previous,window,message,w,l);
-    }catch(...){std::lock_guard<std::recursive_mutex> guard(state->mutex);state->input.close(message_time());restore_cursor(*state,false);state->allowed=false;return real_default(window,message,w,l);}
+    }catch(...){std::lock_guard<std::recursive_mutex> guard(state->mutex);state->menu_visible=false;state->input.close(message_time());restore_cursor(*state,false);state->allowed=false;return real_default(window,message,w,l);}
 }
 }
 bool mod_input_attach(HWND window,std::uint64_t* admission)noexcept {
@@ -377,7 +421,8 @@ bool mod_input_attach(HWND window,std::uint64_t* admission)noexcept {
             if(!state->keyboard_supported.load(std::memory_order_acquire))return false;
             if(GetWindowLongPtrW(window,GWLP_WNDPROC)!=reinterpret_cast<LONG_PTR>(&procedure)){mod_input_request_close(window);return false;}
             const auto token=next_admission.fetch_add(1,std::memory_order_relaxed);state->admission.store(token,std::memory_order_release);
-            state->allowed=true;if(admission)*admission=token;return true;
+            state->allowed=true;if(admission)*admission=token;
+            return true;
         }
         HMODULE pinned=nullptr;if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,reinterpret_cast<LPCWSTR>(&procedure),&pinned))return false;
         static std::once_flag once;static bool imports_ready=false;std::call_once(once,[]{imports_ready=initialize_imports();});
@@ -404,7 +449,8 @@ bool mod_input_attach(HWND window,std::uint64_t* admission)noexcept {
 }
 bool mod_input_open(HWND window)noexcept {
     auto* state=current.load(std::memory_order_acquire);if(!state||state->handle!=window)return false;
-    return state->capturing.load(std::memory_order_acquire);
+    return state->menu_visible.load(std::memory_order_acquire)
+        ;
 }
 std::uint64_t mod_input_admission(HWND window)noexcept {
     auto* state=current.load(std::memory_order_acquire);return state&&state->handle==window?state->admission.load(std::memory_order_acquire):0;
@@ -414,9 +460,21 @@ void mod_input_retire(HWND window,std::uint64_t admission)noexcept {if(window&&c
 ModInputFrame mod_input_drain(HWND window)noexcept {
     ModInputFrame result;auto* state=current.load(std::memory_order_acquire);if(!state||state->handle!=window)return result;
     try{
-        std::lock_guard<std::recursive_mutex> guard(state->mutex);result.input=state->input.drain();result.open=state->input.open()&&focused(window);
-        if(!result.open){if(state->input.open())mod_input_request_close(window);return result;}
-        POINT point{};if(GetCursorPos(&point)&&ScreenToClient(window,&point)){result.x=float(point.x);result.y=float(point.y);}
+        std::lock_guard<std::recursive_mutex> guard(state->mutex);
+        {
+            result.open=state->menu_visible.load();result.input=state->input.drain();
+            if(result.open&&(!state->input.open()||!focused(window))){
+                // Focus can change before the window thread sees its message.
+                // Never replay old clicks or read the other app's mouse here.
+                result.input.count=state->background_frame_reset?0:1;result.input.events[0]={ModInputEventKind::Reset};
+                state->background_frame_reset=true;
+                result.x=result.y=-std::numeric_limits<float>::max();
+            }else if(result.open){
+                state->background_frame_reset=false;
+                POINT point{};if(GetCursorPos(&point)&&ScreenToClient(window,&point)){result.x=float(point.x);result.y=float(point.y);}
+            }
+        }
+        if(!result.open)return result;
         using Dpi=UINT(WINAPI*)(HWND);const auto dpi=procedure_address<Dpi>(GetModuleHandleW(L"user32.dll"),"GetDpiForWindow");
         if(dpi)result.dpi=std::clamp(dpi(window)/96.f,1.f,3.f);
     }catch(...){mod_input_request_close(window);}

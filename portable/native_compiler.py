@@ -25,7 +25,7 @@ SDK_ROOT = Path(r'C:\Program Files (x86)\Windows Kits\10')
 SDK_VERSION = '10.0.28000.0'
 DEFAULT_COMPILER = str(MSVC_ROOT / 'bin/Hostx64/x64/cl.exe')
 COMPILER_VERSION = '19.44.35229.0'
-DEFAULT_EVIDENCE = Path(__file__).resolve().parents[2] / 'private/native-fixtures/native-compiler-invocations.jsonl'
+DEFAULT_EVIDENCE = Path(__file__).resolve().parents[1] / 'build/native-compiler-invocations.jsonl'
 
 
 def default_compiler():

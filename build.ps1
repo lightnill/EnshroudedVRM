@@ -1,23 +1,14 @@
 param(
-    [ValidateSet('All', 'Bridge', 'Test', 'GpuTests', 'Importer', 'Retarget', 'Springs', 'Pose', 'Graphics', 'Readback', 'Features', 'Selection', 'Trace', 'TraceRuntime', 'Log', 'Deferred', 'Forwarding', 'NativePass', 'DeferredRuntime', 'DeferredIntegration', 'InstanceSuppression', 'NativePose', 'NativeSkinning', 'NativeState', 'NativeOit', 'NativePrepare', 'NativeBackend', 'NativeReplacementCPU', 'ToolGrip')][string]$Target = 'All',
-    [string]$CompilerDirectory,
-    [string]$VulkanIncludeDirectory,
-    [string]$ShaderCompiler,
-    [string]$OutputDirectory,
-    [switch]$PortableRelease
+    [Parameter(Mandatory)][string]$ReleaseZip,
+    [Parameter(Mandatory)][string]$VulkanIncludeDirectory,
+    [Parameter(Mandatory)][string]$ShaderCompiler,
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'build'),
+    [string]$CompilerDirectory = 'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64'
 )
 $ErrorActionPreference = 'Stop'
 $taskProjectRoot = $PSScriptRoot
-$taskWorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $taskProjectRoot '../..'))
-if ($Target -eq 'Selection') {
-    & (Join-Path $taskProjectRoot 'tests/avatar_selection.ps1')
-    if ($LASTEXITCODE -ne 0) { throw "Avatar-selection tests failed: $LASTEXITCODE" }
-    return
-}
-if (-not $CompilerDirectory) { $CompilerDirectory = 'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64' }
-if (-not $VulkanIncludeDirectory) { $VulkanIncludeDirectory = if ($env:EVRM_VULKAN_INCLUDE_DIRECTORY) { $env:EVRM_VULKAN_INCLUDE_DIRECTORY } else { Join-Path $taskWorkspaceRoot 'work/research/Vulkan-Headers/include' } }
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $taskWorkspaceRoot 'work/runtime/bin' }
-if (-not $ShaderCompiler) { $ShaderCompiler = if ($env:EVRM_SHADER_COMPILER) { $env:EVRM_SHADER_COMPILER } else { Join-Path $taskWorkspaceRoot 'work/toolchain/dxc/bin/x64/dxc.exe' } }
+$ReleaseZip = (Resolve-Path -LiteralPath $ReleaseZip).Path
+$PortableRelease = $true
 $CompilerDirectory = [IO.Path]::GetFullPath($CompilerDirectory)
 $VulkanIncludeDirectory = [IO.Path]::GetFullPath($VulkanIncludeDirectory)
 $ShaderCompiler = [IO.Path]::GetFullPath($ShaderCompiler)
@@ -40,8 +31,11 @@ function Invoke-TaskCompiler {
     & $taskPython $taskCompilerDriver $taskCompiler @taskRelativeArguments
     $global:LASTEXITCODE = $LASTEXITCODE
 }
-if ($Target -notin @('Importer','Retarget') -and -not (Test-Path -LiteralPath (Join-Path $VulkanIncludeDirectory 'vulkan/vulkan.h'))) { throw 'Vulkan headers not found.' }
+if (-not (Test-Path -LiteralPath (Join-Path $VulkanIncludeDirectory 'vulkan/vulkan.h'))) { throw 'Vulkan headers not found.' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+$taskInputs = Join-Path $OutputDirectory 'release-inputs'
+& $taskPython (Join-Path $taskProjectRoot 'portable/release_inputs.py') $ReleaseZip $taskInputs
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the pinned release inputs.' }
 $taskSavedPath = $env:PATH
 $taskSavedInclude = $env:INCLUDE
 Push-Location -LiteralPath $taskProjectRoot
@@ -52,292 +46,130 @@ try {
     $taskPreparedEnvironment = $taskPreparedEnvironment | ConvertFrom-Json
     $env:PATH = $taskPreparedEnvironment.PATH
     $env:INCLUDE = $taskPreparedEnvironment.INCLUDE
-    $taskFlags = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static', ('-I' + $VulkanIncludeDirectory))
+    $taskFlags = @(('-I'+$taskInputs), '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-static', ('-I' + $VulkanIncludeDirectory))
     $taskTrimSourceRoot = '/d1trimfile:' + $taskProjectRoot + [IO.Path]::DirectorySeparatorChar
     if($PortableRelease){$taskFlags+=@('-fstack-protector-strong','/Z7','/Brepro',$taskTrimSourceRoot,'-Wl,--nxcompat,--dynamicbase,--high-entropy-va,--no-insert-timestamp')}
-    if ($Target -eq 'All' -or $Target -eq 'Bridge') {
-        if (-not (Test-Path -LiteralPath $ShaderCompiler)) { throw 'Shader compiler not found.' }
-        $taskShaderOutput = Join-Path $OutputDirectory 'shaders'
-        New-Item -ItemType Directory -Path $taskShaderOutput -Force | Out-Null
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-T' 'vs_6_0' '-E' 'vs_main' (Join-Path $taskProjectRoot 'shaders/avatar.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar.vert.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Avatar vertex shader compilation failed.' }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-T' 'ps_6_0' '-E' 'ps_main' (Join-Path $taskProjectRoot 'shaders/avatar.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar.frag.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Avatar fragment shader compilation failed.' }
-        foreach ($taskNativeStage in @(@('vs_native','vs_6_0','avatar_native.pull.vert.spv'),@('ps_visibility','ps_6_0','avatar_native.pull.visibility.spv'),@('ps_gbuffer','ps_6_0','avatar_native.pull.gbuffer.spv'))) {
-            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-T' $taskNativeStage[1] '-E' $taskNativeStage[0] (Join-Path $taskProjectRoot 'shaders/avatar_native.hlsl') '-Fo' (Join-Path $taskShaderOutput $taskNativeStage[2])
-            if ($LASTEXITCODE -ne 0) { throw 'Native output shader compilation failed.' }
-        }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'cs_prepare' (Join-Path $taskProjectRoot 'shaders/native_prepare.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_prepare.comp.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Native preparation shader compilation failed.' }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-T' 'cs_6_0' '-E' 'cs_prepare' '-WX' (Join-Path $taskProjectRoot 'shaders/native_menu_prepare.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_menu_prepare.comp.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Native menu preparation shader compilation failed.' }
-        foreach($taskSkinStage in @(@('cs_skin','native_skinning.comp.spv'),@('cs_finalize','native_skinning.finalize.spv'))){
-            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' $taskSkinStage[0] (Join-Path $taskProjectRoot 'shaders/native_skinning.hlsl') '-Fo' (Join-Path $taskShaderOutput $taskSkinStage[1])
-            if($LASTEXITCODE -ne 0){throw 'Native skinning shader compilation failed.'}
-        }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-T' 'ps_6_0' '-E' 'ps_oit' (Join-Path $taskProjectRoot 'shaders/avatar_native_oit.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar_native.pull.oit.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Native transparency shader compilation failed.' }
-        foreach($taskSurfaceStage in @(@('vs_native','vs_6_0','avatar_native.hlsl','avatar_native.surface.vert.spv'),@('ps_gbuffer','ps_6_0','avatar_native.hlsl','avatar_native.surface.gbuffer.spv'),@('ps_oit','ps_6_0','avatar_native_oit.hlsl','avatar_native.surface.oit.spv'))){
-            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-DEVRM_NATIVE_SURFACE=1' '-T' $taskSurfaceStage[1] '-E' $taskSurfaceStage[0] (Join-Path $taskProjectRoot ('shaders/'+$taskSurfaceStage[2])) '-Fo' (Join-Path $taskShaderOutput $taskSurfaceStage[3])
-            if($LASTEXITCODE -ne 0){throw 'Enhanced material shader compilation failed.'}
-        }
-        foreach($taskSurfacePrepare in @(@('native_prepare.hlsl','native_prepare.surface.comp.spv'),@('native_menu_prepare.hlsl','native_menu_prepare.surface.comp.spv'))){
-            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_SURFACE=1' '-T' 'cs_6_0' '-E' 'cs_prepare' (Join-Path $taskProjectRoot ('shaders/'+$taskSurfacePrepare[0])) '-Fo' (Join-Path $taskShaderOutput $taskSurfacePrepare[1])
-            if($LASTEXITCODE -ne 0){throw 'Enhanced camera shader compilation failed.'}
-        }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_SKIN_SURFACE=1' '-T' 'cs_6_0' '-E' 'cs_skin' (Join-Path $taskProjectRoot 'shaders/native_skinning.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_skinning.surface.comp.spv')
-        if($LASTEXITCODE -ne 0){throw 'Enhanced skin shader compilation failed.'}
-        foreach($taskShadowStage in @(@('vs_shadow','vs_6_0','vert'),@('ps_shadow','ps_6_0','frag'))){
-            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' $taskShadowStage[1] '-E' $taskShadowStage[0] (Join-Path $taskProjectRoot 'shaders/avatar_native_shadow.hlsl') '-Fo' (Join-Path $taskShaderOutput ('avatar_native.shadow.'+$taskShadowStage[2]+'.spv'))
-            if($LASTEXITCODE -ne 0){throw 'Native shadow shader compilation failed.'}
-        }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'cs_snapshot' (Join-Path $taskProjectRoot 'shaders/native_volume_snapshot.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_volume_snapshot.comp.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Native volume snapshot shader compilation failed.' }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/debug_report_capture.hlsl') '-Fo' (Join-Path $taskShaderOutput 'debug_report_capture.comp.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Debug report capture shader compilation failed.' }
-        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/native_player_commit.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_player_commit.comp.spv')
-        if ($LASTEXITCODE -ne 0) { throw 'Shared player commit shader compilation failed.' }
-        $taskSources = @('runtime_bridge.cpp','device_features.cpp','command_trace.cpp','command_trace_runtime.cpp','deferred_rendering.cpp','deferred_runtime.cpp','gpu_probe.cpp','graphics_state.cpp','avatar_renderer.cpp','enshrouded_bridge.cpp','vrm_asset.cpp','retarget.cpp','spring_bones.cpp','tool_grip.cpp','secondary_hand_contact.cpp','native_tool_slots.cpp','native_tool_slot_target.cpp','native_tool_slots_runtime.cpp','native_visual_slot_write.cpp','native_tool_call_patch.cpp','native_avatar_pose.cpp','native_state.cpp','native_draw.cpp','native_backend.cpp','native_owner.cpp','native_owner_process.cpp','native_clip_shader.cpp','native_clip_pipelines.cpp','native_buffer_memory.cpp','native_body_coverage.cpp','native_body_selection.cpp','native_instance_qualifiers.cpp','native_oit_window.cpp','native_transparency_trace.cpp','native_image_memory.cpp','native_material_plan.cpp','native_volume_snapshot.cpp','native_oit_draw.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/' + $_) }
-        $taskSources += @('native_skinning.cpp','native_skinning_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += Join-Path $taskProjectRoot 'src/mouth_deformation.cpp'
-        $taskSources += @('local_voice_observation.cpp','local_voice_copy.cpp','local_voice_observer.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += Join-Path $taskProjectRoot 'src/native_preview_handoff.cpp'
-        $taskSources += Join-Path $taskProjectRoot 'src/native_relative_call.cpp'
-        $taskSources += @('voice_clock.cpp','voice_stream.cpp','voice_features.cpp','voice_profiles.cpp','voice_analyser.cpp','voice_automatic.cpp','voice_worker.cpp','voice_profile_io.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('voice_setup.cpp','mod_settings.cpp','mod_settings_service.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('microphone_backend.cpp','microphone_source.cpp','voice_inputs.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('avatar_settings.cpp','avatar_model.cpp','avatar_service.cpp','avatar_runtime.cpp','native_avatar_assets.cpp','player_assignments.cpp','native_player_commit.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('standalone_startup.cpp','standalone_startup_runtime.cpp','standalone_startup_environment.cpp','standalone_files.cpp','standalone_settings.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('mod_input_state.cpp','mod_input_win32.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('mod_menu.cpp','mod_menu_gpu.cpp','mod_overlay.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskSources += @('debug_report_policy.cpp','debug_report_archive.cpp','debug_report_sources.cpp','debug_report_service.cpp','debug_report_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
-        $taskFlags+=('-I'+(Join-Path $taskProjectRoot 'vendor/imgui'))
-        foreach($taskGuiSource in @('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp','backends/imgui_impl_vulkan.cpp')){
-            $taskGuiObject=Join-Path $OutputDirectory ('gui-'+[IO.Path]::GetFileNameWithoutExtension($taskGuiSource)+'.o')
-            $taskGuiFlags=@('-std=c++17','-O2','-fstack-protector-strong','-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES',('-I'+$VulkanIncludeDirectory),('-I'+(Join-Path $taskProjectRoot 'vendor/imgui')))
-            if($PortableRelease){$taskGuiFlags+=@('/Z7','/Brepro',$taskTrimSourceRoot)}
-            Invoke-TaskCompiler @taskGuiFlags '-c' (Join-Path $taskProjectRoot ('vendor/imgui/'+$taskGuiSource)) '-o' $taskGuiObject
-            if($LASTEXITCODE -ne 0){throw 'Pinned UI dependency compilation failed'}
-            $taskSources+=$taskGuiObject
-        }
-        # Keep pinned upstream C in its own warning policy; project C++ remains Werror.
-        foreach($taskHookSource in @('buffer','hook','trampoline','hde/hde64')){
-            $taskHookObject=Join-Path $OutputDirectory ('minhook-'+[IO.Path]::GetFileName($taskHookSource)+'.o')
-            $taskHookFlags=@('-std=c11','-O2','-fstack-protector-strong')
-            if($PortableRelease){$taskHookFlags+=@('/Z7','/Brepro',$taskTrimSourceRoot)}
-            Invoke-TaskCompiler @taskHookFlags '-c' (Join-Path $taskProjectRoot ('vendor/minhook/src/'+$taskHookSource+'.c')) '-o' $taskHookObject
-            if($LASTEXITCODE -ne 0){throw 'MinHook source compilation failed'}
-            $taskSources+=$taskHookObject
-        }
-        if($PortableRelease){
-            $taskResourceObject=Join-Path $OutputDirectory 'runtime-resource.res'
-            $taskResourceCompiler='C:/Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/x64/rc.exe'
-            & $taskResourceCompiler '/nologo' ('/fo'+$taskResourceObject) 'portable/runtime.rc'
-            if($LASTEXITCODE -ne 0){throw 'Runtime release metadata compilation failed'}
-            $taskSources+=$taskResourceObject
-        }
-        $taskLinkSymbols = @()
-        if ($PortableRelease) {
-            $taskSymbolDirectory = Join-Path $OutputDirectory 'symbols'
-            New-Item -ItemType Directory -Path $taskSymbolDirectory -Force | Out-Null
-            $taskLinkSymbols = @('/link','/DEBUG:FULL',('/PDB:'+(Join-Path $taskSymbolDirectory 'enshrouded_vrm_runtime.pdb')),'/PDBALTPATH:%_PDB%',('/MAP:'+(Join-Path $taskSymbolDirectory 'enshrouded_vrm_runtime.map')),'/OPT:REF','/OPT:ICF')
-        }
-        Invoke-TaskCompiler @taskFlags '-shared' @taskSources '-Wl,--image-base,0x190000000' '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-lshell32' '-ladvapi32' '-lbcrypt' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll') @taskLinkSymbols
-        if ($LASTEXITCODE -ne 0) { throw "Bridge compilation failed: $LASTEXITCODE" }
-        $taskVoiceSdk = Join-Path $taskProjectRoot 'vendor/oculus-lipsync/Win64/OVRLipSync.dll'
-        if ((Get-FileHash -LiteralPath $taskVoiceSdk -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7') { throw 'Official voice detector pin mismatch' }
-        Copy-Item -LiteralPath $taskVoiceSdk -Destination (Join-Path $OutputDirectory 'OVRLipSync.dll') -Force
-        Copy-Item -LiteralPath (Join-Path $taskProjectRoot 'enshrouded_vrm_layer.json') -Destination $OutputDirectory -Force
+    if (-not (Test-Path -LiteralPath $ShaderCompiler)) { throw 'Shader compiler not found.' }
+    $taskShaderOutput = Join-Path $OutputDirectory 'shaders'
+    New-Item -ItemType Directory -Path $taskShaderOutput -Force | Out-Null
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-T' 'vs_6_0' '-E' 'vs_main' (Join-Path $taskProjectRoot 'shaders/avatar.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar.vert.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Avatar vertex shader compilation failed.' }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-T' 'ps_6_0' '-E' 'ps_main' (Join-Path $taskProjectRoot 'shaders/avatar.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar.frag.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Avatar fragment shader compilation failed.' }
+    foreach ($taskNativeStage in @(@('vs_native','vs_6_0','avatar_native.pull.vert.spv'),@('ps_visibility','ps_6_0','avatar_native.pull.visibility.spv'),@('ps_gbuffer','ps_6_0','avatar_native.pull.gbuffer.spv'))) {
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-T' $taskNativeStage[1] '-E' $taskNativeStage[0] (Join-Path $taskProjectRoot 'shaders/avatar_native.hlsl') '-Fo' (Join-Path $taskShaderOutput $taskNativeStage[2])
+        if ($LASTEXITCODE -ne 0) { throw 'Native output shader compilation failed.' }
     }
-    # The published source omits several historical one-off fixtures referenced
-    # below. All/Test use the complete checked-in suite rather than those stale
-    # paths. Actual Vulkan/GPU checks remain an explicit hardware stage.
-    if ($Target -in @('All', 'Test', 'GpuTests')) {
-        $taskSuiteArguments = @((Join-Path $taskProjectRoot 'tests/run_msvc_cpu_suite.py'), '--compiler', $taskCompiler, '--vulkan-include', $VulkanIncludeDirectory, '--shader-compiler', $ShaderCompiler)
-        if ($Target -eq 'GpuTests') { $taskSuiteArguments += '--gpu-only' }
-        & $taskPython @taskSuiteArguments
-        if ($LASTEXITCODE -ne 0) { throw "Native test suite failed: $LASTEXITCODE" }
-        return
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'cs_prepare' (Join-Path $taskProjectRoot 'shaders/native_prepare.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_prepare.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native preparation shader compilation failed.' }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-T' 'cs_6_0' '-E' 'cs_prepare' '-WX' (Join-Path $taskProjectRoot 'shaders/native_menu_prepare.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_menu_prepare.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native menu preparation shader compilation failed.' }
+    foreach($taskSkinStage in @(@('cs_skin','native_skinning.comp.spv'),@('cs_finalize','native_skinning.finalize.spv'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' $taskSkinStage[0] (Join-Path $taskProjectRoot 'shaders/native_skinning.hlsl') '-Fo' (Join-Path $taskShaderOutput $taskSkinStage[1])
+        if($LASTEXITCODE -ne 0){throw 'Native skinning shader compilation failed.'}
     }
-    if ($Target -eq 'All' -or $Target -eq 'ToolGrip') {
-        $taskToolCases = @(
-            @{Name='native_tool_pose_window';Sources=@();Flags=@()},
-            @{Name='tool_grip';Sources=@('tool_grip.cpp');Flags=@()},
-            @{Name='secondary_hand_contact';Sources=@('secondary_hand_contact.cpp','tool_grip.cpp');Flags=@()},
-            @{Name='native_contact_hold';Sources=@('native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp','mouth_deformation.cpp');Flags=@()},
-            @{Name='native_tool_slots';Sources=@('native_tool_slots.cpp');Flags=@()},
-            @{Name='native_tool_slot_target';Sources=@('native_tool_slot_target.cpp');Flags=@()},
-            @{Name='native_tool_call_patch';Sources=@('native_tool_call_patch.cpp');Flags=@()},
-            @{Name='native_tool_slots_runtime';Sources=@('native_tool_slots_runtime.cpp','native_tool_slots.cpp','native_tool_slot_target.cpp','native_tool_call_patch.cpp','native_visual_slot_write.cpp');Flags=@('-DEVRM_NATIVE_TOOL_SLOTS_TESTING=1','-Wl,--wrap=__imp_WriteProcessMemory')},
-            @{Name='native_visual_slot_write';Sources=@('native_visual_slot_write.cpp');Flags=@('-Wl,--wrap=__imp_VirtualQuery','-Wl,--wrap=K32QueryWorkingSetEx')}
-        )
-        foreach ($taskToolCase in $taskToolCases) {
-            $taskToolSources = @((Join-Path $taskProjectRoot ('tests/'+$taskToolCase.Name+'.cpp')))
-            $taskToolSources += @($taskToolCase.Sources | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) })
-            $taskToolExe = Join-Path $OutputDirectory ($taskToolCase.Name+'_tests.exe')
-            Invoke-TaskCompiler @taskFlags @($taskToolCase.Flags) @taskToolSources '-lkernel32' '-lonecore' '-o' $taskToolExe
-            if ($LASTEXITCODE -ne 0) { throw ($taskToolCase.Name+' compilation failed') }
-            & $taskToolExe
-            if ($LASTEXITCODE -ne 0) { throw ($taskToolCase.Name+' tests failed') }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-T' 'ps_6_0' '-E' 'ps_oit' (Join-Path $taskProjectRoot 'shaders/avatar_native_oit.hlsl') '-Fo' (Join-Path $taskShaderOutput 'avatar_native.pull.oit.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native transparency shader compilation failed.' }
+    foreach($taskSurfaceStage in @(@('vs_native','vs_6_0','avatar_native.hlsl','avatar_native.surface.vert.spv'),@('ps_gbuffer','ps_6_0','avatar_native.hlsl','avatar_native.surface.gbuffer.spv'),@('ps_oit','ps_6_0','avatar_native_oit.hlsl','avatar_native.surface.oit.spv'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_MATERIAL_UBO=1' '-DEVRM_NATIVE_VERTEX_PULL=1' '-DEVRM_NATIVE_SURFACE=1' '-T' $taskSurfaceStage[1] '-E' $taskSurfaceStage[0] (Join-Path $taskProjectRoot ('shaders/'+$taskSurfaceStage[2])) '-Fo' (Join-Path $taskShaderOutput $taskSurfaceStage[3])
+        if($LASTEXITCODE -ne 0){throw 'Enhanced material shader compilation failed.'}
+    }
+    foreach($taskSurfacePrepare in @(@('native_prepare.hlsl','native_prepare.surface.comp.spv'),@('native_menu_prepare.hlsl','native_menu_prepare.surface.comp.spv'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_NATIVE_SURFACE=1' '-T' 'cs_6_0' '-E' 'cs_prepare' (Join-Path $taskProjectRoot ('shaders/'+$taskSurfacePrepare[0])) '-Fo' (Join-Path $taskShaderOutput $taskSurfacePrepare[1])
+        if($LASTEXITCODE -ne 0){throw 'Enhanced camera shader compilation failed.'}
+    }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-DEVRM_SKIN_SURFACE=1' '-T' 'cs_6_0' '-E' 'cs_skin' (Join-Path $taskProjectRoot 'shaders/native_skinning.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_skinning.surface.comp.spv')
+    if($LASTEXITCODE -ne 0){throw 'Enhanced skin shader compilation failed.'}
+    foreach($taskShadowStage in @(@('vs_shadow','vs_6_0','vert'),@('ps_shadow','ps_6_0','frag'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' $taskShadowStage[1] '-E' $taskShadowStage[0] (Join-Path $taskProjectRoot 'shaders/avatar_native_shadow.hlsl') '-Fo' (Join-Path $taskShaderOutput ('avatar_native.shadow.'+$taskShadowStage[2]+'.spv'))
+        if($LASTEXITCODE -ne 0){throw 'Native shadow shader compilation failed.'}
+    }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'cs_probe_frame' (Join-Path $taskProjectRoot 'shaders/native_mtoon_probe_frame.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_mtoon_probe_frame.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native MToon probe frame shader compilation failed.' }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.2' '-fvk-use-dx-layout' '-WX' '-T' 'cs_6_0' '-E' 'cs_shade' (Join-Path $taskProjectRoot 'shaders/native_mtoon_shade.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_mtoon_shade.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native MToon shading shader compilation failed.' }
+    foreach($taskMToonWork in @(@('cs_init','native_mtoon_work.init.comp.spv'),@('cs_bounds','native_mtoon_work.bounds.comp.spv'),@('cs_arguments','native_mtoon_work.arguments.comp.spv'),@('cs_finish','native_mtoon_work.finish.comp.spv'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-fvk-use-dx-layout' '-WX' '-T' 'cs_6_0' '-E' $taskMToonWork[0] (Join-Path $taskProjectRoot 'shaders/native_mtoon_work.hlsl') '-Fo' (Join-Path $taskShaderOutput $taskMToonWork[1])
+        if ($LASTEXITCODE -ne 0) { throw 'Native MToon bounded work shader compilation failed.' }
+    }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-fvk-use-dx-layout' '-WX' '-T' 'cs_6_0' '-E' 'cs_composite' (Join-Path $taskProjectRoot 'shaders/native_mtoon_composite.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_mtoon_composite.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native MToon composite shader compilation failed.' }
+    foreach($taskForwardStage in @(@('vs_native','vs_6_0','avatar_native_mtoon_forward_capture.hlsl','avatar_native.mtoon-forward.vert.spv'),@('ps_forward_capture','ps_6_0','avatar_native_mtoon_forward_capture.hlsl','avatar_native.mtoon-forward.capture.spv'),@('cs_shade','cs_6_0','native_mtoon_forward_shade.hlsl','native_mtoon_forward_shade.comp.spv'),@('cs_shade','cs_6_0','native_mtoon_forward_finish.hlsl','native_mtoon_forward_finish.comp.spv'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.2' '-fvk-use-dx-layout' '-WX' '-T' $taskForwardStage[1] '-E' $taskForwardStage[0] (Join-Path $taskProjectRoot ('shaders/'+$taskForwardStage[2])) '-Fo' (Join-Path $taskShaderOutput $taskForwardStage[3])
+        if($LASTEXITCODE -ne 0){throw 'Native MToon forward shader compilation failed'}
+    }
+    foreach($taskMToonRaster in @(@('avatar_native_mtoon_main.hlsl','vs_native','vs_6_0','avatar_native.mtoon.vert.spv'),@('avatar_native_mtoon_main.hlsl','ps_visibility','ps_6_0','avatar_native.mtoon.visibility.spv'),@('avatar_native_mtoon_main.hlsl','ps_gbuffer','ps_6_0','avatar_native.mtoon.gbuffer.spv'),@('avatar_native_mtoon_outline.hlsl','vs_outline','vs_6_0','avatar_native.mtoon-outline.vert.spv'),@('avatar_native_mtoon_outline.hlsl','ps_outline_visibility','ps_6_0','avatar_native.mtoon-outline.visibility.spv'),@('avatar_native_mtoon_outline.hlsl','ps_outline_gbuffer','ps_6_0','avatar_native.mtoon-outline.gbuffer.spv'),@('avatar_native_mtoon_shadow.hlsl','vs_shadow','vs_6_0','avatar_native.mtoon-shadow.vert.spv'),@('avatar_native_mtoon_shadow.hlsl','ps_shadow','ps_6_0','avatar_native.mtoon-shadow.frag.spv'))){
+        & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.2' '-fvk-use-dx-layout' '-WX' '-T' $taskMToonRaster[2] '-E' $taskMToonRaster[1] (Join-Path $taskProjectRoot ('shaders/'+$taskMToonRaster[0])) '-Fo' (Join-Path $taskShaderOutput $taskMToonRaster[3])
+        if ($LASTEXITCODE -ne 0) { throw 'Native MToon raster shader compilation failed.' }
+    }
+    foreach($taskMToonFamily in @('fallback','ordinary','enhanced')){
+        $taskMToonDefines=@('-DEVRM_NATIVE_MATERIAL_UBO=1','-DEVRM_NATIVE_VERTEX_PULL=1','-DEVRM_NATIVE_SURFACE_ID=1')
+        if($taskMToonFamily -eq 'fallback'){$taskMToonDefines+='-DEVRM_NATIVE_MTOON_FALLBACK=1'}
+        if($taskMToonFamily -eq 'enhanced'){$taskMToonDefines+='-DEVRM_NATIVE_SURFACE=1'}
+        foreach($taskMToonStage in @(@('vs_native','vs_6_0','vert'),@('ps_visibility','ps_6_0','visibility'),@('ps_gbuffer','ps_6_0','gbuffer'))){
+            & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.2' '-fvk-use-dx-layout' '-WX' @taskMToonDefines '-T' $taskMToonStage[1] '-E' $taskMToonStage[0] (Join-Path $taskProjectRoot 'shaders/avatar_native.hlsl') '-Fo' (Join-Path $taskShaderOutput ('avatar_native.mtoon-'+$taskMToonFamily+'.'+$taskMToonStage[2]+'.spv'))
+            if($LASTEXITCODE -ne 0){throw 'Native MToon fallback/identity shader compilation failed.'}
         }
     }
-    if ($Target -eq 'All' -or $Target -eq 'Importer') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/vrm_import.cpp') (Join-Path $taskProjectRoot 'src/vrm_asset.cpp') '-o' (Join-Path $OutputDirectory 'vrm_import.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Importer-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'vrm_import.exe') (Join-Path $taskWorkspaceRoot 'work/models/VRM1_Constraint_Twist_Sample.vrm')
-        if ($LASTEXITCODE -ne 0) { throw "Importer tests failed: $LASTEXITCODE" }
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/import_compatibility.cpp') (Join-Path $taskProjectRoot 'src/vrm_asset.cpp') '-o' (Join-Path $OutputDirectory 'import_compatibility.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Compatibility-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'import_compatibility.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Compatibility tests failed: $LASTEXITCODE" }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'cs_snapshot' (Join-Path $taskProjectRoot 'shaders/native_volume_snapshot.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_volume_snapshot.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Native volume snapshot shader compilation failed.' }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/debug_report_capture.hlsl') '-Fo' (Join-Path $taskShaderOutput 'debug_report_capture.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Debug report capture shader compilation failed.' }
+    & $ShaderCompiler '-spirv' '-fspv-target-env=vulkan1.1' '-WX' '-T' 'cs_6_0' '-E' 'main' (Join-Path $taskProjectRoot 'shaders/native_player_commit.hlsl') '-Fo' (Join-Path $taskShaderOutput 'native_player_commit.comp.spv')
+    if ($LASTEXITCODE -ne 0) { throw 'Shared player commit shader compilation failed.' }
+    $taskSources = @('runtime_bridge.cpp','device_features.cpp','command_trace.cpp','command_trace_runtime.cpp','deferred_rendering.cpp','deferred_runtime.cpp','gpu_probe.cpp','graphics_state.cpp','avatar_renderer.cpp','enshrouded_bridge.cpp','vrm_asset.cpp','retarget.cpp','spring_bones.cpp','tool_grip.cpp','secondary_hand_contact.cpp','native_tool_slots.cpp','native_tool_slot_target.cpp','native_tool_slots_runtime.cpp','native_visual_slot_write.cpp','native_tool_call_patch.cpp','native_avatar_pose.cpp','native_state.cpp','native_draw.cpp','native_backend.cpp','native_owner.cpp','native_owner_process.cpp','native_clip_shader.cpp','native_clip_pipelines.cpp','native_buffer_memory.cpp','native_body_coverage.cpp','native_body_selection.cpp','native_instance_qualifiers.cpp','native_oit_window.cpp','native_transparency_trace.cpp','native_image_memory.cpp','native_material_plan.cpp','native_volume_snapshot.cpp','native_oit_draw.cpp','native_mtoon_scene.cpp','native_mtoon_composite.cpp','native_mtoon_shade.cpp','native_mtoon_work.cpp','native_mtoon_shade_program_cache.cpp','native_mtoon_raster_program.cpp','native_mtoon_frame.cpp','native_mtoon_composite_program_cache.cpp','native_mtoon_probe_frame.cpp','native_mtoon_probe_program.cpp','native_mtoon_probe_program_cache.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/' + $_) }
+    $taskSources += @('native_skinning.cpp','native_skinning_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += Join-Path $taskProjectRoot 'src/mouth_deformation.cpp'
+    $taskSources += @('local_voice_observation.cpp','local_voice_copy.cpp','local_voice_observer.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += Join-Path $taskProjectRoot 'src/native_preview_handoff.cpp'
+    $taskSources += Join-Path $taskProjectRoot 'src/native_relative_call.cpp'
+    $taskSources += @('voice_clock.cpp','voice_stream.cpp','voice_features.cpp','voice_profiles.cpp','voice_analyser.cpp','voice_automatic.cpp','voice_worker.cpp','voice_profile_io.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('voice_setup.cpp','mod_settings.cpp','mod_settings_service.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('microphone_backend.cpp','microphone_source.cpp','voice_inputs.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('avatar_settings.cpp','avatar_model.cpp','avatar_service.cpp','avatar_runtime.cpp','native_avatar_assets.cpp','player_assignments.cpp','native_player_commit.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('steam_game_build.cpp','standalone_startup.cpp','standalone_startup_runtime.cpp','standalone_startup_environment.cpp','standalone_files.cpp','standalone_settings.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('mod_input_state.cpp','mod_input_win32.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('mod_menu.cpp','mod_menu_gpu.cpp','mod_overlay.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskSources += @('debug_report_policy.cpp','debug_report_archive.cpp','debug_report_sources.cpp','debug_report_service.cpp','debug_report_gpu.cpp') | ForEach-Object { Join-Path $taskProjectRoot ('src/'+$_) }
+    $taskFlags+=('-I'+(Join-Path $taskProjectRoot 'vendor/imgui'))
+    foreach($taskGuiSource in @('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp','backends/imgui_impl_vulkan.cpp')){
+        $taskGuiObject=Join-Path $OutputDirectory ('gui-'+[IO.Path]::GetFileNameWithoutExtension($taskGuiSource)+'.o')
+        $taskGuiFlags=@('-std=c++17','-O2','-fstack-protector-strong','-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES',('-I'+$VulkanIncludeDirectory),('-I'+(Join-Path $taskProjectRoot 'vendor/imgui')))
+        if($PortableRelease){$taskGuiFlags+=@('/Z7','/Brepro',$taskTrimSourceRoot)}
+        Invoke-TaskCompiler @taskGuiFlags '-c' (Join-Path $taskProjectRoot ('vendor/imgui/'+$taskGuiSource)) '-o' $taskGuiObject
+        if($LASTEXITCODE -ne 0){throw 'Pinned UI dependency compilation failed'}
+        $taskSources+=$taskGuiObject
     }
-    if ($Target -eq 'All' -or $Target -eq 'Retarget') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/retarget.cpp') (Join-Path $taskProjectRoot 'src/retarget.cpp') (Join-Path $taskProjectRoot 'src/vrm_asset.cpp') '-o' (Join-Path $OutputDirectory 'retarget.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Retarget-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'retarget.exe') (Join-Path $taskWorkspaceRoot 'work/models/VRM1_Constraint_Twist_Sample.vrm')
-        if ($LASTEXITCODE -ne 0) { throw "Retarget tests failed: $LASTEXITCODE" }
+    # Keep pinned upstream C in its own warning policy; project C++ remains Werror.
+    foreach($taskHookSource in @('buffer','hook','trampoline','hde/hde64')){
+        $taskHookObject=Join-Path $OutputDirectory ('minhook-'+[IO.Path]::GetFileName($taskHookSource)+'.o')
+        $taskHookFlags=@('-std=c11','-O2','-fstack-protector-strong')
+        if($PortableRelease){$taskHookFlags+=@('/Z7','/Brepro',$taskTrimSourceRoot)}
+        Invoke-TaskCompiler @taskHookFlags '-c' (Join-Path $taskProjectRoot ('vendor/minhook/src/'+$taskHookSource+'.c')) '-o' $taskHookObject
+        if($LASTEXITCODE -ne 0){throw 'MinHook source compilation failed'}
+        $taskSources+=$taskHookObject
     }
-    if ($Target -eq 'All' -or $Target -eq 'Springs') {
-        foreach ($taskSpringGuard in @('spring_optional','spring_parent','spring_relaxed')) {
-            $taskSpringGuardExe = Join-Path $OutputDirectory ($taskSpringGuard+'_tests.exe')
-            Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot ('tests/'+$taskSpringGuard+'.cpp')) (Join-Path $taskProjectRoot 'src/spring_bones.cpp') '-o' $taskSpringGuardExe
-            if ($LASTEXITCODE -ne 0) { throw 'Spring optional guard compilation failed.' }
-            & $taskSpringGuardExe
-            if ($LASTEXITCODE -ne 0) { throw 'Spring optional guard tests failed.' }
-        }
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/spring_bones.cpp') (Join-Path $taskProjectRoot 'src/spring_bones.cpp') (Join-Path $taskProjectRoot 'src/retarget.cpp') (Join-Path $taskProjectRoot 'src/vrm_asset.cpp') '-o' (Join-Path $OutputDirectory 'spring_bones_tests.exe')
-        if ($LASTEXITCODE -ne 0) { throw 'Spring-test compilation failed.' }
-        $taskSpringModels = @('VRM1_Constraint_Twist_Sample.vrm','Seed-san.vrm','AliciaSolid_vrm-0.51.vrm','three-vrm-girl-v0.6.11.vrm') | ForEach-Object { Join-Path $taskWorkspaceRoot ('work/models/'+$_) }
-        & (Join-Path $OutputDirectory 'spring_bones_tests.exe') @taskSpringModels
-        if ($LASTEXITCODE -ne 0) { throw 'Spring tests failed.' }
+    if($PortableRelease){
+        $taskResourceObject=Join-Path $OutputDirectory 'runtime-resource.res'
+        $taskResourceCompiler='C:/Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/x64/rc.exe'
+        & $taskResourceCompiler '/nologo' ('/fo'+$taskResourceObject) 'portable/runtime.rc'
+        if($LASTEXITCODE -ne 0){throw 'Runtime release metadata compilation failed'}
+        $taskSources+=$taskResourceObject
     }
-    if ($Target -eq 'All' -or $Target -eq 'Pose') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/pose_layout.cpp') (Join-Path $taskProjectRoot 'src/enshrouded_bridge.cpp') '-o' (Join-Path $OutputDirectory 'pose_layout.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Pose-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'pose_layout.exe') (Join-Path $taskWorkspaceRoot 'work/rig/menu-profile.json') (Join-Path $taskWorkspaceRoot 'work/rig/player-catalog.json') (Join-Path $taskWorkspaceRoot 'work/runtime/capture-20261022-120521')
-        if ($LASTEXITCODE -ne 0) { throw "Pose tests failed: $LASTEXITCODE" }
+    $taskLinkSymbols = @()
+    if ($PortableRelease) {
+        $taskSymbolDirectory = Join-Path $OutputDirectory 'symbols'
+        New-Item -ItemType Directory -Path $taskSymbolDirectory -Force | Out-Null
+        $taskLinkSymbols = @('/link','/DEBUG:FULL',('/PDB:'+(Join-Path $taskSymbolDirectory 'enshrouded_vrm_runtime.pdb')),'/PDBALTPATH:%_PDB%',('/MAP:'+(Join-Path $taskSymbolDirectory 'enshrouded_vrm_runtime.map')),'/OPT:REF','/OPT:ICF')
     }
-    if ($Target -eq 'All' -or $Target -eq 'Graphics') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/graphics_state.cpp') (Join-Path $taskProjectRoot 'src/graphics_state.cpp') '-o' (Join-Path $OutputDirectory 'graphics_state.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Graphics-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'graphics_state.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Graphics tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Readback') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/gpu_readback.cpp') (Join-Path $taskProjectRoot 'src/gpu_probe.cpp') '-o' (Join-Path $OutputDirectory 'gpu_readback.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Readback-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'gpu_readback.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Readback tests failed: $LASTEXITCODE" }
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/gpu_async_readback.cpp') (Join-Path $taskProjectRoot 'src/gpu_probe.cpp') '-o' (Join-Path $OutputDirectory 'gpu_async_readback.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Async-readback compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'gpu_async_readback.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Async-readback tests failed: $LASTEXITCODE" }
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/native_pose_freshness.cpp') '-o' (Join-Path $OutputDirectory 'native_pose_freshness.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Pose-freshness compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'native_pose_freshness.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Pose-freshness tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Features') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/device_features.cpp') (Join-Path $taskProjectRoot 'src/device_features.cpp') '-o' (Join-Path $OutputDirectory 'device_features.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Device-feature-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'device_features.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Device-feature tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Selection') {
-        & (Join-Path $taskProjectRoot 'tests/avatar_selection.ps1')
-        if ($LASTEXITCODE -ne 0) { throw "Avatar-selection tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Trace') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/command_trace.cpp') (Join-Path $taskProjectRoot 'src/command_trace.cpp') '-o' (Join-Path $OutputDirectory 'command_trace.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Command-trace-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'command_trace.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Command-trace tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'TraceRuntime') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/command_trace_runtime.cpp') (Join-Path $taskProjectRoot 'src/command_trace_runtime.cpp') (Join-Path $taskProjectRoot 'src/command_trace.cpp') '-o' (Join-Path $OutputDirectory 'command_trace_runtime.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Command-trace-runtime-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'command_trace_runtime.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Command-trace-runtime tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Log') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/runtime_log.cpp') '-o' (Join-Path $OutputDirectory 'runtime_log.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Runtime-log-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'runtime_log.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Runtime-log tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Deferred') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/deferred_rendering.cpp') (Join-Path $taskProjectRoot 'src/deferred_rendering.cpp') '-o' (Join-Path $OutputDirectory 'deferred_rendering.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Deferred-rendering-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'deferred_rendering.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Deferred-rendering tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativePass') {
-        & (Join-Path $taskProjectRoot 'tests/native_pass_fixture.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-pass-fixture') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory -ShaderCompiler $ShaderCompiler
-        if ($LASTEXITCODE -ne 0) { throw "Native-pass output fixture failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'Forwarding') {
-        Invoke-TaskCompiler @taskFlags ('-I' + (Join-Path $taskProjectRoot 'src')) (Join-Path $taskProjectRoot 'tests/command_forwarding.cpp') (Join-Path $taskProjectRoot 'src/deferred_rendering.cpp') '-o' (Join-Path $OutputDirectory 'command_forwarding.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Command-forwarding-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'command_forwarding.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Command-forwarding tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'DeferredRuntime') {
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/deferred_runtime.cpp') (Join-Path $taskProjectRoot 'src/deferred_runtime.cpp') (Join-Path $taskProjectRoot 'src/deferred_rendering.cpp') '-o' (Join-Path $OutputDirectory 'deferred_runtime.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Deferred-runtime-test compilation failed: $LASTEXITCODE" }
-        & (Join-Path $OutputDirectory 'deferred_runtime.exe')
-        if ($LASTEXITCODE -ne 0) { throw "Deferred-runtime tests failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'DeferredIntegration') {
-        & (Join-Path $taskProjectRoot 'tests/deferred_integration.ps1') -RuntimeDirectory $OutputDirectory -NativeFixtureDirectory (Join-Path $OutputDirectory 'native-pass-fixture') -OutputDirectory (Join-Path $OutputDirectory 'deferred-integration')
-    }
-    if ($Target -eq 'All' -or $Target -eq 'InstanceSuppression') {
-        & (Join-Path $taskProjectRoot 'tests/instance_suppression_fixture.ps1') -OutputDirectory (Join-Path $OutputDirectory 'instance-suppression-fixture') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory -ShaderCompiler $ShaderCompiler
-        if ($LASTEXITCODE -ne 0) { throw "Instance-suppression fixture failed: $LASTEXITCODE" }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativePose') {
-        Invoke-TaskCompiler @taskFlags ('-I' + (Join-Path $taskProjectRoot 'src')) (Join-Path $taskProjectRoot 'tests/native_avatar_pose.cpp') (Join-Path $taskProjectRoot 'src/native_avatar_pose.cpp') '-o' (Join-Path $OutputDirectory 'native_avatar_pose.exe')
-        if ($LASTEXITCODE -ne 0) { throw 'Native model-space geometry compilation failed.' }
-        & (Join-Path $OutputDirectory 'native_avatar_pose.exe')
-        if ($LASTEXITCODE -ne 0) { throw 'Native model-space geometry tests failed.' }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativeSkinning') {
-        $taskViewExe=Join-Path $OutputDirectory 'native_view_publication_tests.exe'
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/native_view_publication.cpp') '-o' $taskViewExe
-        if($LASTEXITCODE -ne 0){throw 'Native view publication test compilation failed.'}
-        & $taskViewExe
-        if($LASTEXITCODE -ne 0){throw 'Native view publication tests failed.'}
-        $taskSkinSources=@('native_skinning.cpp','native_avatar_pose.cpp','native_material_plan.cpp','mouth_deformation.cpp')|ForEach-Object{Join-Path $taskProjectRoot ('src/'+$_)}
-        $taskSkinExe=Join-Path $OutputDirectory 'native_skinning_tests.exe'
-        Invoke-TaskCompiler @taskFlags (Join-Path $taskProjectRoot 'tests/native_skinning.cpp') @taskSkinSources '-o' $taskSkinExe
-        if($LASTEXITCODE -ne 0){throw 'Native skin packing compilation failed.'}
-        & $taskSkinExe
-        if($LASTEXITCODE -ne 0){throw 'Native skin packing tests failed.'}
-        & (Join-Path $taskProjectRoot 'tests/native_skinning_gpu.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-skinning-gpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory -ShaderCompiler $ShaderCompiler
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativeState') {
-        Invoke-TaskCompiler @taskFlags ('-I' + (Join-Path $taskProjectRoot 'src')) (Join-Path $taskProjectRoot 'tests/native_state.cpp') (Join-Path $taskProjectRoot 'src/native_state.cpp') (Join-Path $taskProjectRoot 'src/native_oit_window.cpp') '-o' (Join-Path $OutputDirectory 'native_state.exe')
-        if ($LASTEXITCODE -ne 0) { throw 'Native metadata compilation failed.' }
-        & (Join-Path $OutputDirectory 'native_state.exe')
-        if ($LASTEXITCODE -ne 0) { throw 'Native metadata tests failed.' }
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativePrepare') {
-        & (Join-Path $taskProjectRoot 'tests/native_prepare_fixture.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-prepare-fixture') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory -ShaderCompiler $ShaderCompiler
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativeBackend') {
-        & (Join-Path $taskProjectRoot 'tests/native_backend_fixture.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-backend-fixture') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory -ShaderCompiler $ShaderCompiler
-    }
-    if ($Target -eq 'All' -or $Target -eq 'NativeReplacementCPU') {
-        & (Join-Path $taskProjectRoot 'tests/native_replacement_cpu.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-replacement-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-        & (Join-Path $taskProjectRoot 'tests/native_replacement_backend.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-replacement-backend-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-        & (Join-Path $taskProjectRoot 'tests/native_launch.ps1')
-        & (Join-Path $taskProjectRoot 'tests/native_oit_window.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-oit-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-        & (Join-Path $taskProjectRoot 'tests/native_transparency_trace.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-transparency-trace-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-        & (Join-Path $taskProjectRoot 'tests/native_image_memory.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-image-memory-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-        & (Join-Path $taskProjectRoot 'tests/native_image_hooks.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-image-hooks-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-    }
-    if ($Target -eq 'NativeOit') {
-        & (Join-Path $taskProjectRoot 'tests/native_oit_window.ps1') -OutputDirectory (Join-Path $OutputDirectory 'native-oit-cpu') -CompilerDirectory $CompilerDirectory -VulkanIncludeDirectory $VulkanIncludeDirectory
-    }
+    Invoke-TaskCompiler @taskFlags '-shared' @taskSources '-Wl,--image-base,0x190000000' '-lkernel32' '-lonecore' '-luser32' '-lole32' '-luuid' '-lshell32' '-ladvapi32' '-lbcrypt' '-o' (Join-Path $OutputDirectory 'enshrouded_vrm_runtime.dll') @taskLinkSymbols
+    if ($LASTEXITCODE -ne 0) { throw "Bridge compilation failed: $LASTEXITCODE" }
+    $taskVoiceSdk = Join-Path $taskInputs 'OVRLipSync.dll'
+    if ((Get-FileHash -LiteralPath $taskVoiceSdk -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'f20e7bcb50f1591e1c4fdf5fb16ceda876ec599c1731fd857779b977b4e585b7') { throw 'Official voice detector pin mismatch' }
+    Copy-Item -LiteralPath $taskVoiceSdk -Destination (Join-Path $OutputDirectory 'OVRLipSync.dll') -Force
+    Copy-Item -LiteralPath (Join-Path $taskProjectRoot 'enshrouded_vrm_layer.json') -Destination $OutputDirectory -Force
+    & $taskPython 'portable/bootstrap/build_input_bootstrap.py' $taskProjectRoot (Join-Path $OutputDirectory 'bootstrap') $CompilerDirectory
+    if ($LASTEXITCODE -ne 0) { throw 'Input loader compilation failed.' }
 } finally {
     $env:PATH = $taskSavedPath
     $env:INCLUDE = $taskSavedInclude

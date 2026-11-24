@@ -6,7 +6,7 @@
 #include <string_view>
 namespace evrm {
 struct DebugReportOptions {
-    std::filesystem::path directory,game_directory,capture_shader;std::string mod_version,game_sha256,nonce;bool background=true;
+    std::filesystem::path directory,game_directory,capture_shader;std::string mod_version,runtime_sha256,game_sha256,nonce;bool background=true;
     std::size_t write_limit=std::numeric_limits<std::size_t>::max();
     std::function<std::uint64_t()> clock;
     std::function<std::string()> utc;

@@ -26,7 +26,10 @@ bool rendering_command_coverage_supported(std::uint32_t version,const DeviceFeat
     if(VK_API_VERSION_VARIANT(version)!=0||VK_API_VERSION_MAJOR(version)!=1||VK_API_VERSION_MINOR(version)>4)return false;
     // ID2 adds presentation metadata; wait2 adds only the host command
     // vkWaitForPresent2KHR. Neither adds a command-buffer recording entry.
-    static constexpr std::array<std::string_view,23> allowed{{
+    // These latency/presentation extensions add no command-buffer recording
+    // entry points. Submission metadata still passes the separate strict
+    // native submit checks; accepting a name here never bypasses those checks.
+    static constexpr std::array<std::string_view,26> allowed{{
         "VK_KHR_swapchain","VK_KHR_swapchain_maintenance1","VK_EXT_shader_demote_to_helper_invocation",
         "VK_KHR_shader_non_semantic_info","VK_KHR_dynamic_rendering","VK_EXT_memory_priority",
         "VK_EXT_pageable_device_local_memory","VK_EXT_memory_budget","VK_KHR_external_semaphore_win32",
@@ -34,7 +37,8 @@ bool rendering_command_coverage_supported(std::uint32_t version,const DeviceFeat
         "VK_KHR_robustness2","VK_EXT_mesh_shader","VK_KHR_acceleration_structure",
         "VK_KHR_deferred_host_operations","VK_KHR_ray_query","VK_NVX_binary_import",
         "VK_NVX_image_view_handle","VK_KHR_buffer_device_address","VK_KHR_push_descriptor",
-        "VK_KHR_present_id2","VK_KHR_present_wait2"
+        "VK_KHR_present_id2","VK_KHR_present_wait2",
+        "VK_NV_low_latency2","VK_KHR_present_id","VK_KHR_timeline_semaphore"
     }};
     for(const auto& extension:observation.enabled_extensions) {
         const std::string_view name(extension.data(),extension.size());bool found=false;

@@ -48,12 +48,10 @@ AvatarPickResult native_picker(std::uintptr_t raw,void*){
 void remember(AvatarPreferences& prefs,const PreparedAvatar& model){
     prefs.selected_path=model.path;
     prefs.recent.erase(std::remove_if(prefs.recent.begin(),prefs.recent.end(),[&](const auto& path){return same_path(path,model.path);}),prefs.recent.end());
-    prefs.recent.insert(prefs.recent.begin(),model.path);if(prefs.recent.size()>16)prefs.recent.resize(16);
+    prefs.recent.insert(prefs.recent.begin(),model.path);
     const auto found=std::find_if(prefs.profiles.begin(),prefs.profiles.end(),[&](const auto& profile){return profile.fingerprint==model.fingerprint;});
-    AvatarProfile profile=found==prefs.profiles.end()?AvatarProfile{model.fingerprint,AvatarShaderPreset::GameLighting,{}}:*found;
-    if(found!=prefs.profiles.end())prefs.profiles.erase(found);
-    if(prefs.profiles.size()==16)prefs.profiles.erase(prefs.profiles.begin());
-    prefs.profiles.push_back(std::move(profile));
+    if(found==prefs.profiles.end())prefs.profiles.push_back({model.fingerprint,AvatarShaderPreset::MToon,{}});
+    else std::rotate(found,found+1,prefs.profiles.end());
 }
 }
 #include "avatar_player_service.inl"

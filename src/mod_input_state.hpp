@@ -24,6 +24,7 @@ public:
     ModInputTransition motion(std::uint32_t time)const noexcept;
     ModInputTransition close(std::uint32_t time)noexcept;
     ModInputTransition focus_lost(std::uint32_t time)noexcept;
+    void resume(std::uint32_t time,const std::bitset<256>& held_keys,const std::bitset<5>& held_buttons)noexcept;
     ModInputBatch drain()noexcept;
 private:
     bool stale(std::uint32_t time)const noexcept;

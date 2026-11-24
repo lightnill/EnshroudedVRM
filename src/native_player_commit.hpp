@@ -12,7 +12,7 @@ namespace evrm {
 struct NativePlayerCommitState;
 class NativePlayerCommit;
 
-// Retain with ALL subject frame and gate buffer leases until completion. This
+// Retain ALL frame, subject-mask and aggregate-output leases until completion. This
 // owns descriptors and a shared pipeline lifetime; it never owns buffer memory.
 class NativePlayerCommitBatch {
 public:
@@ -28,23 +28,23 @@ private:
     std::unique_ptr<Impl> impl;
 };
 
-// Two-phase common admission after all per-subject prepare dispatches. Only two
-// storage bindings are used, including on devices with core minimum limits.
+// Clear and accumulate ready-only clipping after all subject prepares. Four
+// storage bindings fit the core minimum; individual prepared frames are read-only.
 class NativePlayerCommit {
 public:
     NativePlayerCommit(VkDevice,PFN_vkGetDeviceProcAddr,const std::uint32_t* words,std::size_t word_count);
     ~NativePlayerCommit();
     NativePlayerCommit(const NativePlayerCommit&)=delete;
     NativePlayerCommit& operator=(const NativePlayerCommit&)=delete;
-    // 1..16 unique frame buffers, explicit ranges >=196 and >=4 respectively.
-    // Offsets use portable 256-byte alignment; ranges use 4-byte alignment and
-    // cannot overflow. Gate must have a distinct buffer handle. Caller proves
-    // actual backing bounds, STORAGE_BUFFER usage and nonaliasing memory leases.
-    // Gate is caller-initialized coherent host memory; batch never writes it.
-    std::shared_ptr<NativePlayerCommitBatch> batch(const std::vector<VkDescriptorBufferInfo>& subject_frames,VkDescriptorBufferInfo gate);
-    // Initial host/compute dependency, all reductions, compute dependency, all
-    // propagations. Caller restores native compute state and records the final
-    // compute->vertex/fragment/mesh/host dependency. No queue waits or readbacks.
+    // 1..16 frame/mask pairs; explicit ranges >=196/16384; outputs >=16384/196.
+    // Every handle is distinct. Offsets are 256-byte aligned, ranges are
+    // 4-byte aligned and cannot overflow. Caller proves backing bounds, usage
+    // and disjoint physical memory leases. No host writes occur in batch().
+    std::shared_ptr<NativePlayerCommitBatch> batch(const std::vector<VkDescriptorBufferInfo>& subject_frames,
+        const std::vector<VkDescriptorBufferInfo>& subject_masks,VkDescriptorBufferInfo effective_mask,VkDescriptorBufferInfo clip_control);
+    // Clear outputs once, compute dependency, atomic accumulation per subject.
+    // Caller restores compute state and publishes SHADER_READ and UNIFORM_READ
+    // for vertex/fragment/mesh clipping. No queue waits or readbacks.
     bool record(VkCommandBuffer,const NativePlayerCommitBatch&) noexcept;
     void quarantine() noexcept;
 private:

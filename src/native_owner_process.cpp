@@ -3,6 +3,7 @@
 #include <windows.h>
 #include "native_owner_process.hpp"
 #include "native_owner_profile.hpp"
+#include "steam_game_build.hpp"
 #include "sha256.hpp"
 #include <algorithm>
 #include <array>
@@ -12,7 +13,7 @@
 
 namespace evrm { namespace {
 using U=std::uint64_t;
-constexpr U file_bytes=35476040;
+constexpr U file_byte_limit=128*1024*1024;
 constexpr std::size_t header_window=65536;
 struct Declined {const char* reason;};
 void need(bool ok,const char* reason){if(!ok)throw Declined{reason};}
@@ -46,18 +47,19 @@ NativeOwnerImage verify_disk(const std::filesystem::path& path,const Headers* lo
     need(!path.empty()&&path.native().size()<32768,"executable disk path missing or oversized");File file;
     file.handle=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,nullptr);
     need(file.handle!=INVALID_HANDLE_VALUE,"executable readonly disk open failed");
-    LARGE_INTEGER size{};need(GetFileSizeEx(file.handle,&size)&&size.QuadPart==static_cast<LONGLONG>(file_bytes),"executable disk file size unsupported");
+    LARGE_INTEGER size{};need(GetFileSizeEx(file.handle,&size)&&size.QuadPart>=static_cast<LONGLONG>(header_window)&&size.QuadPart<=static_cast<LONGLONG>(file_byte_limit),"executable disk file size unsupported");
     BY_HANDLE_FILE_INFORMATION before{};need(GetFileInformationByHandle(file.handle,&before)&&!(before.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY),"executable disk identity unavailable");
-    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(file_bytes));
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size.QuadPart));
     for(std::size_t offset=0;offset<bytes.size();){DWORD wanted=static_cast<DWORD>(std::min<std::size_t>(65536,bytes.size()-offset)),received=0;need(ReadFile(file.handle,bytes.data()+offset,wanted,&received,nullptr)&&received==wanted,"executable disk read incomplete");offset+=received;}
     std::uint8_t extra=0;DWORD received=0;need(ReadFile(file.handle,&extra,1,&received,nullptr)&&received==0,"executable disk size changed");
     BY_HANDLE_FILE_INFORMATION after{};need(GetFileInformationByHandle(file.handle,&after)&&before.dwVolumeSerialNumber==after.dwVolumeSerialNumber&&before.nFileIndexHigh==after.nFileIndexHigh&&before.nFileIndexLow==after.nFileIndexLow&&before.nFileSizeHigh==after.nFileSizeHigh&&before.nFileSizeLow==after.nFileSizeLow&&CompareFileTime(&before.ftLastWriteTime,&after.ftLastWriteTime)==0,"executable disk identity changed during read");
     Headers headers;std::memcpy(&headers.dos,bytes.data(),sizeof headers.dos);dos_valid(headers.dos);std::memcpy(&headers.nt,bytes.data()+headers.dos.e_lfanew,sizeof headers.nt);headers_valid(headers);
     if(loaded){std::string why;need(detail::match_native_owner_headers(header_bytes(headers),header_bytes(*loaded),actual_base,why),"loaded and disk executable headers disagree");}
-    const auto digest=detail::sha256(bytes.data(),bytes.size());need(std::equal(digest.begin(),digest.end(),std::begin(native_owner_profile::image_sha256)),"executable disk SHA256 unsupported");
-    NativeOwnerImage result;result.size=headers.nt.OptionalHeader.SizeOfImage;result.timestamp=headers.nt.FileHeader.TimeDateStamp;result.sha256=digest;return result;
+    const auto digest=detail::sha256(bytes.data(),bytes.size()); // diagnostic/stale-identity token, not compatibility
+    const auto steam=read_steam_game_build(path);
+    NativeOwnerImage result;result.size=headers.nt.OptionalHeader.SizeOfImage;result.timestamp=headers.nt.FileHeader.TimeDateStamp;result.sha256=digest;result.steam_build_id=steam.build_id;return result;
 }
-bool same_image(const NativeOwnerImage& a,const NativeOwnerImage& b){return a.base==b.base&&a.size==b.size&&a.timestamp==b.timestamp&&a.sha256==b.sha256;}
+bool same_image(const NativeOwnerImage& a,const NativeOwnerImage& b){return a.base==b.base&&a.size==b.size&&a.timestamp==b.timestamp&&a.steam_build_id==b.steam_build_id&&a.sha256==b.sha256;}
 } // namespace
 NativeOwnerProcess::NativeOwnerProcess()noexcept{
     try{
@@ -65,9 +67,10 @@ NativeOwnerProcess::NativeOwnerProcess()noexcept{
         need(read(base,&loaded.dos,sizeof loaded.dos),"current main DOS header unreadable");dos_valid(loaded.dos);
         need(base<=0x800000000000ULL-U(loaded.dos.e_lfanew)&&read(base+U(loaded.dos.e_lfanew),&loaded.nt,sizeof loaded.nt),"current main NT header unreadable");headers_valid(loaded);
         std::array<wchar_t,32768> path{};const DWORD length=GetModuleFileNameW(module,path.data(),static_cast<DWORD>(path.size()));need(length&&length<path.size(),"current main executable filename unavailable or truncated");
-        auto verified=verify_disk(std::filesystem::path(path.data()),&loaded,base);verified.base=base;image_=verified;supported_=true;reason_.clear();
+        auto verified=verify_disk(std::filesystem::path(path.data()),&loaded,base);verified.base=base;image_=verified;supported_=verified.steam_build_id==native_owner_profile::steam_build_id;
+        if(supported_)reason_.clear();else set_reason(reason_,verified.steam_build_id?"installed Steam build unsupported":"installed Steam build ID unavailable");
     }catch(const Declined& error){set_reason(reason_,error.reason);}catch(...){set_reason(reason_,"current main executable attestation unavailable");}
-    if(!supported_)image_={};
+    // A known PE image may still supply diagnostics when the Steam build is unavailable.
 }
 bool NativeOwnerProcess::read(std::uint64_t address,void* destination,std::size_t count)const noexcept{
     if(!destination||!count||count>65536||address<0x10000||address>=0x800000000000ULL||count>0x800000000000ULL-address)return false;
@@ -81,7 +84,9 @@ std::uint64_t NativeOwnerProcess::work_milliseconds()const noexcept{
 bool NativeOwnerProcess::capture(NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
     if(!supported_){candidate={};set_reason(why,reason_.empty()?"current main executable is unsupported":reason_.c_str());return false;}
-    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture(*this,image_,candidate,why,limits,stats);}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);
+        return cache_.capture(*this,image_,candidate,why,limits,stats);
+    }
     catch(...){candidate={};set_reason(why,"owner observation synchronization failure");return false;}
 }
 bool NativeOwnerProcess::players(NativePlayerRoster& roster,std::string& why,const NativeOwnerLimits& limits)const noexcept{
@@ -92,26 +97,40 @@ bool NativeOwnerProcess::players(NativePlayerRoster& roster,std::string& why,con
 bool NativeOwnerProcess::capture_players(const std::vector<NativePlayerIdentity>& players,std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
     if(!supported_){candidates.clear();set_reason(why,"current main executable is unsupported");return false;}
-    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture_players(*this,image_,players,candidates,why,limits,stats);}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);
+        return cache_.capture_players(*this,image_,players,candidates,why,limits,stats);
+    }
     catch(...){candidates.clear();set_reason(why,"player observation synchronization failure");return false;}
 }
 NativePlayerOwnerBatch NativeOwnerProcess::capture_available_players(const std::vector<NativePlayerIdentity>& players,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
     if(!supported_){set_reason(why,"current main executable is unsupported");return {};}
-    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture_available_players(*this,image_,players,why,limits,stats);}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);
+        return cache_.capture_available_players(*this,image_,players,why,limits,stats);
+    }
+    catch(...){set_reason(why,"player observation synchronization failure");return {};}
+}
+NativePlayerOwnerBatch NativeOwnerProcess::capture_independent_players(const std::vector<NativePlayerIdentity>& players,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
+    if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
+    if(!supported_){set_reason(why,"current main executable is unsupported");return {};}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);
+        return cache_.capture_independent_players(*this,image_,players,why,limits,stats);
+    }
     catch(...){set_reason(why,"player observation synchronization failure");return {};}
 }
 bool NativeOwnerProcess::capture_player(const NativePlayerIdentity& player,NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
     if(!supported_){candidate={};set_reason(why,"current main executable is unsupported");return false;}
-    try{std::lock_guard<std::mutex> lock(cache_mutex_);return cache_.capture_player(*this,image_,player,candidate,why,limits,stats);}
+    try{std::lock_guard<std::mutex> lock(cache_mutex_);
+        return cache_.capture_player(*this,image_,player,candidate,why,limits,stats);
+    }
     catch(...){candidate={};set_reason(why,"player observation synchronization failure");return false;}
 }
-bool NativeOwnerProcess::revalidate_players(std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
+bool NativeOwnerProcess::revalidate_players(std::vector<NativeOwnerCandidate>& candidates,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats,std::vector<std::uint8_t>* read_workspace)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
     if(!supported_){candidates.clear();set_reason(why,"current main executable is unsupported");return false;}
     for(const auto& candidate:candidates)if(!same_image(candidate.image,image_)){candidates.clear();set_reason(why,"player owner batch image disagrees with attested current main");return false;}
-    return revalidate_native_player_owners(*this,candidates,why,limits,stats);
+    return revalidate_native_player_owners(*this,candidates,why,limits,stats,read_workspace);
 }
 bool NativeOwnerProcess::revalidate(NativeOwnerCandidate& candidate,std::string& why,const NativeOwnerLimits& limits,NativeOwnerObservationStats* stats)const noexcept{
     if(stats){*stats={};stats->phase=NativeOwnerObservationPhase::adapter;stats->failure_location=NativeOwnerFailureLocation::validation;}
@@ -147,7 +166,7 @@ bool match_native_owner_headers(const NativeOwnerHeaderBytes& disk,const NativeO
     }catch(const Declined& error){set_reason(why,error.reason);}catch(...){set_reason(why,"executable header comparison unavailable");}return false;
 }
 bool verify_native_owner_executable(const std::filesystem::path& path,NativeOwnerImage& image,std::string& why)noexcept{
-    image={};why.clear();try{image=verify_disk(path,nullptr,0);return true;}catch(const Declined& error){set_reason(why,error.reason);}catch(...){set_reason(why,"executable disk verification unavailable");}image={};return false;
+    image={};why.clear();try{image=verify_disk(path,nullptr,0);need(image.steam_build_id==native_owner_profile::steam_build_id,"installed Steam build unsupported or unavailable");return true;}catch(const Declined& error){set_reason(why,error.reason);}catch(...){set_reason(why,"executable disk verification unavailable");}image={};return false;
 }
 }
 }

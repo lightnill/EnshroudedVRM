@@ -1,20 +1,12 @@
 #include "input_startup.hpp"
 #include "input_proxy.hpp"
-#include "input_trigger_profile.hpp"
 #include "standalone_bootstrap_view.hpp"
-#include "sha256.hpp"
-#include <intrin.h>
-#include <cstring>
 
 namespace enshrouded::vrm {
 namespace {
 namespace view=bootstrap_view;
 HMODULE own_module=nullptr;
-DWORD attach_thread=0;
-PVOID volatile* command_slot=nullptr;
-PVOID original_command=nullptr;
-const unsigned char* expected_return=nullptr;
-wchar_t chain_path[32768]{},game_path[32768]{},bootstrap_path[32768]{};
+wchar_t chain_path[32768]{},bootstrap_path[32768]{};
 // Retain the admitted files/directories and loaded provider until process exit.
 // None of these objects needs a dynamic initializer or TLS callback.
 HANDLE admission_locks[128]{};
@@ -76,21 +68,6 @@ bool lock_parents(wchar_t* path,HANDLE* locks,unsigned& count,unsigned capacity,
         ++count;
     }
     return true;
-}
-bool game_matches(HANDLE file) noexcept {
-    LARGE_INTEGER size{};
-    if(!GetFileSizeEx(file,&size)||size.QuadPart<=0||size.QuadPart>128*1024*1024)return false;
-    const auto mapping=CreateFileMappingW(file,nullptr,PAGE_READONLY,0,0,nullptr);
-    if(!mapping)return false;
-    const auto bytes=MapViewOfFile(mapping,FILE_MAP_READ,0,0,0);
-    bool valid=false;
-    if(bytes) {
-        const auto digest=evrm::detail::sha256_portable(bytes,static_cast<std::size_t>(size.QuadPart));
-        valid=true;
-        for(unsigned i=0;i<32;++i)if(digest[i]!=input_trigger::game_sha256[i])valid=false;
-        UnmapViewOfFile(bytes);
-    }
-    CloseHandle(mapping);return valid;
 }
 bool valid_chain_image(HANDLE file) noexcept {
     LARGE_INTEGER size{};IMAGE_DOS_HEADER dos{};DWORD read=0;
@@ -174,11 +151,9 @@ void status(const char* reason,DWORD error) noexcept {
     close_locks(parents,parents_count);
 }
 void deferred_chain() noexcept {
-    if(!lock_parents(game_path,admission_locks,admission_count,125,false)) {status("game_path_refused",GetLastError());return;}
-    HANDLE game=nullptr;
-    if(!checked_open(game_path,false,false,game)){status("game_open_failed",GetLastError());return;}
-    admission_locks[admission_count++]=game;
-    if(!game_matches(game)){status("game_hash_mismatch",ERROR_REVISION_MISMATCH);return;}
+    if(!lock_parents(bootstrap_path,admission_locks,admission_count,126,false)) {
+        status("bootstrap_path_refused",GetLastError());return;
+    }
     HANDLE bootstrap=nullptr;
     if(!checked_open(bootstrap_path,false,false,bootstrap)){status("bootstrap_open_failed",GetLastError());return;}
     admission_locks[admission_count++]=bootstrap;
@@ -210,56 +185,20 @@ void deferred_chain() noexcept {
     case InputChainResult::tls_unavailable:status("chain_tls_unavailable",ERROR_NOT_ENOUGH_MEMORY);break;
     }
 }
-LPWSTR WINAPI command_hook();
-PVOID hook_address() noexcept {
-    const auto function=&command_hook;PVOID address=nullptr;
-    static_assert(sizeof(address)==sizeof(function));std::memcpy(&address,&function,sizeof(address));return address;
-}
-bool exchange_slot(PVOID expected,PVOID replacement) noexcept {
-    if(!command_slot)return false;
-    DWORD previous=0;
-    if(!VirtualProtect(const_cast<PVOID*>(command_slot),sizeof(PVOID),PAGE_READWRITE,&previous))return false;
-    const auto old=InterlockedCompareExchangePointer(command_slot,replacement,expected);
-    DWORD ignored=0;VirtualProtect(const_cast<PVOID*>(command_slot),sizeof(PVOID),previous,&ignored);
-    return old==expected;
-}
-__declspec(noinline) LPWSTR WINAPI command_hook() {
-    const auto saved=GetLastError();
-    if(_ReturnAddress()==expected_return&&GetCurrentThreadId()==attach_thread) {
-        // Remove our gate before any downstream DllMain can call this API.
-        // Never restore over a hook installed by another component.
-        if(exchange_slot(hook_address(),original_command))deferred_chain();
-    }
-    SetLastError(saved);return GetCommandLineW();
-}
-bool main_imports_input(const unsigned char* base,const IMAGE_NT_HEADERS64& nt) noexcept {
-    const auto size=nt.OptionalHeader.SizeOfImage;
-    const auto imports=nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if(!imports.VirtualAddress||imports.Size<sizeof(IMAGE_IMPORT_DESCRIPTOR)||imports.Size>size||imports.VirtualAddress>size-imports.Size)return false;
-    const auto entries=reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(base+imports.VirtualAddress);
-    for(unsigned i=0;i<imports.Size/sizeof(*entries)&&entries[i].Name;++i) {
-        const auto name=entries[i].Name;
-        constexpr char target[]="dinput8.dll";
-        if(name>size-sizeof(target))continue;
-        bool same=true;
-        for(unsigned j=0;j<sizeof(target);++j) {
-            auto c=base[name+j];if(c>='A'&&c<='Z')c+=32;
-            if(c!=static_cast<unsigned char>(target[j]))same=false;
-        }
-        if(same)return true;
-    }
-    return false;
+DWORD WINAPI start_chain(void*) noexcept {
+    deferred_chain();
+    // A provider whose entry point has run may still call the proxy later.
+    if(!chain_module)close_locks(admission_locks,admission_count);
+    return 0;
 }
 }
 
 void input_startup_record(InputBootstrapPhase phase,InputBootstrapResult result,DWORD error) noexcept {
-    // Called only during process attach under the loader lock. The safe gate
-    // runs later on that same thread; no dynamic initialization or I/O here.
+    // Written during attach before the one-shot worker starts.
     attach_record={phase,result,error};
 }
 void input_startup_attach(HMODULE own,const wchar_t* module,DWORD module_length,
                           const wchar_t* executable,DWORD executable_length) noexcept {
-    if(!input_trigger::enabled)return;
     const std::wstring_view module_text(module,module_length),exe_text(executable,executable_length);
     const auto root=view::rfind(module_text,L'\\'),exe_root=view::rfind(exe_text,L'\\');
     constexpr auto suffix=view::literal(L"\\dinput8.chainload.dll");
@@ -271,30 +210,17 @@ void input_startup_attach(HMODULE own,const wchar_t* module,DWORD module_length,
     for(std::size_t i=0;i<root;++i)chain_path[i]=module[i];
     for(std::size_t i=0;i<suffix.size();++i)chain_path[root+i]=suffix[i];
     chain_path[root+suffix.size()]=0;
-    const auto base=reinterpret_cast<const unsigned char*>(GetModuleHandleW(nullptr));
-    const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-    if(dos->e_magic!=IMAGE_DOS_SIGNATURE||dos->e_lfanew<sizeof(*dos)||dos->e_lfanew>1024*1024)return;
-    const auto nt=reinterpret_cast<const IMAGE_NT_HEADERS64*>(base+dos->e_lfanew);
-    if(nt->Signature!=IMAGE_NT_SIGNATURE||nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64||
-       nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||nt->FileHeader.TimeDateStamp!=input_trigger::timestamp||
-       nt->OptionalHeader.SizeOfImage!=input_trigger::image_size||
-       input_trigger::iat_rva>input_trigger::image_size-sizeof(PVOID)||input_trigger::return_rva<6||
-       input_trigger::return_rva>=input_trigger::image_size||!main_imports_input(base,*nt))return;
-    const auto call=base+input_trigger::return_rva-6;
-    std::int32_t displacement=0;std::memcpy(&displacement,call+2,sizeof(displacement));
-    if(call[0]!=0xff||call[1]!=0x15||
-       static_cast<std::int64_t>(input_trigger::return_rva)+displacement!=input_trigger::iat_rva)return;
-    const auto original=&GetCommandLineW;std::memcpy(&original_command,&original,sizeof(original_command));
-    command_slot=reinterpret_cast<PVOID volatile*>(const_cast<unsigned char*>(base)+input_trigger::iat_rva);
-    if(reinterpret_cast<ULONG_PTR>(command_slot)%alignof(PVOID)) {command_slot=nullptr;return;}
-    own_module=own;attach_thread=GetCurrentThreadId();expected_return=base+input_trigger::return_rva;
-    for(DWORD i=0;i<=executable_length;++i)game_path[i]=executable[i];
     for(DWORD i=0;i<=module_length;++i)bootstrap_path[i]=module[i];
-    if(!exchange_slot(original_command,hook_address()))command_slot=nullptr;
-}
-void input_startup_detach() noexcept {
-    if(command_slot)exchange_slot(hook_address(),original_command);
-    // Providers may have installed live hooks in their attach. Do not unload
-    // them, free routing TLS or close their backing-file locks in DllMain.
+
+    // The provider and its forwarding addresses have process lifetime. Keep the
+    // proxy mapped even if a dynamic caller immediately drops its last handle.
+    if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+            reinterpret_cast<LPCWSTR>(own),&own_module))return;
+
+    // Windows starts a new thread after process/DLL initialization completes.
+    // Never wait here or in an input export: other DLLs may call those exports
+    // from TLS or DllMain. Windows input remains available until publication.
+    const HANDLE worker=CreateThread(nullptr,0,start_chain,nullptr,0,nullptr);
+    if(worker)CloseHandle(worker);
 }
 }

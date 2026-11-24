@@ -23,9 +23,12 @@ public:
     bool players(NativePlayerRoster&,std::string&,const NativeOwnerLimits& = {}) const noexcept;
     bool capture_players(const std::vector<NativePlayerIdentity>&,std::vector<NativeOwnerCandidate>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     NativePlayerOwnerBatch capture_available_players(const std::vector<NativePlayerIdentity>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
+    NativePlayerOwnerBatch capture_independent_players(const std::vector<NativePlayerIdentity>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     bool capture_player(const NativePlayerIdentity&,NativeOwnerCandidate&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     bool capture(NativeOwnerCandidate&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
-    bool revalidate_players(std::vector<NativeOwnerCandidate>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
+    // A nonnull allocation workspace is exclusively owned/serialized by its
+    // caller. It is separate from capture's cache and never stores authority.
+    bool revalidate_players(std::vector<NativeOwnerCandidate>&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr,std::vector<std::uint8_t>* read_workspace=nullptr) const noexcept;
     bool revalidate(NativeOwnerCandidate&,std::string&,const NativeOwnerLimits& = {},NativeOwnerObservationStats* stats=nullptr) const noexcept;
     bool capture_menu(NativeMenuOwnerCandidate&,std::string&,const NativeOwnerLimits& = {}) const noexcept;
     bool revalidate_menu(NativeMenuOwnerCandidate&,std::string&,const NativeOwnerLimits& = {}) const noexcept;

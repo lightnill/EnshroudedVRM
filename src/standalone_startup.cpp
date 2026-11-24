@@ -54,13 +54,13 @@ RuntimeStartupContext evaluate_runtime_startup(const RuntimeStartupInput& input,
         if(!detail::same_standalone_path(input.executable_path.filename(),L"enshrouded.exe")){result.reason="other-process";return result;}
         result.status=RuntimeStartupStatus::Declined;
         need(owner && owner->base>=0x10000 && !(owner->base&0xffff) && owner->base<0x800000000000ULL &&
-             owner->size==native_owner_profile::image_size && owner->timestamp==native_owner_profile::image_timestamp &&
-             std::equal(owner->sha256.begin(),owner->sha256.end(),std::begin(native_owner_profile::image_sha256)),"unsupported-game");
+             owner->size==native_owner_profile::image_size && owner->timestamp==native_owner_profile::image_timestamp,"unsupported-game");
         result.diagnostic_owner_verified=true;
         if(!input.user_data_directory.empty()) {
             result.state_directory=input.user_data_directory/L"EnshroudedVRM/State";
             result.log_path=result.state_directory/L"runtime.log";
         }
+        need(owner->steam_build_id==native_owner_profile::steam_build_id,owner->steam_build_id?"unsupported-steam-build":"steam-build-unavailable");
         result.game_directory=input.executable_path.parent_path();result.mod_directory=result.game_directory/L"EnshroudedVRM";
         result.runtime_directory=result.mod_directory/L"Runtime";
         need(detail::same_standalone_path(input.module_path,result.runtime_directory/L"enshrouded_vrm_runtime.dll"),"package-layout");
@@ -70,7 +70,8 @@ RuntimeStartupContext evaluate_runtime_startup(const RuntimeStartupInput& input,
         auto manifest=std::make_unique<detail::StandaloneFile>(result.mod_directory/L"release-manifest.json",false,detail::StandaloneReadPolicy::ImmutablePackage);
         const auto json=manifest_json(manifest->read(64*1024));lease->files.push_back(std::move(manifest));
         need(json.size()==5 && json.value("schema","")=="enshrouded-vrm-standalone-v1" && json.at("game_sha256").is_string() &&
-             json.at("game_sha256").get<std::string>()==hex(owner->sha256),"manifest-build");
+             json.at("game_sha256").get_ref<const std::string&>().size()==64 &&
+             std::all_of(json.at("game_sha256").get_ref<const std::string&>().begin(),json.at("game_sha256").get_ref<const std::string&>().end(),[](char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');}),"manifest-build");
         need(json.at("version").is_string() && json.at("publication_status").is_string(),"manifest-invalid");
         result.version=json.at("version").get<std::string>();
         need(!result.version.empty() && result.version.size()<=64 && std::all_of(result.version.begin(),result.version.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='.'||c=='-'||c=='_';}),"manifest-version");
@@ -87,6 +88,7 @@ RuntimeStartupContext evaluate_runtime_startup(const RuntimeStartupInput& input,
             auto file=std::make_unique<detail::StandaloneFile>(path,false,detail::StandaloneReadPolicy::ImmutablePackage);const auto bytes=file->read(64*1024*1024);
             need(result.hashed_bytes<=128*1024*1024-bytes.size(),"package-size");
             need(hex(detail::sha256(bytes.data(),bytes.size()))==digest,"member-hash-mismatch");
+            if(detail::same_standalone_path(path,input.module_path))result.runtime_sha256=digest;
             result.hashed_bytes+=bytes.size();++result.verified_files;lease->files.push_back(std::move(file));
         }
         result.owner=*owner;result.profile_path=result.mod_directory/L"Compatibility/profile.json";

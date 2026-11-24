@@ -11,13 +11,18 @@ struct ModOverlayPresentation {
     VkSemaphore wait{};VkFence present_fence{};
     mutable VkSwapchainPresentFenceInfoKHR fence_info{};
     VkResult stop=VK_SUCCESS;
-    bool inserted=false,private_fence=false,consumed=false;
+    // inserted: the menu's completion semaphore and fence go to Present.
+    // drawn: this image carries a finished menu frame and nothing was inserted.
+    bool inserted=false,private_fence=false,consumed=false,drawn=false;
     // Construct references only on the final caller-owned object, after moves.
     const VkPresentInfoKHR* view()const noexcept;
 };
 class ModOverlay {
 public:
-    ModOverlay(VkInstance,VkPhysicalDevice,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,PFN_vkSetDeviceLoaderData,bool enabled,VkImageLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    // present_fences: what mod_menu_device_supported said of this device. When
+    // false, every menu frame is finished on its own draw fence before Present
+    // is forwarded, and Present is given no semaphore or fence of the menu's.
+    ModOverlay(VkInstance,VkPhysicalDevice,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,PFN_vkSetDeviceLoaderData,bool enabled,VkImageLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,bool present_fences=true);
     ~ModOverlay();
     void swapchain_created(const SwapchainState&,HWND,bool eligible)noexcept;
     void swapchain_destroyed(VkSwapchainKHR)noexcept;

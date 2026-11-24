@@ -109,11 +109,10 @@ def constant_object(path):
 
 
 def build_input_bootstrap(source_root, output_directory, compiler_directory, reference_dll=None,
-                          *, fixture_manifest=None, fixture_profile=None):
+                          *, fixture_manifest=None, fixture=False):
     root, output = Path(source_root).resolve(), Path(output_directory).resolve()
     compiler = Path(compiler_directory).resolve()
     reference = Path(reference_dll or system_provider()).resolve()
-    fixture = fixture_profile is not None
     if not fixture and (fixture_manifest is not None or reference != system_provider().resolve()):
         raise ValueError('production reference must be the installed system input DLL')
     inventory = _exports.export_inventory(reference)
@@ -121,20 +120,6 @@ def build_input_bootstrap(source_root, output_directory, compiler_directory, ref
     if shape != [(ordinal, [name]) for ordinal, name in EXPORTS]:
         raise ValueError('input provider must have the supported six-name/ordinal ABI')
     manifest = fixture_manifest if fixture_manifest is not None else (root / 'portable/standalone_layer.json').read_bytes()
-    profile = fixture_profile if fixture else json.loads((root / 'portable/bootstrap/input-trigger.json').read_bytes())
-    if profile:
-        if set(profile) != {'timestamp', 'image_size', 'iat_rva', 'return_rva', 'game_sha256'}:
-            raise ValueError('invalid input startup profile')
-        if any(type(profile[key]) is not int or not 0 < profile[key] <= 0xffffffff
-               for key in ('timestamp', 'image_size', 'iat_rva', 'return_rva')):
-            raise ValueError('invalid input startup profile integer')
-        if profile['image_size'] < 4096 or profile['iat_rva'] > profile['image_size'] - 8 or not 6 <= profile['return_rva'] < profile['image_size']:
-            raise ValueError('input startup profile RVA outside image')
-        digest = bytes.fromhex(profile['game_sha256'])
-        if len(digest) != 32:
-            raise ValueError('invalid game SHA-256')
-    else:
-        digest = bytes(32)
     if not isinstance(manifest, bytes) or not 1 <= len(manifest) <= 2048 or b'\0' in manifest:
         raise ValueError('manifest must be bounded literal bytes')
     parsed = json.loads(manifest)
@@ -158,12 +143,6 @@ def build_input_bootstrap(source_root, output_directory, compiler_directory, ref
     (output / 'standalone_bootstrap_manifest.hpp').write_text(
         '#pragma once\nstatic constexpr unsigned char expected_manifest[] = {' +
         ', '.join(map(str, manifest)) + '};\n', encoding='ascii')
-    (output / 'input_trigger_profile.hpp').write_text(
-        '#pragma once\n#include <cstdint>\nnamespace enshrouded::vrm::input_trigger {\n' +
-        f'inline constexpr bool enabled={str(bool(profile)).lower()};\n' +
-        ''.join(f'inline constexpr std::uint32_t {key}={profile.get(key, 0)}u;\n'
-                for key in ('timestamp', 'image_size', 'iat_rva', 'return_rva')) +
-        'inline constexpr unsigned char game_sha256[32]={' + ','.join(map(str, digest)) + '};\n}\n', encoding='ascii')
     provider_library = output / 'system-input.obj'
     system_import_object(provider_library, reference)
     definition = output / 'dinput8.def'
@@ -196,13 +175,17 @@ def build_input_bootstrap(source_root, output_directory, compiler_directory, ref
              'src/standalone_bootstrap_main.cpp', 'src/standalone_bootstrap_policy.cpp',
              'src/standalone_bootstrap_policy.hpp', 'src/standalone_bootstrap_view.hpp',
              'src/input_proxy.cpp', 'src/input_proxy.hpp', 'src/input_proxy_entry.cpp',
-             'src/input_startup.cpp', 'src/input_startup.hpp', 'src/sha256.hpp', 'portable/bootstrap/input-trigger.json']
+             'src/input_startup.cpp', 'src/input_startup.hpp']
     receipt = {'schema': 'enshrouded-vrm-input-build-v1', 'fixture': fixture,
         'toolsetVersion': MSVC_ROOT.name, 'windowsSdkVersion': SDK_VERSION, 'entryPoint': 'EvrmInputEntry',
         'tools': identities, 'commands': commands, 'providerModule': str(reference),
         'providerSha256': inventory['providerSha256'], 'manifestSha256': hashlib.sha256(manifest).hexdigest(),
-        'startupProfile': profile,
+        'chainStartup': 'post-dll-initialization',
         'sourceInputs': {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names},
         'exportInventory': actual, 'dllSha256': hashlib.sha256(dll.read_bytes()).hexdigest()}
     (output / 'toolchain.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
     return {'dll': dll, 'import_library': library, 'inventory': metadata}
+
+
+if __name__ == "__main__":
+    build_input_bootstrap(*sys.argv[1:])

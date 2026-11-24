@@ -103,7 +103,7 @@ using NativePreviewTraceHistory=BasicNativePreviewTraceHistory<>;
 inline NativePreviewTraceHistory& native_preview_trace_history(){static NativePreviewTraceHistory value;return value;}
 inline void native_preview_trace_source(const NativeOwnerImage& image,std::uint64_t buffer,std::uint64_t context)noexcept {
     if(image.size!=native_owner_profile::image_size||image.timestamp!=native_owner_profile::image_timestamp||
-       !std::equal(image.sha256.begin(),image.sha256.end(),std::begin(native_owner_profile::image_sha256)))return;
+       image.steam_build_id!=native_owner_profile::steam_build_id)return;
     native_preview_trace_history().configure(image.base,image.size,buffer,context);
 }
 template<class Trace,class Handoff>inline void retire_native_preview_trace(Trace& trace,Handoff& handoff,std::uint64_t buffer)noexcept{

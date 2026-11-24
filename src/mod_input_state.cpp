@@ -26,6 +26,12 @@ ModInputTransition ModInputState::focus_lost(std::uint32_t time)noexcept {
     auto result=close(time);result.release_keys=forwarded_keys_;result.release_buttons=forwarded_buttons_;
     forwarded_keys_.reset();forwarded_buttons_.reset();physical_keys_.reset();physical_buttons_.reset();return result;
 }
+void ModInputState::resume(std::uint32_t time,const std::bitset<256>& held_keys,const std::bitset<5>& held_buttons)noexcept {
+    // A release may have gone to another app. Only the controls actually held
+    // on return need their tails swallowed before a fresh menu interaction.
+    physical_keys_=latched_keys_=held_keys;physical_buttons_=latched_buttons_=held_buttons;
+    cutoff_=time;has_cutoff_=true;show(time);
+}
 ModInputTransition ModInputState::key(unsigned code,bool down,std::uint32_t time,unsigned hotkey)noexcept {
     ModInputTransition result;if(code>=256)return result;
     const bool was=physical_keys_[code];physical_keys_[code]=down;
@@ -37,24 +43,24 @@ ModInputTransition ModInputState::key(unsigned code,bool down,std::uint32_t time
     }
     if(!old&&!latched&&open_&&code==27&&down&&!was){result=close(time);latched_keys_.set(code);return result;}
     if(!down)latched_keys_.reset(code);
-    if(open_&&down!=was&&!push({ModInputEventKind::Key,std::uint16_t(code),down},time)){result.closed=true;result.suppress=true;}
+    if(open_&&!old&&!latched&&down!=was&&!push({ModInputEventKind::Key,std::uint16_t(code),down},time)){result.closed=true;result.suppress=true;}
     if(!result.suppress)forwarded_keys_[code]=down;
     return result;
 }
 ModInputTransition ModInputState::button(unsigned code,bool down,std::uint32_t time,float x,float y)noexcept {
     ModInputTransition result;if(code>=5)return result;
     const bool was=physical_buttons_[code];physical_buttons_[code]=down;
-    const auto old=stale(time);result.suppress=open_||old||latched_buttons_[code];
+    const auto old=stale(time);const bool latched=latched_buttons_[code];result.suppress=open_||old||latched;
     if(old&&down)latched_buttons_.set(code);
     if(!down)latched_buttons_.reset(code);
     const bool position=std::isfinite(x)&&std::isfinite(y);
-    if(open_&&down!=was&&!push({ModInputEventKind::Button,std::uint16_t(code),down,position?x:0,position?y:0,position},time)){result.closed=true;result.suppress=true;}
+    if(open_&&!old&&!latched&&down!=was&&!push({ModInputEventKind::Button,std::uint16_t(code),down,position?x:0,position?y:0,position},time)){result.closed=true;result.suppress=true;}
     if(!result.suppress)forwarded_buttons_[code]=down;
     return result;
 }
 ModInputTransition ModInputState::wheel(float horizontal,float vertical,std::uint32_t time)noexcept {
     ModInputTransition result;result.suppress=open_||stale(time);
-    if(open_&&std::isfinite(horizontal)&&std::isfinite(vertical)&&
+    if(open_&&!stale(time)&&std::isfinite(horizontal)&&std::isfinite(vertical)&&
         !push({ModInputEventKind::Wheel,0,false,std::clamp(horizontal,-16.f,16.f),std::clamp(vertical,-16.f,16.f)},time))result.closed=true;
     return result;
 }

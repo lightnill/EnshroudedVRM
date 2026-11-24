@@ -37,8 +37,10 @@ public:
     void observe_players(std::shared_ptr<const NativePlayerRoster>)noexcept;
     std::shared_ptr<const AvatarAppearance> appearance_for(const std::shared_ptr<const PreparedAvatar>&)const noexcept;
     void refresh_catalogue()noexcept;
+    bool forget_all_models()noexcept;
     bool set_whole_preset(const std::string&,AvatarShaderPreset)noexcept;
     bool set_material_preset(const std::string&,std::uint32_t,std::optional<AvatarShaderPreset>)noexcept;
+    bool set_outline_color(const std::string&,std::uint32_t,AvatarOutlineColor)noexcept;
     bool reset_materials(const std::string&)noexcept;
     bool commit_candidate(const AvatarCandidatePtr&,bool(*)(void*,const AvatarCandidate&)noexcept,void*)noexcept;
     bool adopt_selection(const AvatarCandidatePtr&,bool(*)(void*,const AvatarCandidate&)noexcept,void*)noexcept;

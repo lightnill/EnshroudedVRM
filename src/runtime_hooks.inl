@@ -3,6 +3,7 @@
 #include "native_preview_trace.hpp"
 #define EVRM_DEVICE_HOOK_NAMES(X) \
     X(vkCreateBuffer) X(vkDestroyBuffer) \
+    X(vkCreateSampler) X(vkDestroySampler) \
     X(vkAllocateMemory) X(vkFreeMemory) X(vkBindBufferMemory) X(vkBindBufferMemory2) X(vkBindBufferMemory2KHR) \
     X(vkBindImageMemory) X(vkBindImageMemory2) X(vkBindImageMemory2KHR) \
     X(vkCreatePipelineLayout) X(vkDestroyPipelineLayout) \
@@ -12,7 +13,8 @@
     X(vkUpdateDescriptorSets) X(vkCreateDescriptorUpdateTemplate) \
     X(vkDestroyDescriptorUpdateTemplate) X(vkUpdateDescriptorSetWithTemplate) \
     X(vkCmdBindDescriptorSets) X(vkGetDeviceQueue) X(vkGetDeviceQueue2) X(vkQueueWaitIdle) \
-    X(vkResetFences) X(vkDestroyFence)
+    X(vkCreateFence) X(vkResetFences) X(vkDestroyFence) X(vkGetFenceStatus) X(vkWaitForFences) \
+    X(vkImportFenceWin32HandleKHR) X(vkImportFenceFdKHR)
 
 EVRM_EXPORT VkResult VKAPI_CALL vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* info,
                                                const VkAllocationCallbacks* allocator, VkBuffer* buffer) {
@@ -148,6 +150,24 @@ EVRM_EXPORT VkResult VKAPI_CALL name(VkDevice device,uint32_t count,const VkBind
 EVRM_BIND_IMAGE_MEMORY2_HOOK(vkBindImageMemory2)
 EVRM_BIND_IMAGE_MEMORY2_HOOK(vkBindImageMemory2KHR)
 #undef EVRM_BIND_IMAGE_MEMORY2_HOOK
+EVRM_EXPORT VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerCreateInfo* info,
+    const VkAllocationCallbacks* allocator, VkSampler* sampler) {
+    const auto state=device_state(device);
+    const auto next=device_proc<PFN_vkCreateSampler>(state,"vkCreateSampler");
+    if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
+    const auto result=next(device,info,allocator,sampler);
+    if(result==VK_SUCCESS&&info&&sampler)observe_native(state,[&](evrm::NativeState& native){native.sampler_created(*sampler,*info);});
+    return result;
+}
+EVRM_EXPORT void VKAPI_CALL vkDestroySampler(VkDevice device, VkSampler sampler, const VkAllocationCallbacks* allocator) {
+    const auto state=device_state(device);
+    const auto next=device_proc<PFN_vkDestroySampler>(state,"vkDestroySampler");
+    if(!next)return;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
+    observe_native(state,[&](evrm::NativeState& native){native.sampler_destroyed(sampler);});
+    next(device,sampler,allocator);
+}
 EVRM_EXPORT VkResult VKAPI_CALL vkCreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo* info,
     const VkAllocationCallbacks* allocator, VkDescriptorSetLayout* layout) {
     const auto state = device_state(device);
@@ -173,6 +193,7 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyDescriptorSetLayout(VkDevice device, VkDesc
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkDestroyDescriptorSetLayout>(state, "vkDestroyDescriptorSetLayout");
     if (!next) return;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     observe(state, [&](evrm::GpuProbe& probe) { probe.layout_destroyed(layout); });
     observe_native(state, [&](evrm::NativeState& native) { native.layout_destroyed(layout); });
     if(state->native)if(auto* clips=state->native->clipping())clips->layout_destroyed(layout);
@@ -191,6 +212,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkFreeDescriptorSets(VkDevice device, VkDescript
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkFreeDescriptorSets>(state, "vkFreeDescriptorSets");
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     const auto result = next(device, pool, count, sets);
     if (result == VK_SUCCESS) observe(state, [&](evrm::GpuProbe& probe) { probe.sets_freed(count, sets); });
     if (result == VK_SUCCESS) observe_native(state, [&](evrm::NativeState& native) { native.sets_freed(count, sets); });
@@ -200,6 +222,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkResetDescriptorPool(VkDevice device, VkDescrip
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkResetDescriptorPool>(state, "vkResetDescriptorPool");
     if (!next) return VK_ERROR_INITIALIZATION_FAILED;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     const auto result = next(device, pool, flags);
     if (result == VK_SUCCESS) observe(state, [&](evrm::GpuProbe& probe) { probe.pool_reset(pool); });
     if (result == VK_SUCCESS) observe_native(state, [&](evrm::NativeState& native) { native.pool_reset(pool); });
@@ -209,6 +232,7 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyDescriptorPool(VkDevice device, VkDescripto
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkDestroyDescriptorPool>(state, "vkDestroyDescriptorPool");
     if (!next) return;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     observe(state, [&](evrm::GpuProbe& probe) { probe.pool_reset(pool); });
     observe_native(state, [&](evrm::NativeState& native) { native.pool_reset(pool); });
     next(device, pool, allocator);
@@ -218,6 +242,7 @@ EVRM_EXPORT void VKAPI_CALL vkUpdateDescriptorSets(VkDevice device, uint32_t wri
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkUpdateDescriptorSets>(state, "vkUpdateDescriptorSets");
     if (!next) return;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     next(device, write_count, writes, copy_count, copies);
     observe(state, [&](evrm::GpuProbe& probe) { probe.descriptors_written(write_count, writes); probe.descriptors_copied(copy_count, copies); });
     observe_native(state, [&](evrm::NativeState& native) { native.descriptors_written(write_count, writes); native.descriptors_copied(copy_count, copies); });
@@ -244,6 +269,7 @@ EVRM_EXPORT void VKAPI_CALL vkUpdateDescriptorSetWithTemplate(VkDevice device, V
     const auto state = device_state(device);
     const auto next = device_proc<PFN_vkUpdateDescriptorSetWithTemplate>(state, "vkUpdateDescriptorSetWithTemplate");
     if (!next) return;
+    std::unique_lock<std::mutex> source_guard;if(state->native)source_guard=state->native->native_source_guard();
     next(device, set, update, data);
     observe(state, [&](evrm::GpuProbe& probe) { probe.template_written(set, update, data); });
     observe_native(state, [&](evrm::NativeState& native) { native.template_written(set, update, data); });
@@ -283,6 +309,7 @@ EVRM_EXPORT void VKAPI_CALL vkGetDeviceQueue(VkDevice device, uint32_t family, u
     if (queue && *queue) {
         queue_mutex(state, *queue);
         {std::lock_guard<std::mutex> guard(state->queue_table_mutex);state->queue_families[*queue]=family;}
+        observe_native(state,[&](evrm::NativeState& native){native.cube_queue_observed(*queue,family);});
         observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.queue_observed(*queue, family); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().queue_known(*queue, family); });
     }
@@ -296,18 +323,42 @@ EVRM_EXPORT void VKAPI_CALL vkGetDeviceQueue2(VkDevice device, const VkDeviceQue
     if (queue && *queue) {
         queue_mutex(state, *queue);
         if(info&&!info->flags&&!info->pNext){std::lock_guard<std::mutex> guard(state->queue_table_mutex);state->queue_families[*queue]=info->queueFamilyIndex;}
+        if(info&&!info->flags&&!info->pNext)observe_native(state,[&](evrm::NativeState& native){native.cube_queue_observed(*queue,info->queueFamilyIndex);});
         observe_graphics(state, [&](evrm::GraphicsState& graphics) { graphics.queue_observed(*queue, info->queueFamilyIndex); });
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().queue_known(*queue, info->queueFamilyIndex); });
     }
 }
+EVRM_EXPORT VkResult VKAPI_CALL vkCreateFence(VkDevice device,const VkFenceCreateInfo* info,const VkAllocationCallbacks* allocator,VkFence* fence){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkCreateFence>(state,"vkCreateFence");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto result=next(device,info,allocator,fence);
+    if(result==VK_SUCCESS&&fence)observe_native(state,[&](evrm::NativeState& native){native.cube_fence_created(*fence,info);});return result;
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device,VkFence fence){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkGetFenceStatus>(state,"vkGetFenceStatus");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto result=next(device,fence);observe_native(state,[&](evrm::NativeState& native){native.cube_fence_result(1,&fence,VK_TRUE,result,true);});return result;
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkWaitForFences(VkDevice device,uint32_t count,const VkFence* fences,VkBool32 wait_all,uint64_t timeout){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkWaitForFences>(state,"vkWaitForFences");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    const auto result=next(device,count,fences,wait_all,timeout);observe_native(state,[&](evrm::NativeState& native){native.cube_fence_result(count,fences,wait_all,result);});return result;
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkImportFenceWin32HandleKHR(VkDevice device,const VkImportFenceWin32HandleInfoKHR* info){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkImportFenceWin32HandleKHR>(state,"vkImportFenceWin32HandleKHR");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    if(info)observe_native(state,[&](evrm::NativeState& native){native.cube_fence_created(info->fence,nullptr);});return next(device,info);
+}
+EVRM_EXPORT VkResult VKAPI_CALL vkImportFenceFdKHR(VkDevice device,const VkImportFenceFdInfoKHR* info){
+    const auto state=device_state(device);const auto next=device_proc<PFN_vkImportFenceFdKHR>(state,"vkImportFenceFdKHR");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
+    if(info)observe_native(state,[&](evrm::NativeState& native){native.cube_fence_created(info->fence,nullptr);});return next(device,info);
+}
 EVRM_EXPORT VkResult VKAPI_CALL vkResetFences(VkDevice device,uint32_t count,const VkFence* fences){
     const auto state=device_state(device);const auto next=device_proc<PFN_vkResetFences>(state,"vkResetFences");if(!next)return VK_ERROR_INITIALIZATION_FAILED;
     if(state->overlay&&fences)for(unsigned n=0;n<count;++n)state->overlay->fence_changing(fences[n],false);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_fence_changing(count,fences);});
     return next(device,count,fences);
 }
 EVRM_EXPORT void VKAPI_CALL vkDestroyFence(VkDevice device,VkFence fence,const VkAllocationCallbacks* allocator){
     const auto state=device_state(device);const auto next=device_proc<PFN_vkDestroyFence>(state,"vkDestroyFence");if(!next)return;
     if(state->overlay)state->overlay->fence_changing(fence,true);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_fence_retired(fence);});
     next(device,fence,allocator);
 }
 EVRM_EXPORT VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
@@ -317,6 +368,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
     const auto mutex = queue_mutex(state, queue);
     std::lock_guard<std::recursive_mutex> queue_guard(*mutex);
     const auto result = next(queue);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_queue_idle(queue,result);});
     if (result == VK_SUCCESS && state->frame_count.load() == 0)
         observe(state, [&](evrm::GpuProbe& probe) { probe.capture(queue, 0, true); });
     return result;

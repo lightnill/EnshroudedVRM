@@ -82,6 +82,15 @@
         for(const auto& c:b.oit_colors)if(!same_image(c,metadata.attachment_view(c.view)))return false;
         return true;
     }
+    std::shared_ptr<NativeVolumeSnapshot> allocate_volume_snapshot(const std::array<NativeVolumeSnapshotSource,2>& sources) noexcept {
+        // Construction owns only private resources and records no commands.
+        // Its failure may withdraw this actor without tainting the shared view.
+        // Reuse holds only retired private storage and the source-free program;
+        // every snapshot still validates its sources and records its own copy.
+        try{if(!snapshot_reuse){snapshot_reuse=std::make_shared<NativeVolumeSnapshotReuse>(&context.uncertain);snapshot_reuse->retain(private_reuse_enabled);}
+            return std::make_shared<NativeVolumeSnapshot>(context.device,context.get,sources,snapshot_caps,snapshot_words.data(),snapshot_words.size(),snapshot_reuse);}
+        catch(...){return {};}
+    }
     void mixed_dispatch(Recording& r,VkCommandBuffer command,bool direct,unsigned x,unsigned y,unsigned z) {
         if(!r.bundle||!r.bundle->material_plan.mixed)return;
         auto& b=*r.bundle;
@@ -116,7 +125,8 @@
         // Constructor validates formats, equal extents, capability/size budgets
         // and allocates every private resource before any private command.
         b.snapshot_decline="snapshot-construction";
-        auto snapshot=std::make_shared<NativeVolumeSnapshot>(context.device,context.get,sources,snapshot_caps,snapshot_words.data(),snapshot_words.size());
+        auto snapshot=allocate_volume_snapshot(sources);
+        if(!snapshot){decline("snapshot-construction");return;}
         b.snapshot_decline="none";
         b.volume_bound=bound;b.volume_restore=restore;b.volume_snapshot=std::move(snapshot);
         if(!volume_metadata_current(b)){decline("retained-metadata");return;}

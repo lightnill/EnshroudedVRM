@@ -8,7 +8,7 @@
 namespace evrm {
 struct VoiceSourceIdentity {
     std::array<std::uint8_t,32> file_sha256{};
-    std::uint32_t timestamp=0,image_bytes=0;
+    std::uint32_t timestamp=0,image_bytes=0,steam_build_id=0;
     std::array<std::uint8_t,16> encoder_prologue{};
     std::array<std::uint8_t,5> encoder_call{};
 };

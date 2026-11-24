@@ -68,6 +68,7 @@ EVRM_EXPORT void VKAPI_CALL vkDestroyCommandPool(VkDevice device, VkCommandPool 
     next(device, pool, allocator);
     if (state->deferred) state->deferred->pool_destroyed(pool);
     if (state->native) state->native->pool_destroyed(pool);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_pool_reset(pool,true);});
     observe(state,[&](evrm::GpuProbe& probe){probe.command_pool_reset(pool,true);});
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().pool_destroyed(pool); });
     if (state->trace) try {
@@ -82,6 +83,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkResetCommandPool(VkDevice device, VkCommandPoo
     const auto result = next(device, pool, flags);
     if (state->deferred) state->deferred->pool_reset(pool, result);
     if (result == VK_SUCCESS && state->native) state->native->pool_reset(pool);
+    if (result == VK_SUCCESS) observe_native(state,[&](evrm::NativeState& native){native.cube_pool_reset(pool,false);});
     if(result==VK_SUCCESS)observe(state,[&](evrm::GpuProbe& probe){probe.command_pool_reset(pool);});
     if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().pool_reset(pool); });
     return result;
@@ -93,6 +95,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const 
     const auto result = next(device, info, commands);
     if (result == VK_SUCCESS && info && state->deferred) state->deferred->allocated(*info, commands);
     if (result == VK_SUCCESS && info && state->native) state->native->allocated(*info,commands);
+    if (result == VK_SUCCESS && info && commands) observe_native(state,[&](evrm::NativeState& native){native.cube_allocated(*info,commands);});
     if(result==VK_SUCCESS&&info)observe(state,[&](evrm::GpuProbe& probe){probe.commands_allocated(*info,commands);});
     if (result == VK_SUCCESS && info) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) {
         trace.collector().allocated(*info, commands, trace_pool_family(state, info->commandPool));
@@ -107,6 +110,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkEndCommandBuffer(VkCommandBuffer command) {
     const auto result = next(command);
     if (state->deferred) state->deferred->command_end(command, result);
     if (state->native) state->native->command_end(command,result);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_command_end(command,result);});
     if (result == VK_SUCCESS) observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.collector().end(command); });
     return result;
 }

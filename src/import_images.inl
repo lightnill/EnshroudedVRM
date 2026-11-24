@@ -5,10 +5,15 @@ struct ImageBudget {
     ImageBudget(const ImportLimits&l,const Json&doc):limits(l),needed(doc.value("images",Json::array()).size()){
         std::size_t surface_index=0;
         for(const auto&material:doc.value("materials",Json::array())){
-            const auto surface=parse_surface(doc,surface_index++);
+            const auto surface=parse_surface(doc,surface_index);
+            const auto mtoon=parse_mtoon(doc,surface_index++);
             if(surface)for(const auto* binding:{&surface->normal,&surface->matcap,&surface->rim})if(binding->texture>=0){
                 const auto image=number(doc.at("textures").at(std::size_t(binding->texture)).at("source"));
                 require(image<needed.size(),"Invalid needed surface image reference");needed[image]=true;
+            }
+            if(mtoon)for(const auto& binding:mtoon->textures)if(binding.texture>=0){
+                const auto image=number(doc.at("textures").at(std::size_t(binding.texture)).at("source"));
+                require(image<needed.size(),"Invalid needed MToon image reference");needed[image]=true;
             }
             if(!material.contains("pbrMetallicRoughness"))continue;
             const auto&pbr=material.at("pbrMetallicRoughness");if(!pbr.contains("baseColorTexture"))continue;

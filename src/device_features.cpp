@@ -15,7 +15,7 @@ namespace {
 void reject(DeviceFeaturesObservation& result,DeviceFeatureStatus status) noexcept {
     result.status=status;result.complete=false;
     result.geometry_shader={};result.uniform_buffer_update_after_bind={};result.independent_blend={};
-    result.dynamic_rendering={};result.mesh_shader={};
+    result.dynamic_rendering={};result.mesh_shader={};result.fragment_stores_and_atomics={};result.storage_image_extended_formats={};
     result.storage_buffer_update_after_bind={};result.update_unused_while_pending={};
     result.descriptor_binding_partially_bound={};
 }
@@ -42,7 +42,9 @@ DeviceFeaturesObservation inspect_device_features(const VkDeviceCreateInfo& info
         result.p_enabled_features_present=info.pEnabledFeatures!=nullptr;
         result.declared_extension_count=info.enabledExtensionCount;
         if(info.pEnabledFeatures&&(!observe(result,result.geometry_shader,info.pEnabledFeatures->geometryShader,DeviceFeatureSource::enabled_features)||
-            !observe(result,result.independent_blend,info.pEnabledFeatures->independentBlend,DeviceFeatureSource::enabled_features))) {
+            !observe(result,result.independent_blend,info.pEnabledFeatures->independentBlend,DeviceFeatureSource::enabled_features)||
+            !observe(result,result.fragment_stores_and_atomics,info.pEnabledFeatures->fragmentStoresAndAtomics,DeviceFeatureSource::enabled_features)||
+            !observe(result,result.storage_image_extended_formats,info.pEnabledFeatures->shaderStorageImageExtendedFormats,DeviceFeatureSource::enabled_features))) {
             reject(result,result.status);return result;
         }
         std::array<const VkBaseInStructure*,device_feature_chain_limit> visited{};
@@ -70,7 +72,9 @@ DeviceFeaturesObservation inspect_device_features(const VkDeviceCreateInfo& info
                 result.features2_present=true;
                 const auto* features=reinterpret_cast<const VkPhysicalDeviceFeatures2*>(node);
                 consistent=observe(result,result.geometry_shader,features->features.geometryShader,DeviceFeatureSource::features2)&&
-                    observe(result,result.independent_blend,features->features.independentBlend,DeviceFeatureSource::features2);
+                    observe(result,result.independent_blend,features->features.independentBlend,DeviceFeatureSource::features2)&&
+                    observe(result,result.fragment_stores_and_atomics,features->features.fragmentStoresAndAtomics,DeviceFeatureSource::features2)&&
+                    observe(result,result.storage_image_extended_formats,features->features.shaderStorageImageExtendedFormats,DeviceFeatureSource::features2);
                 break;
             }
             case VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO: {

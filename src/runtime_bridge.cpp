@@ -8,6 +8,7 @@ struct VkNegotiateLayerInterface;
 extern "C" __declspec(dllexport) VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface*);
 #endif
 #include "runtime_log.hpp"
+#include "native_player_light.hpp"
 #include "gpu_probe.hpp"
 #include "graphics_state.hpp"
 #include "avatar_renderer.hpp"
@@ -15,6 +16,7 @@ extern "C" __declspec(dllexport) VkResult VKAPI_CALL vkNegotiateLoaderLayerInter
 #include "standalone_startup.hpp"
 #include "avatar_device_request.hpp"
 #include "device_features.hpp"
+#include "native_mtoon_shade_features.hpp"
 #include "command_trace_runtime.hpp"
 #include "deferred_runtime.hpp"
 #include "native_backend.hpp"
@@ -74,6 +76,8 @@ struct DeviceState {
     PFN_vkQueuePresentKHR present{};
     std::shared_ptr<InstanceState> parent;
     std::atomic<uint64_t> frame_count{0};
+    bool remove_player_light=false;
+    std::atomic<bool> player_light_noticed{false};
     evrm::RuntimeHookTiming hook_timing;
     evrm::DebugReportGpuInfo report_gpu;
     std::shared_ptr<evrm::GpuProbe> probe;
@@ -193,16 +197,46 @@ void native_before_command(const std::shared_ptr<DeviceState>& state, VkCommandB
     if (count == 1) evrm::log_event("deferred-rendering.first-release native-begin-once; no private preparation");
 }
 void native_before_forwarded_command(const std::shared_ptr<DeviceState>& state, VkCommandBuffer command,
-                                     const char* name) noexcept {
-    observe_native(state,[&](evrm::NativeState& native){native.raster_unobserved(command,name);});
-    if(state && state->native && evrm::native_state_command_unobserved(name))state->native->scope_unsupported(command,name);
-    const auto kind = evrm::rendering_independent_state(name)
+                                     const struct ForwardedCommand& forwarded,bool root_observed=false) noexcept;
+// Every caller names its own command with a string literal, so what the name
+// decides is fixed for that call site. The answers come from the same
+// functions as before; they are asked once per call site, not on every call.
+struct ForwardedCommand {
+    const char* name=nullptr;
+    bool unobserved=false,independent_state=false,scope_sensitive=false,clears_attachments=false,draws=false;
+};
+// Accepts a character array only, so a call site cannot pass a pointer whose
+// text could differ between calls.
+struct ForwardedCall {
+    const char* name;bool root_observed;
+    template<std::size_t N> constexpr ForwardedCall(const char(&text)[N],bool root=false) noexcept:name(text),root_observed(root){}
+};
+ForwardedCommand forwarded_command(const char* name) noexcept {
+    ForwardedCommand value;value.name=name;
+    value.unobserved=evrm::native_state_command_unobserved(name);
+    value.independent_state=evrm::rendering_independent_state(name);
+    value.scope_sensitive=evrm::rendering_scope_sensitive(name);
+    value.clears_attachments=name&&!std::strcmp(name,"vkCmdClearAttachments");
+    value.draws=name&&std::strncmp(name,"vkCmdDraw",9)==0;
+    return value;
+}
+void native_before_forwarded_command(const std::shared_ptr<DeviceState>& state, VkCommandBuffer command,
+                                     const ForwardedCommand& forwarded,bool root_observed) noexcept {
+    const auto name=forwarded.name;
+    observe_native(state,[&](evrm::NativeState& native){native.raster_unobserved(command,name);
+        if(!root_observed)native.compute_root_unobserved(command,name);});
+    if(state && state->native && forwarded.unobserved)state->native->scope_unsupported(command,name);
+    const auto kind = forwarded.independent_state
         ? evrm::DeferredRenderingCommand::independent_state : evrm::DeferredRenderingCommand::other;
     native_before_command(state, command, kind,
-                          evrm::rendering_scope_sensitive(name),name);
-    if(state&&state->native&&name&&!std::strcmp(name,"vkCmdClearAttachments"))state->native->before_attachment_clear(command);
-    if(state&&state->native&&name&&std::strncmp(name,"vkCmdDraw",9)==0)state->native->uncovered_draw(command,name);
+                          forwarded.scope_sensitive,name);
+    if(state&&state->native&&forwarded.clears_attachments)state->native->before_attachment_clear(command);
+    if(state&&state->native&&forwarded.draws)state->native->uncovered_draw(command,name);
 }
+#define native_before_forwarded_command(state,command,...) \
+    (native_before_forwarded_command)(state,command, \
+        []()noexcept->const ForwardedCommand&{static const ForwardedCommand known=forwarded_command(ForwardedCall{__VA_ARGS__}.name);return known;}(), \
+        ForwardedCall{__VA_ARGS__}.root_observed)
 void native_after_forwarded_command(const std::shared_ptr<DeviceState>& state,VkCommandBuffer command,const char* name) noexcept {
     if(state&&state->native&&name&&std::strncmp(name,"vkCmdDraw",9)==0)
         timed_native(state,evrm::RuntimeHookKind::NativeWork,[&](auto& native){native.after_native_draw(command);});
@@ -257,6 +291,7 @@ void log_device_capabilities(const std::shared_ptr<InstanceState>& parent, VkPhy
                      " source=" + std::to_string(static_cast<unsigned>(flag.source));
         };
         append("geometryShader", features.geometry_shader);
+        append("fragmentStoresAndAtomics", features.fragment_stores_and_atomics);
         append("independentBlend", features.independent_blend);
         append("dynamicRendering", features.dynamic_rendering);
         append("meshShader", features.mesh_shader);
@@ -394,6 +429,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
         auto state = std::make_shared<DeviceState>();
         state->handle = *device;
         state->parent=parent;
+        state->remove_player_light=startup.ready();
         if(startup.ready())try{
             const auto properties=reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(parent->get_proc(parent->handle,"vkGetPhysicalDeviceProperties"));
             const auto memory=reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(parent->get_proc(parent->handle,"vkGetPhysicalDeviceMemoryProperties"));
@@ -407,8 +443,11 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
         state->present = reinterpret_cast<PFN_vkQueuePresentKHR>(next_get_proc(*device, "vkQueuePresentKHR"));
         if(startup.ready())state->graphics = std::make_shared<evrm::GraphicsState>(*device, next_get_proc);
         try{
-            if(startup.ready()&&evrm::mod_menu_device_supported(*info))state->overlay=std::make_shared<evrm::ModOverlay>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,true);
-            else if(startup.ready())evrm::log_event("mod-menu.unavailable reason=present-completion-feature");
+            // Without present fences the menu still runs: it finishes each of its
+            // frames before Present instead of asking Present to report completion.
+            if(startup.ready()){const bool present_fences=evrm::mod_menu_device_supported(*info);
+                state->overlay=std::make_shared<evrm::ModOverlay>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,true,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,present_fences);
+                evrm::log_event(present_fences?"mod-menu.completion mode=present-fence":"mod-menu.completion mode=draw-fence");}
         }catch(...){evrm::log_event("mod-menu.initialization-unavailable");}
         try {
             if (startup.ready()) {
@@ -453,8 +492,8 @@ EVRM_EXPORT VkResult VKAPI_CALL vkCreateDevice(
             if ((additive||replacement) && state->deferred && state->avatar && state->avatar->enabled() &&
                 evrm::native_rendering_environment_supported(parent->api_version,features)) {
                 state->native=std::make_shared<evrm::NativeBackend>(parent->handle,physical,*device,parent->get_proc,next_get_proc,set_loader_data,startup.runtime_directory/L"shaders",true,replacement,
-                    features.descriptor_binding_partially_bound.available&&features.descriptor_binding_partially_bound.enabled,
-                    features.complete&&features.mesh_shader.available&&features.mesh_shader.enabled&&std::find(features.enabled_extensions.begin(),features.enabled_extensions.end(),"VK_EXT_mesh_shader")!=features.enabled_extensions.end());
+                    evrm::native_mtoon_shade_features_supported(features),
+                    features.complete&&features.mesh_shader.available&&features.mesh_shader.enabled&&std::find(features.enabled_extensions.begin(),features.enabled_extensions.end(),"VK_EXT_mesh_shader")!=features.enabled_extensions.end(),&features,parent->api_version);
                 evrm::log_event(replacement?"native-replacement.enabled development-only; shared-commit; opaque-mask-only":"native-additive.enabled original-body-retained; invalid-history; opaque-mask-only");
             }
         } catch (...) { evrm::log_event("native-additive.initialization.failed original rendering retained"); }
@@ -574,6 +613,7 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
         evrm::ModMenuStatus status;status.voice=evrm::selected_voice_mouth_snapshot().activity;status.starting=evrm::selected_voice_starting();status.save_failed=!startup.state_writable||evrm::mod_settings_save_failed();
         status.startup_ready=startup.ready();status.startup_version=startup.version.c_str();
         status.avatar=evrm::avatar_menu_snapshot();
+        if(state->native&&status.avatar)status.mtoon=state->native->mtoon_menu_status(status.avatar->appearance,status.avatar->subject);
         status.report=evrm::debug_report_status();
         status.microphone=evrm::local_microphone_state();status.microphones=evrm::local_microphone_devices();
         if(avatar_service&&avatar_service->replacement_enabled()&&state->avatar)status.mouth=state->avatar->mouth_support();
@@ -592,8 +632,9 @@ EVRM_EXPORT VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresent
     observe_trace(state, [&](evrm::CommandTraceRuntime& trace) { trace.finish_frame(frame); });
     present_cpu.finish();
     const auto present_started=std::chrono::steady_clock::now();
+    const auto driver_started=present_started;
     const auto result=menu.stop==VK_SUCCESS?state->present(queue,presenting):menu.stop;
-    const auto present_elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-present_started).count();
+    const auto present_elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-driver_started).count();
     evrm::RuntimeHookSample post_present(evrm::RuntimeHookKind::PostPresent,&state->hook_timing);
     if(info&&state->overlay&&menu.stop==VK_SUCCESS)state->overlay->presented(menu,result);
     if(info&&state->overlay&&(result==VK_SUCCESS||result==VK_SUBOPTIMAL_KHR)&&info->swapchainCount==1&&info->pSwapchains){
@@ -646,6 +687,13 @@ void initialize_device_dispatch(DeviceState& state)noexcept {
     try{evrm::log_event(std::string("device.dispatch-cache status=")+(ready?"ready":"direct-fallback")+
         " entries="+std::to_string(state.dispatch_cache.size()));}catch(...){}
 }
+}
+
+// Kept by the exported entry point even with dead-stripping enabled. Release
+// packaging reads these bytes without loading the DLL; helper and unknown
+// flavors must never enter the normal distributable.
+EVRM_EXPORT const char* VKAPI_CALL evrmRuntimeBuildFlavor() {
+    return "EnshroudedVRM.RuntimeFlavor.normal-v1";
 }
 
 EVRM_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* name) {

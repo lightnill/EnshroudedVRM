@@ -31,21 +31,22 @@ std::vector<NativePlayerPoseOwner> NativeBackend::player_pose_owners(std::uint64
             impl->observe_player_owners(true,0,identities.size(),local_requested,impl->player_observations.size(),local_selected,now);return impl->player_observations;}
         impl->player_observations.clear();impl->player_observation_valid=false;impl->player_observed_at=now;
         std::string reason;NativeOwnerObservationStats stats;
-        auto batch=impl->capture_available_player_owners(identities,reason,40,&stats);
+        NativeOwnerLimits limits;limits.max_milliseconds=40;
+        auto batch=impl->capture_independent_player_owners(identities,reason,limits,&stats);
         if(!batch.valid){impl->observe_player_owners(false,1,identities.size(),local_requested,0,false,now,&stats,reason.c_str());return {};}
         if(batch.players.size()!=identities.size()||batch.proof.empty()){impl->observe_player_owners(false,2,identities.size(),local_requested,0,false,now,&stats);return {};}
         std::vector<NativePlayerPoseOwner> result;std::vector<NativePlayerOwnerStatus> availability;
         for(std::size_t i=0;i<batch.players.size();++i){auto& row=batch.players[i];
             if(!Impl::same_player(row.identity,identities[i]))return {};
             availability.push_back(row.status);
-            if(row.status==NativePlayerOwnerStatus::EntityAbsent||row.status==NativePlayerOwnerStatus::AssociationUnavailable){
+            if(row.status==NativePlayerOwnerStatus::EntityAbsent||row.status==NativePlayerOwnerStatus::AssociationUnavailable||row.status==NativePlayerOwnerStatus::OwnerUnavailable){
                 if(!row.candidate.guards.empty()||!row.candidate.models.empty()||row.candidate.entity)return {};
                 continue;
             }
-            if(row.status!=NativePlayerOwnerStatus::Ready||&row.candidate.guards.view()!=&batch.proof.view())return {};
+            if(row.status!=NativePlayerOwnerStatus::Ready||row.candidate.guards.empty())return {};
             auto owner=std::make_shared<NativePoseOwner>();owner->candidate=std::move(row.candidate);owner->source_epoch=epoch;
             owner->source=impl->metadata.buffer(reinterpret_cast<VkBuffer>(static_cast<std::uintptr_t>(owner->candidate.native_buffer)));
-            if(!native_pose_owner_valid(*owner)||!impl->hint_source_current(*owner,owner->source)||owner->candidate.account!=identities[i].account||owner->candidate.entity_id!=identities[i].entity_id||owner->candidate.connection!=identities[i].connection){impl->observe_player_owners(false,3,identities.size(),local_requested,0,false,now,&stats);return {};}
+            if(!native_pose_owner_valid(*owner)||!impl->hint_source_current(*owner,owner->source)||owner->candidate.account!=identities[i].account||owner->candidate.entity_id!=identities[i].entity_id||owner->candidate.connection!=identities[i].connection){availability.back()=NativePlayerOwnerStatus::OwnerUnavailable;continue;}
             result.push_back({names[i],std::move(owner)});
         }
         if(impl->metadata.buffer_epoch()!=epoch){impl->observe_player_owners(false,4,identities.size(),local_requested,0,false,now,&stats);return {};}

@@ -15,6 +15,8 @@ struct RuntimePackageLease;
 struct RuntimeStartupContext {
     RuntimeStartupStatus status=RuntimeStartupStatus::Dormant;
     std::string reason="unconfigured",version;
+    // Already verified during package admission; report identity needs no new read.
+    std::string runtime_sha256;
     NativeOwnerImage owner{};
     std::filesystem::path game_directory,mod_directory,runtime_directory,profile_path,catalog_path,avatars_directory;
     std::filesystem::path state_directory,log_path,capture_directory;

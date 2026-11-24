@@ -1,6 +1,7 @@
 #pragma once
 #include "avatar_appearance.hpp"
 #include "vrm_asset.hpp"
+#include "native_mtoon_forward.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -9,7 +10,7 @@
 #include <vector>
 
 namespace evrm {
-enum NativeSurfaceFeature:std::uint32_t {surface_normal=1,surface_matcap=2,surface_rim=4,surface_mask=8};
+enum NativeSurfaceFeature:std::uint32_t {surface_normal=1,surface_matcap=2,surface_rim=4,surface_mask=8,surface_mtoon_forward=16};
 struct NativeSurfaceSelection {
     std::vector<std::uint32_t> features; // One per material, then an empty fallback.
     std::uint32_t combined=0;
@@ -48,7 +49,9 @@ inline NativeSurfaceSelection make_native_surface_selection(const vrm::Avatar& a
     NativeSurfaceSelection out;out.features.reserve(avatar.materials.size()+1);
     for(std::size_t i=0;i<avatar.materials.size();++i){
         const auto preset=avatar_material_preset(appearance,i);
-        const auto flags=(preset==AvatarShaderPreset::Fast||preset==AvatarShaderPreset::Matte)?0:native_surface_features(avatar.materials[i]);
+        auto flags=preset==AvatarShaderPreset::Fast?0:native_surface_features(avatar.materials[i]);
+        if((avatar_preset_is_toon(preset))&&avatar.materials[i].mtoon&&
+            avatar.materials[i].surface&&native_mtoon_forward_supported(*avatar.materials[i].mtoon))flags|=surface_mtoon_forward;
         out.features.push_back(flags);out.combined|=flags;
     }
     out.features.push_back(0);return out;
@@ -57,7 +60,8 @@ inline bool native_surface_valid_selection(const vrm::Avatar& avatar,const Nativ
     if(selection.features.size()!=avatar.materials.size()+1||selection.features.back()!=0)return false;
     std::uint32_t combined=0;
     for(std::size_t i=0;i<avatar.materials.size();++i){
-        if(selection.features[i]&~native_surface_features(avatar.materials[i]))return false;
+        const auto& material=avatar.materials[i];const auto forward=material.surface&&material.mtoon&&native_mtoon_forward_supported(*material.mtoon)?surface_mtoon_forward:0u;
+        if(selection.features[i]&~(native_surface_features(material)|forward))return false;
         combined|=selection.features[i];
     }
     return combined==selection.combined;
@@ -79,7 +83,8 @@ struct alignas(16) NativeSurfaceMaterial {
 static_assert(sizeof(NativeSurfaceMaterial)==112&&offsetof(NativeSurfaceMaterial,flags)==96,"Enhanced material uniform ABI");
 inline NativeSurfaceMaterial native_surface_material(const vrm::Material& material,std::uint32_t features)noexcept {
     NativeSurfaceMaterial out;
-    if(!material.surface||!features||(features&~native_surface_features(material)))return out;
+    const auto forward=material.surface&&material.mtoon&&native_mtoon_forward_supported(*material.mtoon)?surface_mtoon_forward:0u;
+    if(!material.surface||!features||(features&~(native_surface_features(material)|forward)))return out;
     const auto& s=*material.surface;
     out.normal[0]=s.normal_scale;
     std::copy(s.matcap_factor.begin(),s.matcap_factor.end(),out.matcap.begin());
@@ -92,7 +97,8 @@ inline NativeSurfaceMaterial native_surface_material(const vrm::Material& materi
 struct NativeSurfaceBounds {std::array<float,4> lit{},unlit{};};
 inline NativeSurfaceBounds native_surface_bounds(const vrm::Material& material,std::uint32_t features)noexcept {
     NativeSurfaceBounds out;
-    if(!material.surface||!features||(features&~native_surface_features(material)))return out;
+    const auto forward=material.surface&&material.mtoon&&native_mtoon_forward_supported(*material.mtoon)?surface_mtoon_forward:0u;
+    if(!material.surface||!features||(features&~(native_surface_features(material)|forward)))return out;
     const auto& s=*material.surface;
     for(unsigned i=0;i<3;++i){
         const float cap=features&surface_matcap?s.matcap_factor[i]:0;

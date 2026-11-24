@@ -22,7 +22,7 @@ const RuntimeStartupContext& runtime_startup_context()noexcept {
             input.disabled=GetEnvironmentVariableW(L"ENSHROUDED_VRM_DISABLE",nullptr,0)>1;
             if(input.disabled || !detail::same_standalone_path(input.executable_path.filename(),L"enshrouded.exe"))return evaluate_runtime_startup(input,nullptr);
             const NativeOwnerProcess process;
-            if(!process.supported())return evaluate_runtime_startup(input,nullptr);
+            if(!process.image().base)return evaluate_runtime_startup(input,nullptr);
             // Known-folder resolution is deferred, and only for an attested game.
             // Inherited LOCALAPPDATA/ENSHROUDED_VRM paths cannot redirect writes.
             PWSTR local=nullptr;

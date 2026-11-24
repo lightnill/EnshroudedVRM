@@ -25,13 +25,16 @@ struct SecondaryContactActivation {
 struct SecondaryHandContactResult {bool applied=false,clamped=false;double residual=0;};
 // Metadata is compiled once. update only rotates the supporting arm's subtree;
 // failure is atomic, and neither native memory nor the Avatar asset is changed.
+// Measured tool/bow item9 uses left[1]/palm15; right[0]/palm14 supports it.
+// These are normalized anatomical names, not the legacy overlay aliases.
+// forward_sign is +1 for VRM1 and -1 for VRM0, matching grip generation.
 class SecondaryHandContact {
 public:
     explicit SecondaryHandContact(const vrm::Avatar&) noexcept;
     ~SecondaryHandContact();
     bool ready()const noexcept;
     SecondaryHandContactResult update(const vrm::SourcePose&,
-        const std::array<ToolHandCorrection,2>&,double height_scale,double basis_xz,
+        const std::array<ToolHandCorrection,2>&,double height_scale,double forward_sign,
         SecondaryHandContactMode,vrm::RetargetResult&) noexcept;
 private:
     struct Impl;std::unique_ptr<Impl> impl;

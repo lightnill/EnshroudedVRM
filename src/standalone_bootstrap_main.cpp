@@ -91,9 +91,6 @@ bool lock_manifest(const enshrouded::vrm::BootstrapPlan& plan, std::size_t root_
 
 BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_DETACH) {
-#ifdef EVRM_INPUT_PROXY
-        enshrouded::vrm::input_startup_detach();
-#endif
         release_manifest(); return TRUE;
     }
     if (reason != DLL_PROCESS_ATTACH) return TRUE;

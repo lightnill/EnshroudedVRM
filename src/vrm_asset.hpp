@@ -1,6 +1,7 @@
 #pragma once
 #include "mouth_data.hpp"
 #include "material_surface.hpp"
+#include "mtoon_material.hpp"
 
 #include <array>
 #include <cstdint>
@@ -34,9 +35,11 @@ struct Vertex {
     std::array<std::uint16_t, 4> joints{};
     std::array<float, 4> weights{};
 };
+struct MToonUvChannel {int texcoord=0;std::vector<std::array<float,2>> values;};
 struct Primitive {
     std::vector<Vertex> vertices;
     std::vector<SurfaceVertex> surface_vertices;
+    std::vector<MToonUvChannel> mtoon_uvs;
     std::vector<std::uint32_t> indices;
     int material = -1;
     bool skinned = false;
@@ -86,6 +89,7 @@ struct Material {
     bool double_sided = false, unlit = false;
     std::string mtoon_json; // Full source metadata; surface stores the supported subset.
     std::shared_ptr<const MaterialSurface> surface;
+    std::shared_ptr<const MToonMaterial> mtoon;
 };
 struct Avatar {
     VrmVersion version = VrmVersion::V1;

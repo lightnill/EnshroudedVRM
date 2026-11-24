@@ -70,13 +70,14 @@ NativeOitDrawPipelines::NativeOitDrawPipelines(VkDevice device,PFN_vkGetDevicePr
     impl->draw=reinterpret_cast<PFN_vkCmdDraw>(get(device,"vkCmdDraw"));
     impl->create=reinterpret_cast<PFN_vkCreateGraphicsPipelines>(get(device,"vkCreateGraphicsPipelines"));
     if(!impl->create||!impl->destroy||!impl->bind||!impl->descriptors||!impl->draw)throw std::runtime_error("Missing native draw entries");
+    // Same physical-facing convention as opaque, authored main and shadow.
     impl->pipeline=make_oit_pipeline(device,impl->create,impl->destroy,layout,vertex_shader,fragment_shader,VK_FRONT_FACE_COUNTER_CLOCKWISE);
 }
 NativeOitDrawPipelines::~NativeOitDrawPipelines()=default;
 bool NativeOitDrawPipelines::install_surface_variant(VkPipelineLayout layout,VkShaderModule vertex,VkShaderModule fragment) noexcept {
     if(!impl||impl->surface_pipeline||!layout||!vertex||!fragment)return false;
     try {
-        const auto pipeline=make_oit_pipeline(impl->device,impl->create,impl->destroy,layout,vertex,fragment,VK_FRONT_FACE_CLOCKWISE);
+        const auto pipeline=make_oit_pipeline(impl->device,impl->create,impl->destroy,layout,vertex,fragment,VK_FRONT_FACE_COUNTER_CLOCKWISE);
         impl->surface_pipeline=pipeline;impl->surface_layout=layout;
         return true;
     }catch(...){return false;}

@@ -1,4 +1,5 @@
 #include "tool_grip.hpp"
+#include "native_avatar_basis.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -77,9 +78,9 @@ bool target_palm(const vrm::Avatar&avatar,const std::string&side,const vrm::Matr
 }
 }
 std::array<ToolHandCorrection,2> make_tool_hand_corrections(
- const vrm::Avatar&avatar,const vrm::SourcePose&source,const vrm::RetargetResult&pose,double scale,double basis) noexcept {
+ const vrm::Avatar&avatar,const vrm::SourcePose&source,const vrm::RetargetResult&pose,double scale,double forward_sign) noexcept {
  std::array<ToolHandCorrection,2> result{};
- if(!pose||pose.node_world.size()!=avatar.nodes.size()||!std::isfinite(scale)||scale<=0||scale>100||!(basis==1||basis==-1))return result;
+ if(!pose||pose.node_world.size()!=avatar.nodes.size()||!std::isfinite(scale)||scale<=0||scale>100||!(forward_sign==1||forward_sign==-1))return result;
  try{for(int hand=0;hand<2;++hand){const std::string side=hand?"left":"right",name=side+"Hand";
   const auto sr=source.rest.find(name),sc=source.current.find(name);
   const auto node=avatar.humanoid.find(name);
@@ -90,8 +91,11 @@ std::array<ToolHandCorrection,2> make_tool_hand_corrections(
      !rotation(avatar.nodes[node->second].world,trRot)||!rotation(pose.node_world[node->second],tcRot))continue;
   const auto source_turn=mul(scRot,transpose(srRot)),target_turn=mul(tcRot,transpose(trRot));
   sp=mul(source_turn,sp);tp=mul(target_turn,tp);
-  for(int j=0;j<3;++j){tp[0][j]*=basis;tp[2][j]*=basis;}
-  const auto delta=mul(tp,transpose(sp));auto desired=position(pose.node_world[node->second]);desired[0]*=basis*scale;desired[1]*=scale;desired[2]*=basis*scale;
+  // A palm is reconstructed from two anatomical vectors and their cross.
+  // Reflection reverses that cross: B*targetPalm*diag(1,1,-1) stays proper.
+  const V axis_sign{native_avatar_axis_sign(0,forward_sign),1,native_avatar_axis_sign(2,forward_sign)};
+  for(int i=0;i<3;++i)for(int j=0;j<3;++j)tp[i][j]*=axis_sign[i]*(j==2?-1:1);
+  const auto delta=mul(tp,transpose(sp));auto desired=position(pose.node_world[node->second]);for(int i=0;i<3;++i)desired[i]*=axis_sign[i]*scale;
   const auto offset=subtract(desired,mul(delta,position(sc->second)));auto& out=result[hand].model_delta;
   for(int j=0;j<3;++j)for(int i=0;i<3;++i)out[j*4+i]=float(delta[i][j]);
   for(int i=0;i<3;++i)out[12+i]=float(offset[i]);
@@ -108,7 +112,7 @@ std::array<ToolHandCorrection,2> make_tool_hand_corrections(
      !anatomical_offset(avatar.nodes[node->second].world,pose.node_world[node->second],target_root,target_offset))continue;
   source_offset=mul(delta,source_offset);
   bool item_valid=result[hand].valid;V item_offset{};
-  for(int i=0;i<3;++i){item_offset[i]=target_offset[i]*scale*(i==1?1:basis)-source_offset[i];item_valid=item_valid&&std::isfinite(item_offset[i])&&std::abs(item_offset[i])<=std::numeric_limits<float>::max();}
+  for(int i=0;i<3;++i){item_offset[i]=target_offset[i]*scale*axis_sign[i]-source_offset[i];item_valid=item_valid&&std::isfinite(item_offset[i])&&std::abs(item_offset[i])<=std::numeric_limits<float>::max();}
   if(item_valid){for(int i=0;i<3;++i)result[hand].item_offset_native[i]=float(item_offset[i]);result[hand].item_offset_valid=true;}
  }}catch(...){return {};}
  return result;

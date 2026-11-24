@@ -15,7 +15,8 @@ struct ToolHandCorrection {
     bool item_offset_valid=false;
 };
 // Right, left. Rigid native-model correction; never scales held objects.
+// forward_sign is +1 for VRM1, -1 for VRM0; native basis is [-f,1,f].
 std::array<ToolHandCorrection,2> make_tool_hand_corrections(
     const vrm::Avatar&,const vrm::SourcePose&,const vrm::RetargetResult&,
-    double height_scale,double basis_xz) noexcept;
+    double height_scale,double forward_sign) noexcept;
 }

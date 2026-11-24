@@ -1,5 +1,6 @@
 #pragma once
 #include "native_skinning.hpp"
+#include "mtoon_menu_status.hpp"
 #include <filesystem>
 namespace evrm {
 struct PreparedAvatar {
@@ -7,6 +8,7 @@ struct PreparedAvatar {
     std::shared_ptr<const vrm::Avatar> asset;
     std::shared_ptr<const NativeSkinAsset> skin;
     std::vector<std::string> material_names;
+    std::shared_ptr<const std::vector<MToonMenuMaterial>> mtoon_materials;
     // Cached once after preparation. CPU estimate includes texture buffers;
     // excludes text/allocator overhead, decoder transients and GPU allocations.
     std::uint64_t decoded_texture_bytes=0,retained_cpu_buffer_bytes=0;

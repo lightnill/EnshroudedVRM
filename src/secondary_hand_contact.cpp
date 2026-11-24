@@ -1,4 +1,5 @@
 #include "secondary_hand_contact.hpp"
+#include "native_avatar_basis.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -49,29 +50,32 @@ struct SecondaryHandContact::Impl {
   need(!avatar.nodes.empty()&&avatar.nodes.size()<=2048);
   for(const auto&n:avatar.nodes)need(n.parent==-1||valid(n.parent));
   for(std::size_t n=0;n<avatar.nodes.size();++n){int at=int(n);std::size_t depth=0;for(;at>=0&&depth<=avatar.nodes.size();++depth)at=avatar.nodes[at].parent;need(depth<=avatar.nodes.size());}
-  upper=named("leftUpperArm");lower=named("leftLowerArm");hand=named("leftHand");const auto primary=named("rightHand");
+  // Measured two-handed tools and drawn bows use native item9/palm15. After
+  // profile alias normalization that is anatomical left: keep it fixed and
+  // solve only the right supporting arm. Hand corrections are [right,left].
+  upper=named("rightUpperArm");lower=named("rightLowerArm");hand=named("rightHand");const auto primary=named("leftHand");
   need(valid(upper)&&valid(lower)&&valid(hand)&&valid(primary)&&upper!=lower&&lower!=hand&&upper!=hand&&ancestor(upper,lower)&&ancestor(lower,hand)&&!ancestor(upper,primary));
   for(const auto&c:avatar.constraints){need(valid(c.target)&&valid(c.source));need(!ancestor(upper,c.target)&&!ancestor(upper,c.source));}
-  proximal={optional_contact("leftIndexProximal"),optional_contact("leftLittleProximal")};distal={optional_contact("leftIndexDistal"),optional_contact("leftThumbDistal")};
+  proximal={optional_contact("rightIndexProximal"),optional_contact("rightLittleProximal")};distal={optional_contact("rightIndexDistal"),optional_contact("rightThumbDistal")};
   for(std::size_t n=0;n<avatar.nodes.size();++n){if(ancestor(upper,int(n)))upper_nodes.push_back(n);if(ancestor(lower,int(n)))lower_nodes.push_back(n);if(ancestor(hand,int(n)))hand_nodes.push_back(n);}
  }
- SecondaryHandContactResult update(const vrm::SourcePose&source,const std::array<ToolHandCorrection,2>&hands,double height,double basis,SecondaryHandContactMode mode,vrm::RetargetResult&pose){
+ SecondaryHandContactResult update(const vrm::SourcePose&source,const std::array<ToolHandCorrection,2>&hands,double height,double forward_sign,SecondaryHandContactMode mode,vrm::RetargetResult&pose){
   if(mode==SecondaryHandContactMode::None)return {};
   need(mode==SecondaryHandContactMode::TwoHanded||mode==SecondaryHandContactMode::BowDrawn);
-  need(pose&&pose.node_world.size()==avatar.nodes.size()&&pose.palettes.size()<=avatar.nodes.size()&&hands[0].valid&&hands[1].valid&&std::isfinite(height)&&height>0&&height<=100&&(basis==1||basis==-1));
-  auto primary=matrix(hands[0].model_delta);const auto secondary=matrix(hands[1].model_delta);
-  if(hands[0].item_offset_valid)for(int i=0;i<3;++i){need(std::isfinite(hands[0].item_offset_native[i]));primary[12+i]+=hands[0].item_offset_native[i];need(std::isfinite(primary[12+i]));}
+  need(pose&&pose.node_world.size()==avatar.nodes.size()&&pose.palettes.size()<=avatar.nodes.size()&&hands[0].valid&&hands[1].valid&&std::isfinite(height)&&height>0&&height<=100&&(forward_sign==1||forward_sign==-1));
+  auto primary=matrix(hands[1].model_delta);const auto secondary=matrix(hands[0].model_delta);
+  if(hands[1].item_offset_valid)for(int i=0;i<3;++i){need(std::isfinite(hands[1].item_offset_native[i]));primary[12+i]+=hands[1].item_offset_native[i];need(std::isfinite(primary[12+i]));}
   const auto rp=rotation(primary,true),rs=rotation(secondary,true);
-  const R b{V{basis,0,0},V{0,1,0},V{0,0,basis}};const auto orientation_delta=mul(mul(b,mul(rp,transpose(rs))),b);
+  const R b{V{native_avatar_axis_sign(0,forward_sign),0,0},V{0,1,0},V{0,0,native_avatar_axis_sign(2,forward_sign)}};const auto orientation_delta=mul(mul(b,mul(rp,transpose(rs))),b);
   // Bounds and shape checks precede copying; no per-frame hierarchy scan.
   std::size_t work=0;for(const auto&p:pose.palettes){need(valid(p.mesh_node)&&p.skin>=0&&std::size_t(p.skin)<avatar.skins.size());const auto&s=avatar.skins[p.skin];need(s.joints.size()==s.inverse_bind.size()&&p.matrices.size()==s.joints.size());work+=s.joints.size();need(work<=8192);for(auto n:s.joints)need(valid(n));}
   std::vector<M> world;world.reserve(pose.node_world.size());for(const auto&m:pose.node_world)world.push_back(matrix(m));
   // Prefer shared fingertip contact, then shared palm roots, then the wrist.
   // Supplied bad data is never treated as an absent optional landmark.
-  for(const char*name:{"leftIndexDistal","leftThumbDistal","leftIndexProximal","leftLittleProximal"}){const auto it=source.current.find(name);if(it!=source.current.end())matrix(it->second);}
-  const char* names[2]={"leftHand",nullptr};std::array<int,2> contact_nodes{hand,-1};int contact_count=1;
-  if(valid(distal[0])&&valid(distal[1])&&source.current.count("leftIndexDistal")&&source.current.count("leftThumbDistal")){names[0]="leftIndexDistal";names[1]="leftThumbDistal";contact_nodes=distal;contact_count=2;}
-  else if(valid(proximal[0])&&valid(proximal[1])&&source.current.count("leftIndexProximal")&&source.current.count("leftLittleProximal")){names[0]="leftIndexProximal";names[1]="leftLittleProximal";contact_nodes=proximal;contact_count=2;}
+  for(const char*name:{"rightIndexDistal","rightThumbDistal","rightIndexProximal","rightLittleProximal"}){const auto it=source.current.find(name);if(it!=source.current.end())matrix(it->second);}
+  const char* names[2]={"rightHand",nullptr};std::array<int,2> contact_nodes{hand,-1};int contact_count=1;
+  if(valid(distal[0])&&valid(distal[1])&&source.current.count("rightIndexDistal")&&source.current.count("rightThumbDistal")){names[0]="rightIndexDistal";names[1]="rightThumbDistal";contact_nodes=distal;contact_count=2;}
+  else if(valid(proximal[0])&&valid(proximal[1])&&source.current.count("rightIndexProximal")&&source.current.count("rightLittleProximal")){names[0]="rightIndexProximal";names[1]="rightLittleProximal";contact_nodes=proximal;contact_count=2;}
   V source_contact{},target_contact{};for(int i=0;i<contact_count;++i){const auto it=source.current.find(names[i]);need(it!=source.current.end());source_contact=add(source_contact,scale(position(matrix(it->second)),1.0/contact_count));target_contact=add(target_contact,scale(position(world[contact_nodes[i]]),1.0/contact_count));}
   const auto desired_contact=scale(mul(b,point(primary,source_contact)),1/height);
   const auto shoulder=position(world[upper]),elbow=position(world[lower]),wrist=position(world[hand]);
@@ -98,5 +102,5 @@ struct SecondaryHandContact::Impl {
 SecondaryHandContact::SecondaryHandContact(const vrm::Avatar&a)noexcept{try{impl=std::make_unique<Impl>(a);}catch(...){}}
 SecondaryHandContact::~SecondaryHandContact()=default;
 bool SecondaryHandContact::ready()const noexcept{return bool(impl);}
-SecondaryHandContactResult SecondaryHandContact::update(const vrm::SourcePose&s,const std::array<ToolHandCorrection,2>&h,double scale,double basis,SecondaryHandContactMode mode,vrm::RetargetResult&p)noexcept{try{return impl?impl->update(s,h,scale,basis,mode,p):SecondaryHandContactResult{};}catch(...){return {};}}
+SecondaryHandContactResult SecondaryHandContact::update(const vrm::SourcePose&s,const std::array<ToolHandCorrection,2>&h,double scale,double forward_sign,SecondaryHandContactMode mode,vrm::RetargetResult&p)noexcept{try{return impl?impl->update(s,h,scale,forward_sign,mode,p):SecondaryHandContactResult{};}catch(...){return {};}}
 }

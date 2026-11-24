@@ -47,7 +47,7 @@ inline bool same_native_pose_allocation(const NativeBufferBinding& a,const Nativ
         a.info.offset==b.info.offset&&a.info.range==b.info.range&&a.size==b.size&&a.usage==b.usage;
 }
 inline bool same_native_owner_selection(const NativeOwnerCandidate& a,const NativeOwnerCandidate& b) noexcept {
-    if(a.image.base!=b.image.base||a.image.size!=b.image.size||a.image.timestamp!=b.image.timestamp||a.image.sha256!=b.image.sha256)return false;
+    if(a.image.base!=b.image.base||a.image.size!=b.image.size||a.image.timestamp!=b.image.timestamp||a.image.sha256!=b.image.sha256||a.image.steam_build_id!=b.image.steam_build_id)return false;
     if(std::tie(a.root,a.client,a.controller,a.main,a.execution,a.registry,a.entity_manager,a.local_player_data,
         a.account,a.connection,a.player_infos,a.player_record,a.entity,a.entity_layout,a.entity_storage,a.equipment,a.entity_id,a.entity_generation,a.entity_slot,a.entity_row,
         a.input_registration,a.equipment_registration,a.render_scene,a.model_manager,a.writer,a.resource_object,

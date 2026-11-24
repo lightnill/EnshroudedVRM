@@ -142,6 +142,7 @@ struct PlayerTrace {
     ~PlayerTrace(){finish("shutdown");}
 };
 }
+class DevPoseWorker;
 struct AvatarCpuModel {
     std::shared_ptr<const PreparedAvatar> prepared;
     const vrm::Avatar& avatar;
@@ -220,9 +221,9 @@ struct AvatarCpuModel {
             const auto mode=secondary_activation.observe(raw,candidate.published_milliseconds,observed,owner,candidate.source_buffer_epoch);
             if(mode!=SecondaryHandContactMode::None) {
                 auto revised=pose;
-                const auto result=secondary_contact->update(source,candidate.tool_hands,candidate.height_scale,candidate.basis_xz,mode,revised);
+                const auto result=secondary_contact->update(source,candidate.tool_hands,candidate.height_scale,candidate.forward_sign,mode,revised);
                 if(result.applied) {
-                    const auto hands=make_tool_hand_corrections(avatar,source,revised,candidate.height_scale,candidate.basis_xz);
+                    const auto hands=make_tool_hand_corrections(avatar,source,revised,candidate.height_scale,candidate.forward_sign);
                     std::uint64_t owner_after=0;
                     if(hands[0].valid&&hands[1].valid&&read_native_hand_contact_mode(candidate,GetTickCount64(),owner_after)==mode&&owner_after==owner) {
                         auto baseline=std::make_shared<NativeSecondaryContactBaseline>();
@@ -242,20 +243,24 @@ struct AvatarCpuModel {
             contact_samples=contact_two_hand=contact_bow=contact_clamped=0;contact_ms=contact_residual=0;
         }
     }
+    vrm::SpringFrame spring_frame(const PlayerFrame& frame,std::uint64_t captured_ms,std::uint64_t epoch,float height_scale,const ViewMotion* state)const{
+        vrm::SpringFrame input;input.timestamp_ms=captured_ms;input.source_epoch=epoch;
+        input.actor_id=frame.parts.front().instance_id;
+        const auto basis=native_avatar_basis(avatar.version);
+        input.gravity_to_world=basis;
+        input.model_to_world=product(frame.actor_world,basis);
+        for(int c=0;c<3;++c)for(int r=0;r<3;++r)input.model_to_world[c*4+r]*=height_scale;
+        if(state&&state->origin_known)input.origin_delta=spring_origin_delta(frame.camera_packed_origin,state->origin);
+        return input;
+    }
     void apply_springs(vrm::RetargetResult& pose,const PlayerFrame& frame,std::uint64_t captured_ms,std::uint64_t epoch,float height_scale,std::uint64_t source=0) {
         if(!springs||!springs->joint_count())return;
         auto& state=motion(source);
         if(!state.springs)state.springs=vrm::make_optional_springs(avatar,vrm::SpringMotion::Inertial);
         if(!state.springs||!state.springs->ready())return;
         auto& springs=state.springs;
-        auto& spring_origin=state.origin;auto& spring_origin_known=state.origin_known;
-        vrm::SpringFrame input;input.timestamp_ms=captured_ms;input.source_epoch=epoch;
-        input.actor_id=frame.parts.front().instance_id;
-        const vrm::Matrix basis=avatar.version==vrm::VrmVersion::V1?vrm::Matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}:vrm::Matrix{-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
-        input.model_to_world=product(frame.actor_world,basis);
-        for(int c=0;c<3;++c)for(int r=0;r<3;++r)input.model_to_world[c*4+r]*=height_scale;
-        if(spring_origin_known)input.origin_delta=spring_origin_delta(frame.camera_packed_origin,spring_origin);
-        spring_origin=frame.camera_packed_origin;spring_origin_known=true;
+        const auto input=spring_frame(frame,captured_ms,epoch,height_scale,&state);
+        state.origin=frame.camera_packed_origin;state.origin_known=true;
         const auto begin=std::chrono::steady_clock::now();
         const auto update=springs->update(pose,input);
         spring_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
@@ -267,7 +272,7 @@ struct AvatarCpuModel {
             spring_samples=spring_steps=spring_resets=0;spring_ms=spring_max_offset=0;
         }
     }
-    std::shared_ptr<NativeAvatarPublication> build_native_view(const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation,
+    std::shared_ptr<NativeAvatarPublication> build_native_view(DevPoseWorker* observer,const GpuSnapshot& snapshot,std::uint64_t serial,std::uint64_t presentation,
         EnshroudedBridge& bridge,const MouthSnapshot& current_mouth,float mouth_strength,float debug_offset,
         std::array<double,5>& timings,PlayerTrace* trace=nullptr,bool* source_valid=nullptr,
         const std::shared_ptr<const NativePoseOwner>& pose_owner={},std::string* failure_detail=nullptr,
@@ -308,13 +313,14 @@ struct AvatarCpuModel {
         if(subject.empty()&&debug_report_sources_pending())debug_report_observe_player(frame,snapshot.captured_milliseconds);
         const auto identified=std::chrono::steady_clock::now();
         vrm::RetargetOptions options;options.align_rest_directions=true;
-        if(avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+        options.source_to_avatar_basis=native_avatar_basis(avatar.version);
         options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=avatar.nodes[avatar.humanoid.at("head")].world[13];
         if(!std::isfinite(options.source_rest_height)||options.source_rest_height<=0)throw std::runtime_error("Source rest height unavailable");
         const auto source=snapshot.buffers.at("instances").binding.buffer;
         if(!source)throw std::runtime_error("Native instance source unavailable");
         if(source_valid)*source_valid=true;
         bind_motion(reinterpret_cast<std::uintptr_t>(source),selection,snapshot.source_epoch,snapshot.preview_subject);
+        (void)observer;
         auto pose=retarget_pose(frame.source_pose,options,reinterpret_cast<std::uintptr_t>(source));if(!pose)throw std::runtime_error("Retarget: "+pose.error);
         apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height,reinterpret_cast<std::uintptr_t>(source));
         const auto posed=std::chrono::steady_clock::now();
@@ -326,8 +332,8 @@ struct AvatarCpuModel {
         publication->source_buffer_epoch=snapshot.source_epoch;
         publication->preview_subject=snapshot.preview_subject;
         publication->height_scale=options.source_rest_height/options.avatar_rest_height;
-        publication->basis_xz=avatar.version==vrm::VrmVersion::V0?-1.f:1.f;publication->diagnostic_x=debug_offset;
-        publication->tool_hands=make_tool_hand_corrections(avatar,frame.source_pose,pose,publication->height_scale,publication->basis_xz);
+        publication->forward_sign=native_avatar_forward_sign(avatar.version);publication->diagnostic_x=debug_offset;
+        publication->tool_hands=make_tool_hand_corrections(avatar,frame.source_pose,pose,publication->height_scale,publication->forward_sign);
         if(source_valid)*source_valid=false;
         const auto instances=snapshot.buffers.find("instances");if(instances==snapshot.buffers.end())throw std::runtime_error("Native instance metadata unavailable");
         for(const auto& part:frame.parts) {
@@ -369,6 +375,9 @@ struct AvatarCpuModel {
     }
 };
 struct AvatarRenderer::Impl {
+    DevPoseWorker* pose_observer()noexcept{
+        return nullptr;
+    }
     VkDevice device{};PFN_vkGetDeviceProcAddr gdpa{};PFN_vkSetDeviceLoaderData set_loader{};
     VkPhysicalDeviceMemoryProperties memory{};
     std::vector<VkQueueFamilyProperties> queue_properties;
@@ -641,7 +650,7 @@ struct AvatarRenderer::Impl {
         const auto source_height=frame.source_pose.rest.at("head")[13];
         const auto avatar_height=model->avatar.nodes[model->avatar.humanoid.at("head")].world[13];
         const auto scale=source_height/avatar_height;if(!std::isfinite(scale)||scale<0.1f||scale>10)throw std::runtime_error("Unsupported avatar height");
-        const vrm::Matrix basis=model->avatar.version==vrm::VrmVersion::V1?vrm::Matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}:vrm::Matrix{-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+        const auto basis=native_avatar_basis(model->avatar.version);
         actor=product(actor,basis);for(int c=0;c<3;++c)for(int r=0;r<3;++r)actor[c*4+r]*=scale;actor[12]+=debug_offset;
         skin_vertices(pose,actor);
         const auto mvp=product(frame.camera_stable_world_to_clip,actor);FrameConstants constants{};
@@ -996,6 +1005,8 @@ bool AvatarRenderer::before_present_players(VkQueue queue,const VkPresentInfoKHR
             auto children=std::move(snapshot.additional_views);snapshot.additional_views.clear();
             std::vector<GpuSnapshot> views;views.push_back(std::move(snapshot));
             for(auto& child:children){if(!child.additional_views.empty())throw std::runtime_error("Nested native views");views.push_back(std::move(child));}
+            // On every exit, where the views would be freed, hand their byte storage back.
+            struct ReturnStorage{GpuProbe& probe;std::vector<GpuSnapshot>& consumed;~ReturnStorage(){probe.recycle(consumed);}} return_storage{probe,views};
             std::shared_ptr<NativeAvatarPublication> root,staged_root;
             std::set<std::uint64_t> sources;
             unsigned view_index=0;
@@ -1017,13 +1028,13 @@ bool AvatarRenderer::before_present_players(VkQueue queue,const VkPresentInfoKHR
                         if(!group)group=std::move(publication);else group->additional_subjects.push_back(std::move(publication));
                     };
                     const auto appearance=[&](AvatarCpuModel& model){return service?service->appearance_for(model.prepared):std::shared_ptr<const AvatarAppearance>{};};
-                    if(impl->model&&target_enabled(""))try{append(impl->model->build_native_view(view,cohort_serial,capture_sequence,
+                    if(impl->model&&target_enabled(""))try{append(impl->model->build_native_view(impl->pose_observer(),view,cohort_serial,capture_sequence,
                         *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,&impl->player_trace,nullptr,owner_for(""),&failure_detail,
                         "",identity_for(""),generation_for(""),appearance(*impl->model)));
                     }catch(const std::exception& error){pose_diagnostics.record(capture_facts,outcome.phase,error.what(),failure_detail.c_str());impl->report("View pose: "+std::string(error.what()));}
                     for(auto& item:impl->players){auto& state=item.second;
                         if(!state.model||!target_enabled(item.first)||!owner_for(item.first))continue;
-                        try{append(state.model->build_native_view(view,cohort_serial,capture_sequence,
+                        try{append(state.model->build_native_view(impl->pose_observer(),view,cohort_serial,capture_sequence,
                             *impl->bridge,MouthSnapshot{},impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,nullptr,owner_for(item.first),nullptr,
                             item.first,identity_for(item.first),generation_for(item.first),appearance(*state.model)));
                         }catch(const std::exception&){/* An off-screen/unavailable subject stays native. */}
@@ -1031,7 +1042,7 @@ bool AvatarRenderer::before_present_players(VkQueue queue,const VkPresentInfoKHR
                     if(group&&!native_publication_subjects_valid(group))group.reset();
                     if(group){if(!root)root=std::move(group);else root->additional_views.push_back(std::move(group));}
                     if(impl->staged_gpu_ready&&impl->staged_model&&target_enabled("")){
-                        try{auto candidate=impl->staged_model->build_native_view(view,cohort_serial,capture_sequence,
+                        try{auto candidate=impl->staged_model->build_native_view(impl->pose_observer(),view,cohort_serial,capture_sequence,
                             *impl->bridge,impl->current_mouth,impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&candidate_source_valid,owner_for(""),nullptr,
                             "",identity_for(""),impl->staged?impl->staged->generation:0,appearance(*impl->staged_model));
                             if(!staged_root)staged_root=std::move(candidate);else staged_root->additional_views.push_back(std::move(candidate));
@@ -1040,7 +1051,7 @@ bool AvatarRenderer::before_present_players(VkQueue queue,const VkPresentInfoKHR
                     for(auto& item:impl->players){auto& state=item.second;
                         if(!state.staged_gpu_ready||!state.staged_model||!state.staged||!target_enabled(item.first)||!owner_for(item.first))continue;
                         bool source_valid=false;
-                        try{auto candidate=state.staged_model->build_native_view(view,cohort_serial,capture_sequence,
+                        try{auto candidate=state.staged_model->build_native_view(impl->pose_observer(),view,cohort_serial,capture_sequence,
                             *impl->bridge,MouthSnapshot{},impl->mouth_strength,impl->debug_offset,impl->timings,nullptr,&source_valid,owner_for(item.first),nullptr,
                             item.first,identity_for(item.first),state.staged->generation,appearance(*state.staged_model));
                             if(!state.staged_publication)state.staged_publication=std::move(candidate);
@@ -1075,7 +1086,7 @@ bool AvatarRenderer::before_present_players(VkQueue queue,const VkPresentInfoKHR
             impl->replace_scene_depth(depth);
         }
         vrm::RetargetOptions options;options.align_rest_directions=true;
-        if(impl->model->avatar.version==vrm::VrmVersion::V0)options.source_to_avatar_basis={-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+        options.source_to_avatar_basis=native_avatar_basis(impl->model->avatar.version);
         options.source_rest_height=frame.source_pose.rest.at("head")[13];options.avatar_rest_height=impl->model->avatar.nodes[impl->model->avatar.humanoid.at("head")].world[13];
         auto pose=impl->model->retarget_pose(frame.source_pose,options);if(!pose){impl->report("Retarget: "+pose.error);return false;}
         impl->model->apply_springs(pose,frame,snapshot.captured_milliseconds,snapshot.source_epoch,options.source_rest_height/options.avatar_rest_height);

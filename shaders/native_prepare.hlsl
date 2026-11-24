@@ -91,76 +91,84 @@ struct UniformWindow { float4 rows[4096]; };
 [[vk::binding(68,0)]] ConstantBuffer<UniformWindow> window62;
 [[vk::binding(69,0)]] ConstantBuffer<UniformWindow> window63;
 
-uint arena_word(uint byteOffset) {
-    const uint row=(byteOffset&65535u)>>4,component=(byteOffset>>2)&3u;
+uint4 arena_row(uint byteOffset) {
+    const uint row=(byteOffset&65535u)>>4;
     switch(byteOffset>>16) {
-    case 0u: return asuint(window00.rows[row])[component];
-    case 1u: return asuint(window01.rows[row])[component];
-    case 2u: return asuint(window02.rows[row])[component];
-    case 3u: return asuint(window03.rows[row])[component];
-    case 4u: return asuint(window04.rows[row])[component];
-    case 5u: return asuint(window05.rows[row])[component];
-    case 6u: return asuint(window06.rows[row])[component];
-    case 7u: return asuint(window07.rows[row])[component];
-    case 8u: return asuint(window08.rows[row])[component];
-    case 9u: return asuint(window09.rows[row])[component];
-    case 10u: return asuint(window10.rows[row])[component];
-    case 11u: return asuint(window11.rows[row])[component];
-    case 12u: return asuint(window12.rows[row])[component];
-    case 13u: return asuint(window13.rows[row])[component];
-    case 14u: return asuint(window14.rows[row])[component];
-    case 15u: return asuint(window15.rows[row])[component];
-    case 16u: return asuint(window16.rows[row])[component];
-    case 17u: return asuint(window17.rows[row])[component];
-    case 18u: return asuint(window18.rows[row])[component];
-    case 19u: return asuint(window19.rows[row])[component];
-    case 20u: return asuint(window20.rows[row])[component];
-    case 21u: return asuint(window21.rows[row])[component];
-    case 22u: return asuint(window22.rows[row])[component];
-    case 23u: return asuint(window23.rows[row])[component];
-    case 24u: return asuint(window24.rows[row])[component];
-    case 25u: return asuint(window25.rows[row])[component];
-    case 26u: return asuint(window26.rows[row])[component];
-    case 27u: return asuint(window27.rows[row])[component];
-    case 28u: return asuint(window28.rows[row])[component];
-    case 29u: return asuint(window29.rows[row])[component];
-    case 30u: return asuint(window30.rows[row])[component];
-    case 31u: return asuint(window31.rows[row])[component];
-    case 32u: return asuint(window32.rows[row])[component];
-    case 33u: return asuint(window33.rows[row])[component];
-    case 34u: return asuint(window34.rows[row])[component];
-    case 35u: return asuint(window35.rows[row])[component];
-    case 36u: return asuint(window36.rows[row])[component];
-    case 37u: return asuint(window37.rows[row])[component];
-    case 38u: return asuint(window38.rows[row])[component];
-    case 39u: return asuint(window39.rows[row])[component];
-    case 40u: return asuint(window40.rows[row])[component];
-    case 41u: return asuint(window41.rows[row])[component];
-    case 42u: return asuint(window42.rows[row])[component];
-    case 43u: return asuint(window43.rows[row])[component];
-    case 44u: return asuint(window44.rows[row])[component];
-    case 45u: return asuint(window45.rows[row])[component];
-    case 46u: return asuint(window46.rows[row])[component];
-    case 47u: return asuint(window47.rows[row])[component];
-    case 48u: return asuint(window48.rows[row])[component];
-    case 49u: return asuint(window49.rows[row])[component];
-    case 50u: return asuint(window50.rows[row])[component];
-    case 51u: return asuint(window51.rows[row])[component];
-    case 52u: return asuint(window52.rows[row])[component];
-    case 53u: return asuint(window53.rows[row])[component];
-    case 54u: return asuint(window54.rows[row])[component];
-    case 55u: return asuint(window55.rows[row])[component];
-    case 56u: return asuint(window56.rows[row])[component];
-    case 57u: return asuint(window57.rows[row])[component];
-    case 58u: return asuint(window58.rows[row])[component];
-    case 59u: return asuint(window59.rows[row])[component];
-    case 60u: return asuint(window60.rows[row])[component];
-    case 61u: return asuint(window61.rows[row])[component];
-    case 62u: return asuint(window62.rows[row])[component];
-    case 63u: return asuint(window63.rows[row])[component];
+    case 0u: return asuint(window00.rows[row]);
+    case 1u: return asuint(window01.rows[row]);
+    case 2u: return asuint(window02.rows[row]);
+    case 3u: return asuint(window03.rows[row]);
+    case 4u: return asuint(window04.rows[row]);
+    case 5u: return asuint(window05.rows[row]);
+    case 6u: return asuint(window06.rows[row]);
+    case 7u: return asuint(window07.rows[row]);
+    case 8u: return asuint(window08.rows[row]);
+    case 9u: return asuint(window09.rows[row]);
+    case 10u: return asuint(window10.rows[row]);
+    case 11u: return asuint(window11.rows[row]);
+    case 12u: return asuint(window12.rows[row]);
+    case 13u: return asuint(window13.rows[row]);
+    case 14u: return asuint(window14.rows[row]);
+    case 15u: return asuint(window15.rows[row]);
+    case 16u: return asuint(window16.rows[row]);
+    case 17u: return asuint(window17.rows[row]);
+    case 18u: return asuint(window18.rows[row]);
+    case 19u: return asuint(window19.rows[row]);
+    case 20u: return asuint(window20.rows[row]);
+    case 21u: return asuint(window21.rows[row]);
+    case 22u: return asuint(window22.rows[row]);
+    case 23u: return asuint(window23.rows[row]);
+    case 24u: return asuint(window24.rows[row]);
+    case 25u: return asuint(window25.rows[row]);
+    case 26u: return asuint(window26.rows[row]);
+    case 27u: return asuint(window27.rows[row]);
+    case 28u: return asuint(window28.rows[row]);
+    case 29u: return asuint(window29.rows[row]);
+    case 30u: return asuint(window30.rows[row]);
+    case 31u: return asuint(window31.rows[row]);
+    case 32u: return asuint(window32.rows[row]);
+    case 33u: return asuint(window33.rows[row]);
+    case 34u: return asuint(window34.rows[row]);
+    case 35u: return asuint(window35.rows[row]);
+    case 36u: return asuint(window36.rows[row]);
+    case 37u: return asuint(window37.rows[row]);
+    case 38u: return asuint(window38.rows[row]);
+    case 39u: return asuint(window39.rows[row]);
+    case 40u: return asuint(window40.rows[row]);
+    case 41u: return asuint(window41.rows[row]);
+    case 42u: return asuint(window42.rows[row]);
+    case 43u: return asuint(window43.rows[row]);
+    case 44u: return asuint(window44.rows[row]);
+    case 45u: return asuint(window45.rows[row]);
+    case 46u: return asuint(window46.rows[row]);
+    case 47u: return asuint(window47.rows[row]);
+    case 48u: return asuint(window48.rows[row]);
+    case 49u: return asuint(window49.rows[row]);
+    case 50u: return asuint(window50.rows[row]);
+    case 51u: return asuint(window51.rows[row]);
+    case 52u: return asuint(window52.rows[row]);
+    case 53u: return asuint(window53.rows[row]);
+    case 54u: return asuint(window54.rows[row]);
+    case 55u: return asuint(window55.rows[row]);
+    case 56u: return asuint(window56.rows[row]);
+    case 57u: return asuint(window57.rows[row]);
+    case 58u: return asuint(window58.rows[row]);
+    case 59u: return asuint(window59.rows[row]);
+    case 60u: return asuint(window60.rows[row]);
+    case 61u: return asuint(window61.rows[row]);
+    case 62u: return asuint(window62.rows[row]);
+    case 63u: return asuint(window63.rows[row]);
     default: return 0u;
     }
 }
+// Select the integer component once, after the window lookup. Selecting it
+// inside each case creates thousands of Function temporaries in SPIR-V.
+uint arena_word(uint byteOffset) {
+    const uint4 value=arena_row(byteOffset);
+    const uint component=(byteOffset>>2)&3u;
+    return component==0u?value.x:component==1u?value.y:component==2u?value.z:value.w;
+}
+
 uint3 arena_uint3(uint offset) { return uint3(arena_word(offset),arena_word(offset+4u),arena_word(offset+8u)); }
 float3 arena_float3(uint offset) { return asfloat(arena_uint3(offset)); }
 uint4 arena_uint4(uint offset) { return uint4(arena_word(offset),arena_word(offset+4u),arena_word(offset+8u),arena_word(offset+12u)); }
@@ -438,10 +446,12 @@ void cs_prepare() {
     EVRM_MENU_STAGE(9u);
     float4 q=asfloat(quaternionBits);q*=rsqrt(dot(q,q));
     const float x=q.x,y=q.y,z=q.z,w=q.w,basis=control.config.y;
+    // Native physical axes: right +X/up +Y/front +Z. Both VRM bases
+    // reflect once: B=diag(-forwardSign,1,forwardSign), det(B)=-1.
     float3 normalRows[3];
-    normalRows[0]=float3((1.f-2.f*(y*y+z*z))*basis,2.f*(x*y-z*w),2.f*(x*z+y*w)*basis);
-    normalRows[1]=float3(2.f*(x*y+z*w)*basis,1.f-2.f*(x*x+z*z),2.f*(y*z-x*w)*basis);
-    normalRows[2]=float3(2.f*(x*z-y*w)*basis,2.f*(y*z+x*w),(1.f-2.f*(x*x+y*y))*basis);
+    normalRows[0]=float3(-(1.f-2.f*(y*y+z*z))*basis,2.f*(x*y-z*w),2.f*(x*z+y*w)*basis);
+    normalRows[1]=float3(-2.f*(x*y+z*w)*basis,1.f-2.f*(x*x+z*z),2.f*(y*z-x*w)*basis);
+    normalRows[2]=float3(-2.f*(x*z-y*w)*basis,2.f*(y*z+x*w),(1.f-2.f*(x*x+y*y))*basis);
     const float scale=asfloat(scaleBits)*control.config.x;
     const float3 relative=float3(asint(root-origin))*(1.f/131072.f)+float3(control.config.z,0,0);
     if(!isfinite(scale)||!all(isfinite(relative)))return;
@@ -463,7 +473,10 @@ void cs_prepare() {
 #ifdef EVRM_NATIVE_MENU_PREVIEW
     const float3 surfaceCamera=evrm_surface_camera_relative(root,origin,menuCameraWorld,control.config.z);
 #else
-    const float3 surfaceCamera=evrm_surface_camera_relative(root,origin,cameraWorld,control.config.z);
+    // The admitted lighting block carries the world camera at240. The
+    // visibility field at176 is not a world camera position; treating it as
+    // one leaves the actor's world translation in view/facing calculations.
+    const float3 surfaceCamera=evrm_surface_camera_relative(root,origin,arena_float3(l+240u),control.config.z);
 #endif
     if(!all(isfinite(surfaceCamera)))return;
 #endif

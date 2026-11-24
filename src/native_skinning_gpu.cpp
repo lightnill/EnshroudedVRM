@@ -117,6 +117,10 @@ struct NativeSkinGpuAsset::Impl {
     std::shared_ptr<SkinSurfaceCacheLease> surface_cache;
     vrm::MouthStorageLayout mouth;
 };
+struct NativeSkinGpuOutlineRig::Impl {
+    std::shared_ptr<SkinBuffer> sources,batches;
+    std::shared_ptr<const NativeSkinGpuGeometry> geometry;
+};
 struct NativeSkinGpuGeometry::Impl {
     std::shared_ptr<void> owner;std::shared_ptr<const NativeSkinAsset> source;std::shared_ptr<SkinBuffer> output,surface;
     std::shared_ptr<SkinSurfaceCacheLease> surface_cache;
@@ -137,7 +141,7 @@ struct NativeSkinGpuFrame::Impl {
         std::array<float,4> weights0{},weights1{};
     };
     static_assert(sizeof(Control)==64&&offsetof(Control,weights0)==32&&offsetof(Control,weights1)==48,"Mouth skin control ABI");
-    VkDescriptorSet set{};Control control;bool recorded=false,surface=false;
+    VkDescriptorSet set{};Control control;bool recorded=false,surface=false,outline_sources=false;
 };
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -151,6 +155,11 @@ NativeSkinGpuGeometry::NativeSkinGpuGeometry(std::shared_ptr<Impl> p):impl(std::
 NativeSkinGpuGeometry::~NativeSkinGpuGeometry()=default;
 VkDescriptorBufferInfo NativeSkinGpuGeometry::binding()const noexcept{return impl->output->binding();}
 VkDescriptorBufferInfo NativeSkinGpuGeometry::surface_binding()const noexcept{return impl->surface?impl->surface->binding():VkDescriptorBufferInfo{};}
+NativeSkinGpuOutlineRig::NativeSkinGpuOutlineRig(std::shared_ptr<Impl> p):impl(std::move(p)){}
+NativeSkinGpuOutlineRig::~NativeSkinGpuOutlineRig()=default;
+VkDescriptorBufferInfo NativeSkinGpuOutlineRig::sources()const noexcept{return impl->sources->binding();}
+VkDescriptorBufferInfo NativeSkinGpuOutlineRig::batches()const noexcept{return impl->batches->binding();}
+std::shared_ptr<const NativeSkinGpuGeometry> NativeSkinGpuOutlineRig::geometry()const noexcept{return impl->geometry;}
 NativeSkinGpuFrame::NativeSkinGpuFrame(std::shared_ptr<Impl> p):impl(std::move(p)){}
 NativeSkinGpuFrame::~NativeSkinGpuFrame()=default;
 std::shared_ptr<const NativeSkinGpuGeometry> NativeSkinGpuFrame::geometry()const noexcept{return impl->geometry;}
@@ -261,9 +270,19 @@ std::shared_ptr<NativeSkinGpuFrame> NativeSkinningGpu::frame(const std::shared_p
     std::array<VkWriteDescriptorSet,10> writes{};for(unsigned i=0;i<bindings;++i){auto& w=writes[i];w=info<VkWriteDescriptorSet>(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);w.dstSet=f->set;w.dstBinding=i;w.descriptorType=i==7?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;w.descriptorCount=1;w.pBufferInfo=&buffers[i];}c->fn<PFN_vkUpdateDescriptorSets>("vkUpdateDescriptorSets")(c->device,bindings,writes.data(),0,nullptr);
     return std::shared_ptr<NativeSkinGpuFrame>(new NativeSkinGpuFrame(std::move(f)));
 }
+std::shared_ptr<const NativeSkinGpuOutlineRig> NativeSkinningGpu::outline_rig(const std::shared_ptr<NativeSkinGpuFrame>& frame)noexcept{
+    if(!frame||frame->impl->owner!=impl||frame->impl->recorded||impl->c->uncertain())return {};
+    const auto& f=*frame->impl;
+    if(!f.asset||!f.asset->impl->uploaded||!f.asset->impl->vertices||!f.batches||!f.geometry)return {};
+    try{
+        auto lease=std::make_shared<NativeSkinGpuOutlineRig::Impl>();lease->sources=f.asset->impl->vertices;lease->batches=f.batches;lease->geometry=f.geometry;
+        auto result=std::shared_ptr<const NativeSkinGpuOutlineRig>(new NativeSkinGpuOutlineRig(std::move(lease)));
+        frame->impl->outline_sources=true;return result;
+    }catch(...){return {};}
+}
 void NativeSkinningGpu::record(VkCommandBuffer command,const std::shared_ptr<NativeSkinGpuFrame>& frame){
     require(command&&frame&&frame->impl->owner==impl&&!frame->impl->recorded&&!impl->c->uncertain(),"Skin recording ownership");auto c=impl->c;auto& f=*frame->impl;f.recorded=true;
-    barrier(c,command,VK_PIPELINE_STAGE_HOST_BIT|VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_HOST_WRITE_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_UNIFORM_READ_BIT);
+    barrier(c,command,VK_PIPELINE_STAGE_HOST_BIT|VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|(f.outline_sources?VkPipelineStageFlags(VK_PIPELINE_STAGE_VERTEX_SHADER_BIT):0u),VK_ACCESS_HOST_WRITE_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_UNIFORM_READ_BIT);
     auto copy=c->fn<PFN_vkCmdCopyBuffer>("vkCmdCopyBuffer");VkBufferCopy p{0,0,f.palettes->bytes},b{0,0,f.batches->bytes};copy(command,f.palette_staging->handle,f.palettes->handle,1,&p);copy(command,f.batch_staging->handle,f.batches->handle,1,&b);
     barrier(c,command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT);
     const auto& pipelines=f.surface?impl->surface->pipelines:impl->pipelines;const auto layout=f.surface?impl->surface->layout:impl->layout;
@@ -271,6 +290,9 @@ void NativeSkinningGpu::record(VkCommandBuffer command,const std::shared_ptr<Nat
     auto dispatch=c->fn<PFN_vkCmdDispatch>("vkCmdDispatch");dispatch(command,(f.control.vertices+63)/64,1,1);
     barrier(c,command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT);
     bind(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipelines[1]);dispatch(command,1,1,1);
-    barrier(c,command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_HOST_BIT,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_HOST_READ_BIT);
+    // The optional outline reads batch transforms written by transfer, in
+    // addition to the deformed vertices written by compute. Ordinary skinning
+    // keeps its original scopes and never retains the mesh-batch scratch.
+    barrier(c,command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|(f.outline_sources?VkPipelineStageFlags(VK_PIPELINE_STAGE_TRANSFER_BIT):0u),VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_HOST_BIT,VK_ACCESS_SHADER_WRITE_BIT|(f.outline_sources?VkAccessFlags(VK_ACCESS_TRANSFER_WRITE_BIT):0u),VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_UNIFORM_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_HOST_READ_BIT);
 }
 }

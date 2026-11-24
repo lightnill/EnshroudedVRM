@@ -37,7 +37,7 @@ Source: https://github.com/KhronosGroup/Vulkan-Headers
 
 ## Statically linked compiler/runtime components
 
-The 0.5.0 loader and VRM runtime are built for x64 with Visual Studio 2022,
+The loader and VRM runtime are built for x64 with Visual Studio 2022,
 MSVC toolset 14.44.35207 (compiler 19.44.35229.0) and Windows SDK 10.0.28000.0.
 The project uses the static Microsoft C/C++ runtime (/MT). Exact native hashes,
 tool identities and validation results are recorded in the separate build receipt.
@@ -87,12 +87,40 @@ This is an unofficial local preview; no endorsement or publisher approval is
 claimed. The binary includes minimal locally researched interface/rig compatibility
 data with original research provenance flags retained. The project MIT license
 does not grant rights to game content. Game meshes/textures and the game
-executable are not redistributed. The creator-authorized vroid-sample.vrm is
+executable are not redistributed. The creator-authorized sample avatar in the player ZIP is
 included unchanged under its own embedded VRM permissions, separately from
-the mod code license; see portable/standalone_assets/README.txt. Other models
+the mod code license; see the avatar readme in the player ZIP. Other models
 remain user-supplied.
 
 Valheim VRM repositories were reference research only. No source/tests/shaders/
 assets from them were copied into this product or these archives.
 
-MikkTSpace tangent generation is included under its zlib-style license; see vendor/mikktspace and the bundled notices/MikkTSpace.txt.
+MikkTSpace tangent generation is included under its zlib-style license; see vendor/mikktspace and portable/standalone_docs/MikkTSpace.txt.
+
+
+## MToon optional material reference
+
+UniVRM/MToon upstream reference, revision efd20f62f1bf0ac3fcc34de1e497324c5197d146. See docs/research/2026-11-05-mtoon-reference-provenance.md for exact inputs and reference policies.
+
+MIT License
+
+Copyright (c) 2020 VRM Consortium
+Copyright (c) 2018 Masataka SUMI for MToon
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

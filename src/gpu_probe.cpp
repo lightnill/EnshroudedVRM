@@ -1,9 +1,11 @@
 #define VK_NO_PROTOTYPES
 #include "runtime_log.hpp"
 #include "gpu_probe.hpp"
+#include "native_pose_freshness.hpp"
 #include "standalone_startup.hpp"
 #include "native_submit.hpp"
 #include "gpu_probe_capture_frames.hpp"
+#include "native_decode_worker.hpp"
 #include "fallback_diagnostics.hpp"
 #include "native_preview_trace.hpp"
 
@@ -19,6 +21,7 @@
 #include <array>
 #include <chrono>
 #include <tuple>
+#include <fstream>
 
 namespace evrm {
 namespace {
@@ -46,10 +49,18 @@ struct Layout {
     bool inline_safe=false;
     std::set<uint32_t> inline_unsafe_bindings;
 };
+const Layout& unknown_layout() {
+    static const Layout value;
+    return value;
+}
 struct DescriptorSet {
     VkDescriptorPool pool{};
     uint64_t version=0,generation=0,optional_epoch=0;
-    Layout layout;
+    std::shared_ptr<const Layout> layout;
+    const Layout& description() const {
+        if(layout)return *layout;
+        return unknown_layout();
+    }
     // A direct known b24 write may recover direct capture, but cannot repair
     // other bindings after an unsupported span. Copy trust stays separate.
     bool optional_copy_known=true;
@@ -81,7 +92,8 @@ struct ComputeCommandState {
     BoundTarget binding;uint64_t set_generation=0;
     std::vector<ComputeEvent> events;
 };
-struct DrawCommandState {bool model=false;VkPipelineLayout bound_layout{},expected_layout{};std::map<std::string,BoundTarget> bindings;std::vector<RecordedDraw> draws;uint64_t generation=0;ComputeCommandState compute;std::size_t inline_boundary=0;bool inline_required=false;};
+struct DrawCommandState {bool model=false;VkPipelineLayout bound_layout{},expected_layout{};std::map<std::string,BoundTarget> bindings;std::vector<RecordedDraw> draws;uint64_t generation=0;ComputeCommandState compute;std::size_t inline_boundary=0;bool inline_required=false;
+};
 struct SubmittedDraw {RecordedDraw draw;std::map<std::string,Target> bindings;std::map<VkBuffer,uint64_t> generations;std::map<VkDescriptorSet,uint64_t> versions;VkQueue queue{};};
 struct SubmittedAnchor {bool valid=false;Target target;VkDescriptorSet set{};uint64_t version=0,set_generation=0,buffer_generation=0,optional_epoch=0;PlayerAnchorDispatch groups;VkQueue queue{};};
 struct CaptureRead { Target target; VkDeviceSize size{},destination{}; };
@@ -101,6 +113,7 @@ struct CapturePlan {
 };
 constexpr std::size_t anchor_event_limit=1024,anchor_frame_limit=4096;
 constexpr VkDeviceSize readback_budget=32u*1024u*1024u;
+constexpr std::size_t spare_storage_limit=32;
 template<class Handle> uint64_t bits(Handle handle) {
     uint64_t value{};
     static_assert(sizeof(handle) <= sizeof(value));
@@ -184,7 +197,7 @@ struct GpuProbe::Impl {
     std::set<uint64_t> anchor_saved_frames;
     std::unordered_map<VkBuffer, Buffer> buffers;
     uint64_t buffer_generation=0;
-    std::unordered_map<VkDescriptorSetLayout, Layout> layouts;
+    std::unordered_map<VkDescriptorSetLayout, std::shared_ptr<const Layout>> layouts;
     std::unordered_map<VkDescriptorSet, DescriptorSet> sets;
     uint64_t descriptor_version=0;
     uint64_t descriptor_generation=0,command_generation=0;
@@ -206,16 +219,43 @@ struct GpuProbe::Impl {
         bool pending=false,ready=false;uint64_t epoch=0,started_ms=0,sequence=0;
         bool recorded=false,publishable=true;VkCommandBuffer original{};uint64_t original_generation=0;
         CapturePlan plan;
+        Impl* decode_owner=nullptr;
+        bool decoding=false,decode_finished=false;
+        std::unique_ptr<GpuSnapshot> decoded;
+        std::array<char,160> decode_error{};
     };
     std::array<AsyncSlot,3> async_slots;
+    std::unique_ptr<NativeDecodeWorker> decode_worker;
+    PFN_vkGetFenceStatus async_fence_status=nullptr;
+    bool decode_worker_requested=false,decode_worker_attempted=false;
+    uint64_t decode_worker_enqueued=0,decode_worker_completed=0,decode_worker_discarded_old=0;
+    uint64_t decode_worker_early=0,decode_worker_late=0,decode_worker_fence_polls=0,decode_worker_cancelled=0;
+    struct DecodeDelivery {VkDescriptorBufferInfo instances{};uint64_t sequence=0;};
+    // At most three slots with four independent allocations each. Keep a
+    // high-water mark only while a slot can still deliver an older result.
+    std::array<DecodeDelivery,12> decode_deliveries{};
     VkQueue async_queue{};std::map<std::string,std::size_t> async_limits;
     bool async_disabled=false,async_frame=false;
     uint64_t async_sequence=0,async_enqueued=0,async_decoded=0,async_pending_polls=0,async_skipped=0,async_rejected=0,async_observed=0;
     FallbackEpisodes async_gaps;
+    // Byte storage of the capture consumed last, kept for the next decode. It
+    // holds no captured content and no authority over any source.
+    std::mutex storage_mutex;
+    std::vector<std::vector<std::uint8_t>> spare_storage;
+    std::vector<std::uint8_t> capture_bytes(const std::uint8_t*,std::size_t);
     void resolve_command(VkQueue,VkCommandBuffer,std::vector<SubmittedDraw>&,std::size_t first=0,bool at_boundary=false);
     CapturePlan make_plan(VkQueue,const std::map<std::string,std::size_t>&,const std::vector<SubmittedDraw>&,bool);
     CapturePlan make_single_plan(VkQueue,const std::map<std::string,std::size_t>&,const std::vector<SubmittedDraw>&,bool);
     GpuSnapshot decode_plan(const CapturePlan&,const void*,bool);
+    void decode_slot(AsyncSlot&)noexcept;
+    bool enqueue_decode(AsyncSlot&,bool)noexcept;
+    bool decode_slot_ready(AsyncSlot&)noexcept;
+    void cancel_decode(AsyncSlot&)noexcept;
+    void validate_async_result(const CapturePlan&,GpuSnapshot&);
+    void validate_async_result_locked(const CapturePlan&,GpuSnapshot&);
+    static bool plan_reads_instances(const CapturePlan&,const VkDescriptorBufferInfo&)noexcept;
+    void prune_decode_deliveries()noexcept;
+    bool accept_decode_delivery(const GpuSnapshot&)noexcept;
     void prepare_slot(AsyncSlot&,VkQueue,CapturePlan);
     void record_copy(VkCommandBuffer,AsyncSlot&,const CapturePlan&);
     void mark_submitted(VkQueue,const std::vector<AsyncSlot*>&,std::uint64_t,bool);
@@ -225,7 +265,7 @@ struct GpuProbe::Impl {
     void drain_slot(AsyncSlot&);
     void invalidate_optional_provenance(DescriptorSet& set) {
         set.optional_copy_known=false;
-        if(set.layout.anchor_uniform){set.buffers.erase({24,0});set.buffer_generations.erase({24,0});}
+        if(set.description().anchor_uniform){set.buffers.erase({24,0});set.buffer_generations.erase({24,0});}
         ++set.optional_epoch;
     }
     void anchor_capture_error(const std::string& message) noexcept {
@@ -272,7 +312,7 @@ struct GpuProbe::Impl {
             SubmittedAnchor anchor;anchor.queue=queue;anchor.groups=event.groups;
             if(event.kind==ComputeEvent::Kind::dispatch&&event.valid) {
                 const auto set=sets.find(event.binding.set);
-                if(set!=sets.end()&&set->second.generation==event.set_generation&&set->second.layout.anchor_uniform) {
+                if(set!=sets.end()&&set->second.generation==event.set_generation&&set->second.description().anchor_uniform) {
                     const auto key=std::make_pair(24u,0u);const auto value=set->second.buffers.find(key);const auto lease=set->second.buffer_generations.find(key);
                     if(value!=set->second.buffers.end()&&lease!=set->second.buffer_generations.end()) {
                         auto view=value->second;const auto buffer=buffers.find(view.buffer);
@@ -452,6 +492,48 @@ CapturePlan GpuProbe::Impl::make_single_plan(VkQueue queue,const std::map<std::s
     return plan;
 }
 
+// Storage for one captured buffer; the bytes are always copied. A spare block
+// is taken only when it is at most an eighth (plus 64 bytes) larger than the
+// request. Otherwise every spare is released before the new block is requested,
+// under the same lock, so no spare is held while snapshot storage grows.
+std::vector<std::uint8_t> GpuProbe::Impl::capture_bytes(const std::uint8_t* first,std::size_t size) {
+    std::vector<std::uint8_t> bytes;
+    if(!size)return bytes;
+    {
+        std::lock_guard<std::mutex> lock(storage_mutex);
+        auto best=spare_storage.end();
+        for(auto it=spare_storage.begin();it!=spare_storage.end();++it) {
+            const auto capacity=it->capacity();
+            if(capacity<size||capacity-size>size/8+64)continue;
+            if(best==spare_storage.end()||capacity<best->capacity())best=it;
+        }
+        if(best!=spare_storage.end()){bytes=std::move(*best);spare_storage.erase(best);}
+        else{spare_storage.clear();bytes.reserve(size);}
+    }
+    bytes.assign(first,first+size);
+    return bytes;
+}
+static void harvest_storage(GpuSnapshot& view,std::vector<std::vector<std::uint8_t>>& spare,VkDeviceSize& held) {
+    for(auto& item:view.buffers) {
+        auto& bytes=item.second.bytes;const auto capacity=bytes.capacity();
+        if(!capacity||spare.size()>=spare_storage_limit||capacity>readback_budget-held)continue;
+        bytes.clear();spare.push_back(std::move(bytes));held+=capacity;
+    }
+    for(auto& child:view.additional_views)harvest_storage(child,spare,held);
+}
+void GpuProbe::recycle(std::vector<GpuSnapshot>& consumed) noexcept {
+    if(consumed.empty())return;
+    try {
+        // Never wait for a decoder that is requesting storage; the caller's
+        // destructor then frees the bytes exactly as before.
+        std::unique_lock<std::mutex> lock(impl->storage_mutex,std::try_to_lock);
+        if(!lock.owns_lock())return;
+        impl->spare_storage.clear();
+        VkDeviceSize held=0;
+        for(auto& view:consumed)harvest_storage(view,impl->spare_storage,held);
+    }catch(...){}
+}
+
 GpuSnapshot GpuProbe::Impl::decode_plan(const CapturePlan& plan,const void* data,bool asynchronous) {
     auto snapshot=plan.snapshot;const auto family=plan.family;
     const auto& reads=plan.reads;const auto& draw_reads=plan.draw_reads;
@@ -463,7 +545,7 @@ GpuSnapshot GpuProbe::Impl::decode_plan(const CapturePlan& plan,const void* data
             snapshot.queue_family = family;
             for (const auto& read : reads) {
                 const auto* first = static_cast<const std::uint8_t*>(data) + read.destination;
-                snapshot.buffers[read.target.role] = {read.target.binding, std::vector<std::uint8_t>(first, first + read.size)};
+                snapshot.buffers[read.target.role] = {read.target.binding, capture_bytes(first, static_cast<std::size_t>(read.size))};
             }
         {std::lock_guard<std::mutex> lock(mutex);
             if(!asynchronous)for(const auto& version:descriptor_leases){const auto set=sets.find(version.first);if(set==sets.end()||set->second.version!=version.second)throw std::runtime_error("Descriptor contents changed during pose readback");}
@@ -491,10 +573,21 @@ GpuProbe::GpuProbe(VkInstance instance, VkPhysicalDevice physical, VkDevice devi
     impl->device = device; impl->gdpa = gdpa; impl->set_loader_data = set_loader_data;
     const auto& startup=runtime_startup_context();
     if(!startup.ready())return;
+    // Empty MSVC trees allocate sentinel nodes. Prepare the unknown description
+    // before this observer can publish sets, never during a partial bind.
+    (void)unknown_layout();
     // GPU readback is required for the avatar, independently of writable disk
     // storage. File captures remain off in the standalone player path.
     impl->directory=startup.capture_directory;
     impl->active=true;
+    std::array<char,16> decode_mode{};std::size_t decode_mode_size=0;
+    if(!startup.state_directory.empty()){
+        std::ifstream mode(startup.state_directory/L"decode-worker.mode",std::ios::binary);
+        mode.read(decode_mode.data(),decode_mode.size());
+        // Reject an overlong file rather than accepting a truncated token prefix.
+        if(mode.gcount()<static_cast<std::streamsize>(decode_mode.size()))decode_mode_size=static_cast<std::size_t>(mode.gcount());
+    }
+    impl->decode_worker_requested=native_decode_worker_enabled(environment(L"ENSHROUDED_VRM_DECODE_WORKER"),{decode_mode.data(),decode_mode_size});
     const auto memory = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(gipa(instance, "vkGetPhysicalDeviceMemoryProperties"));
     const auto families = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(gipa(instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
     if (!memory || !families) throw std::runtime_error("missing physical-device observation functions");
@@ -510,6 +603,9 @@ GpuProbe::GpuProbe(VkInstance instance, VkPhysicalDevice physical, VkDevice devi
     log_event("probe.enabled");
 }
 GpuProbe::~GpuProbe() {
+    // Jobs can be copying a mapped slot or waiting to publish under this lock.
+    // Join before taking it, and before any staging allocation is released.
+    impl->decode_worker.reset();
     std::lock_guard<std::mutex> lock(impl->readback_mutex);
     for(auto& slot:impl->async_slots){impl->drain_slot(slot);impl->release_slot(slot);}
 }
@@ -574,7 +670,10 @@ void GpuProbe::buffer_destroyed(VkBuffer buffer) {
     // Native destruction happens after this callback. Metadata retirement stops
     // new copies, while this guard lets a copy already in flight finish first.
     std::lock_guard<std::mutex> completed(impl->readback_mutex);
-    for(auto& slot:impl->async_slots)if(slot.plan.generations.count(buffer)){impl->drain_slot(slot);slot.ready=false;slot.plan={};}
+    for(auto& slot:impl->async_slots)if(slot.plan.generations.count(buffer)){
+        impl->drain_slot(slot);slot.publishable=false;
+        if(!slot.decoding){slot.ready=false;slot.plan={};slot.decoded.reset();slot.decode_finished=false;}
+    }
 }
 void GpuProbe::layout_created(VkDescriptorSetLayout handle, const VkDescriptorSetLayoutCreateInfo& info) {
     if (!enabled()) return;
@@ -607,7 +706,9 @@ void GpuProbe::layout_created(VkDescriptorSetLayout handle, const VkDescriptorSe
     for (const auto& item : bindings) signature += std::to_string(item.first) + ":" + std::to_string(item.second.descriptorType) + ":" + std::to_string(item.second.descriptorCount) + ",";
     if (impl->logged_layouts.size() < 64 && impl->logged_layouts.insert(signature).second)
         log_event("probe.layout kind=" + std::to_string(static_cast<int>(layout.kind)) + " bindings=" + signature);
-    impl->layouts[handle] = std::move(layout);
+    auto& retained=impl->layouts[handle];
+    retained.reset(); // A failed replacement must not publish an old description to new sets.
+    retained=std::make_shared<const Layout>(std::move(layout));
 }
 void GpuProbe::layout_destroyed(VkDescriptorSetLayout handle) {
     if (!enabled()) return;
@@ -643,7 +744,7 @@ void GpuProbe::descriptors_written(uint32_t count, const VkWriteDescriptorSet* w
         const auto found = impl->sets.find(write.dstSet);
         if(found==impl->sets.end())continue;
         const bool ambiguous=impl->anchor_enabled&&
-            !within_binding(found->second.layout,write.dstBinding,write.dstArrayElement,write.descriptorCount);
+            !within_binding(found->second.description(),write.dstBinding,write.dstArrayElement,write.descriptorCount);
         if (!write.pBufferInfo || (!is_uniform(write.descriptorType) && !is_storage(write.descriptorType))) {
             if(ambiguous)impl->invalidate_optional_provenance(found->second);
             continue;
@@ -665,8 +766,8 @@ void GpuProbe::descriptors_copied(uint32_t count, const VkCopyDescriptorSet* cop
         auto source = impl->sets.find(copy.srcSet), destination = impl->sets.find(copy.dstSet);
         if(destination==impl->sets.end())continue;
         bool ambiguous=impl->anchor_enabled&&(source==impl->sets.end()||!source->second.optional_copy_known||
-            !within_binding(destination->second.layout,copy.dstBinding,copy.dstArrayElement,copy.descriptorCount)||
-            !within_binding(source->second.layout,copy.srcBinding,copy.srcArrayElement,copy.descriptorCount));
+            !within_binding(destination->second.description(),copy.dstBinding,copy.dstArrayElement,copy.descriptorCount)||
+            !within_binding(source->second.description(),copy.srcBinding,copy.srcArrayElement,copy.descriptorCount));
         if(source==impl->sets.end()){if(ambiguous)impl->invalidate_optional_provenance(destination->second);continue;}
         destination->second.version=++impl->descriptor_version;
         for (uint32_t j = 0; j < copy.descriptorCount; ++j) {
@@ -700,7 +801,7 @@ void GpuProbe::template_written(VkDescriptorSet handle, VkDescriptorUpdateTempla
     bool ambiguous=false;
     for (const auto& entry : entries->second) {
         if(impl->anchor_enabled&&
-           !within_binding(set->second.layout,entry.dstBinding,entry.dstArrayElement,entry.descriptorCount))ambiguous=true;
+           !within_binding(set->second.description(),entry.dstBinding,entry.dstArrayElement,entry.descriptorCount))ambiguous=true;
         if (!is_uniform(entry.descriptorType) && !is_storage(entry.descriptorType)) continue;
         for (uint32_t i = 0; i < entry.descriptorCount; ++i) {
             VkDescriptorBufferInfo buffer{};
@@ -723,7 +824,7 @@ void GpuProbe::sets_bound(VkCommandBuffer command,VkPipelineBindPoint point,VkPi
         if(state.bound_layout!=layout)state.has_binding=false;
         state.bound_layout=layout;
         uint64_t required=0;bool valid=(!count||handles)&&(!dynamic_count||offsets);
-        for(uint32_t i=0;i<count&&handles;++i){const auto set=impl->sets.find(handles[i]);if(set==impl->sets.end()){valid=false;continue;}required+=set->second.layout.dynamic_bindings.size();}
+        for(uint32_t i=0;i<count&&handles;++i){const auto set=impl->sets.find(handles[i]);if(set==impl->sets.end()){valid=false;continue;}required+=set->second.description().dynamic_bindings.size();}
         valid=valid&&required==dynamic_count;
         if(!valid)state.has_binding=false;
         uint64_t dynamic_index=0;
@@ -731,12 +832,12 @@ void GpuProbe::sets_bound(VkCommandBuffer command,VkPipelineBindPoint point,VkPi
             const auto slot=uint64_t(first_set)+i;if(slot==2)state.has_binding=false;
             const auto set=impl->sets.find(handles[i]);if(set==impl->sets.end())continue;
             uint32_t anchor_dynamic=0;
-            for(const auto& binding:set->second.layout.dynamic_bindings) {
+            for(const auto& binding:set->second.description().dynamic_bindings) {
                 if(binding==std::make_pair(24u,0u)&&dynamic_index<dynamic_count&&offsets)anchor_dynamic=offsets[dynamic_index];
                 ++dynamic_index;
             }
-            if(slot!=2||!valid||!set->second.layout.anchor_uniform)continue;
-            if(set->second.layout.anchor_dynamic&&(!impl->uniform_alignment||anchor_dynamic%impl->uniform_alignment))continue;
+            if(slot!=2||!valid||!set->second.description().anchor_uniform)continue;
+            if(set->second.description().anchor_dynamic&&(!impl->uniform_alignment||anchor_dynamic%impl->uniform_alignment))continue;
             const auto value=set->second.buffers.find({24,0});if(value==set->second.buffers.end())continue;
             if(impl->uniform_alignment&&value->second.offset%impl->uniform_alignment)continue;
             state.binding={handles[i],24,anchor_dynamic};state.set_generation=set->second.generation;state.has_binding=true;
@@ -758,7 +859,7 @@ void GpuProbe::sets_bound(VkCommandBuffer command,VkPipelineBindPoint point,VkPi
         const auto set = impl->sets.find(handles[i]);
         if (set == impl->sets.end()) continue;
         std::map<std::pair<uint32_t, uint32_t>, uint32_t> dynamics;
-        for (const auto& binding : set->second.layout.dynamic_bindings) {
+        for (const auto& binding : set->second.description().dynamic_bindings) {
             if (dynamic_index < dynamic_count) dynamics[binding] = offsets[dynamic_index];
             ++dynamic_index;
         }
@@ -774,12 +875,13 @@ void GpuProbe::sets_bound(VkCommandBuffer command,VkPipelineBindPoint point,VkPi
             command_state.bindings[role]={handles[i],binding,dynamic==dynamics.end()?0:dynamic->second};
             if(binding==4)native_preview_trace_event(bits(value.buffer),NativePreviewTraceStage::Bindings);
         };
-        if(slot==0&&set->second.layout.kind==SetKind::global){take(5,"skin");take(6,"previous-skin");}
-        if(slot==1&&set->second.layout.kind==SetKind::camera)take(16,"camera");
-        if(slot==2&&set->second.layout.kind==SetKind::model){take(1,"mesh-draw");take(4,"instances");take(5,"culled-instances");}
+        if(slot==0&&set->second.description().kind==SetKind::global){take(5,"skin");take(6,"previous-skin");}
+        if(slot==1&&set->second.description().kind==SetKind::camera)take(16,"camera");
+        if(slot==2&&set->second.description().kind==SetKind::model){take(1,"mesh-draw");take(4,"instances");take(5,"culled-instances");}
     }
 }
-void GpuProbe::command_begin(VkCommandBuffer command) {if(!enabled())return;std::lock_guard<std::mutex> copies(impl->readback_mutex);impl->cancel_recorded(command);std::lock_guard<std::mutex> lock(impl->mutex);auto& state=impl->commands[command];state={};state.generation=++impl->command_generation;}
+void GpuProbe::command_begin(VkCommandBuffer command) {if(!enabled())return;std::lock_guard<std::mutex> copies(impl->readback_mutex);impl->cancel_recorded(command);std::lock_guard<std::mutex> lock(impl->mutex);auto& state=impl->commands[command];state={};state.generation=++impl->command_generation;
+}
 void GpuProbe::command_freed(uint32_t count,const VkCommandBuffer* commands) {if(!enabled())return;std::lock_guard<std::mutex> copies(impl->readback_mutex);for(uint32_t i=0;i<count;++i)impl->cancel_recorded(commands[i]);std::lock_guard<std::mutex> lock(impl->mutex);for(uint32_t i=0;i<count;++i){impl->commands.erase(commands[i]);impl->command_pools.erase(commands[i]);}}
 void GpuProbe::pipeline_bound(VkCommandBuffer command,bool model,VkPipelineLayout layout) {
     if(!enabled())return;

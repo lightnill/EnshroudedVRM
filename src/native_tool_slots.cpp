@@ -1,4 +1,5 @@
 #include "native_tool_slots.hpp"
+#include "native_pose_freshness.hpp"
 #include <algorithm>
 #include <cmath>
 namespace evrm { namespace {
@@ -20,7 +21,7 @@ bool proper_rotation(const std::array<float,12>&m,R&r) noexcept {
 }
 bool make_native_tool_slot_edits(const NativeVisualSlots& slots,const std::array<float,4>& q,
  const std::array<float,3>& scale,const std::array<ToolHandCorrection,2>& corrections,std::uint64_t sampled,std::uint64_t now,NativeToolSlotEdits&out)noexcept {
- out={};if(!sampled||now<sampled||now-sampled>250)return false;
+ out={};if(!native_pose_is_fresh(sampled,now))return false;
  double norm=0;for(auto v:q){if(!std::isfinite(v))return false;norm+=double(v)*v;}
  if(std::abs(norm-1)>1e-3)return false;
  for(auto v:scale)if(!std::isfinite(v)||v<.01f||v>100||std::abs(v-scale[0])>1e-5)return false;
@@ -29,13 +30,13 @@ bool make_native_tool_slot_edits(const NativeVisualSlots& slots,const std::array
   {2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)},
   {2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)}};
  bool any=false;
- // Pinned native attachment names use the opposite side to the semantic rig
- // profile: HandPalmR14 tracks source leftHand74; HandPalmL15 rightHand44.
+ // Anatomical profile semantics match captured native attachments:
+ // HandPalmR14 is rightHand74; HandPalmL15 is leftHand44.
  // Slot12 is the independent shield grip attached to the palm15 limb. Keep
  // its native rigid offset instead of moving the avatar's arm or scaling it.
  constexpr std::array<unsigned,NativeToolSlotEdits::slots.size()> palms{14,15,14,15,15};
  for(std::size_t n=0;n<NativeToolSlotEdits::slots.size();++n){const auto slot=NativeToolSlotEdits::slots[n];
-  const unsigned palm=palms[n];const auto&c=corrections[palm==14?1:0];
+  const unsigned palm=palms[n];const auto&c=corrections[palm==14?0:1];
   if(!c.valid||!(slots.active&(std::uint64_t(1)<<slot))||!(slots.active&(std::uint64_t(1)<<palm)))continue;
   auto m=c.target_native_hand;
   if((slot==8||slot==9)&&c.item_offset_valid)for(int i=0;i<3;++i)m[12+i]+=c.item_offset_native[i];

@@ -130,7 +130,6 @@
     X(vkCmdOpticalFlowExecuteNV) \
     X(vkCmdPreprocessGeneratedCommandsEXT) \
     X(vkCmdPreprocessGeneratedCommandsNV) \
-    X(vkCmdPushConstants) \
     X(vkCmdPushConstants2) \
     X(vkCmdPushConstants2KHR) \
     X(vkCmdPushDataEXT) \
@@ -545,6 +544,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImag
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdBlitImage");
     next(commandBuffer, srcImage, srcImageLayout, dstImage, dstImageLayout, regionCount, pRegions, filter);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_unobserved_write(dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2* pBlitImageInfo) {
@@ -553,6 +553,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdBlitImage2(VkCommandBuffer commandBuffer, const
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdBlitImage2");
     next(commandBuffer, pBlitImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pBlitImageInfo)native.cube_unobserved_write(pBlitImageInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdBlitImage2KHR(VkCommandBuffer commandBuffer, const VkBlitImageInfo2* pBlitImageInfo) {
@@ -561,6 +562,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdBlitImage2KHR(VkCommandBuffer commandBuffer, co
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdBlitImage2KHR");
     next(commandBuffer, pBlitImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pBlitImageInfo)native.cube_unobserved_write(pBlitImageInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdBuildAccelerationStructureNV(VkCommandBuffer commandBuffer, const VkAccelerationStructureInfoNV* pInfo, VkBuffer instanceData, VkDeviceSize instanceOffset, VkBool32 update, VkAccelerationStructureNV dst, VkAccelerationStructureNV src, VkBuffer scratch, VkDeviceSize scratchOffset) {
@@ -625,6 +627,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdClearColorImage(VkCommandBuffer commandBuffer, 
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdClearColorImage");
     next(commandBuffer, image, imageLayout, pColor, rangeCount, pRanges);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_unobserved_write(image);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout, const VkClearDepthStencilValue* pDepthStencil, uint32_t rangeCount, const VkImageSubresourceRange* pRanges) {
@@ -633,6 +636,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdClearDepthStencilImage(VkCommandBuffer commandB
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdClearDepthStencilImage");
     next(commandBuffer, image, imageLayout, pDepthStencil, rangeCount, pRanges);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_unobserved_write(image);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdControlVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoCodingControlInfoKHR* pCodingControlInfo) {
@@ -681,6 +685,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyBufferToImage");
     next(commandBuffer, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_copy(commandBuffer,dstImage,dstImageLayout,regionCount,pRegions);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyBufferToImage2(VkCommandBuffer commandBuffer, const VkCopyBufferToImageInfo2* pCopyBufferToImageInfo) {
@@ -689,6 +694,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyBufferToImage2(VkCommandBuffer commandBuffe
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyBufferToImage2");
     next(commandBuffer, pCopyBufferToImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_copy2(commandBuffer,pCopyBufferToImageInfo);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyBufferToImage2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferToImageInfo2* pCopyBufferToImageInfo) {
@@ -697,6 +703,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyBufferToImage2KHR(VkCommandBuffer commandBu
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyBufferToImage2KHR");
     next(commandBuffer, pCopyBufferToImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_copy2(commandBuffer,pCopyBufferToImageInfo);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
@@ -713,6 +720,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImag
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyImage");
     next(commandBuffer, srcImage, srcImageLayout, dstImage, dstImageLayout, regionCount, pRegions);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_unobserved_write(dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2* pCopyImageInfo) {
@@ -721,6 +729,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyImage2(VkCommandBuffer commandBuffer, const
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyImage2");
     next(commandBuffer, pCopyImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pCopyImageInfo)native.cube_unobserved_write(pCopyImageInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyImage2KHR(VkCommandBuffer commandBuffer, const VkCopyImageInfo2* pCopyImageInfo) {
@@ -729,6 +738,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyImage2KHR(VkCommandBuffer commandBuffer, co
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyImage2KHR");
     next(commandBuffer, pCopyImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pCopyImageInfo)native.cube_unobserved_write(pCopyImageInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy* pRegions) {
@@ -801,6 +811,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyMemoryToImageIndirectKHR(VkCommandBuffer co
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyMemoryToImageIndirectKHR");
     next(commandBuffer, pCopyMemoryToImageIndirectInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pCopyMemoryToImageIndirectInfo)native.cube_unobserved_write(pCopyMemoryToImageIndirectInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyMemoryToImageIndirectNV(VkCommandBuffer commandBuffer, VkDeviceAddress copyBufferAddress, uint32_t copyCount, uint32_t stride, VkImage dstImage, VkImageLayout dstImageLayout, const VkImageSubresourceLayers* pImageSubresources) {
@@ -809,6 +820,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyMemoryToImageIndirectNV(VkCommandBuffer com
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyMemoryToImageIndirectNV");
     next(commandBuffer, copyBufferAddress, copyCount, stride, dstImage, dstImageLayout, pImageSubresources);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_unobserved_write(dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffer, const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo) {
@@ -817,6 +829,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuf
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdCopyMemoryToImageKHR");
     next(commandBuffer, pCopyMemoryInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pCopyMemoryInfo)native.cube_unobserved_write(pCopyMemoryInfo->image);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdCopyMemoryToMicromapEXT(VkCommandBuffer commandBuffer, const VkCopyMemoryToMicromapInfoEXT* pInfo) {
@@ -1331,14 +1344,6 @@ EVRM_EXPORT void VKAPI_CALL vkCmdPreprocessGeneratedCommandsNV(VkCommandBuffer c
     next(commandBuffer, pGeneratedCommandsInfo);
 }
 
-EVRM_EXPORT void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues) {
-    const auto state = device_state(commandBuffer);
-    const auto next = device_proc<PFN_vkCmdPushConstants>(state, "vkCmdPushConstants");
-    if (!next) return;
-    native_before_forwarded_command(state, commandBuffer, "vkCmdPushConstants");
-    next(commandBuffer, layout, stageFlags, offset, size, pValues);
-}
-
 EVRM_EXPORT void VKAPI_CALL vkCmdPushConstants2(VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo) {
     const auto state = device_state(commandBuffer);
     const auto next = device_proc<PFN_vkCmdPushConstants2>(state, "vkCmdPushConstants2");
@@ -1465,6 +1470,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdResolveImage(VkCommandBuffer commandBuffer, VkI
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdResolveImage");
     next(commandBuffer, srcImage, srcImageLayout, dstImage, dstImageLayout, regionCount, pRegions);
+    observe_native(state,[&](evrm::NativeState& native){native.cube_unobserved_write(dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdResolveImage2(VkCommandBuffer commandBuffer, const VkResolveImageInfo2* pResolveImageInfo) {
@@ -1473,6 +1479,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdResolveImage2(VkCommandBuffer commandBuffer, co
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdResolveImage2");
     next(commandBuffer, pResolveImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pResolveImageInfo)native.cube_unobserved_write(pResolveImageInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdResolveImage2KHR(VkCommandBuffer commandBuffer, const VkResolveImageInfo2* pResolveImageInfo) {
@@ -1481,6 +1488,7 @@ EVRM_EXPORT void VKAPI_CALL vkCmdResolveImage2KHR(VkCommandBuffer commandBuffer,
     if (!next) return;
     native_before_forwarded_command(state, commandBuffer, "vkCmdResolveImage2KHR");
     next(commandBuffer, pResolveImageInfo);
+    observe_native(state,[&](evrm::NativeState& native){if(pResolveImageInfo)native.cube_unobserved_write(pResolveImageInfo->dstImage);});
 }
 
 EVRM_EXPORT void VKAPI_CALL vkCmdSetAlphaToCoverageEnableEXT(VkCommandBuffer commandBuffer, VkBool32 alphaToCoverageEnable) {

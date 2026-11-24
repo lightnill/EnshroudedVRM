@@ -29,7 +29,7 @@ template<class T>T consumed(const NativeOwnerCandidate& owner,U address){
 bool resolve_native_tool_slot_target(const NativeOwnerMemory&memory,const NativeOwnerCandidate&o,NativeToolSlotTarget&out,std::string&why)noexcept {
  out={};why.clear();try{namespace p=native_owner_profile;namespace e=p::ecsReadLayout;namespace s=p::serviceLayout;
   need(o.image.base>=0x10000&&o.image.size==p::image_size&&o.image.timestamp==p::image_timestamp&&
-   std::equal(o.image.sha256.begin(),o.image.sha256.end(),std::begin(p::image_sha256))&&o.entity&&o.entity_id&&o.native_buffer&&!o.guards.empty(),"tool target has no supported owner");
+   o.image.steam_build_id==p::steam_build_id&&o.entity&&o.entity_id&&o.native_buffer&&!o.guards.empty(),"tool target has no supported owner");
   NativeToolSlotTarget target;Reader m(memory,o.image,target);
   if(o.account||o.connection||o.player_infos||o.player_record){
    need(o.account&&o.connection&&o.player_infos&&o.entity_id<=16&&

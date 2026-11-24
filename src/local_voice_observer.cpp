@@ -3,6 +3,7 @@
 #include "local_voice_observation.hpp"
 #include "runtime_log.hpp"
 #include "sha256.hpp"
+#include "steam_game_build.hpp"
 #include "local_voice_pe_identity.hpp"
 #include "voice_worker.hpp"
 #include "voice_profile_io.hpp"
@@ -130,7 +131,7 @@ bool source_identity(HMODULE module){
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size.QuadPart));
     DWORD read=0;
     if(!ReadFile(file.value,bytes.data(),static_cast<DWORD>(bytes.size()),&read,nullptr)||read!=bytes.size())return false;
-    VoiceSourceIdentity identity;identity.file_sha256=detail::sha256(bytes.data(),bytes.size());
+    VoiceSourceIdentity identity;identity.steam_build_id=read_steam_game_build(std::filesystem::path(executable)).build_id;identity.file_sha256=detail::sha256(bytes.data(),bytes.size());
     IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS64 nt{},disk_nt{};
     if(!image_read(module,0,&dos,sizeof dos)||dos.e_magic!=IMAGE_DOS_SIGNATURE||dos.e_lfanew<0||dos.e_lfanew>1024*1024||
         !image_read(module,dos.e_lfanew,&nt,sizeof nt)||nt.Signature!=IMAGE_NT_SIGNATURE||

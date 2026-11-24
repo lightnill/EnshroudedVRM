@@ -10,6 +10,7 @@
 #include "mod_present_lease.hpp"
 #include "runtime_log.hpp"
 #include <array>
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <cstring>
@@ -19,11 +20,19 @@ namespace evrm {
 namespace {
 template<class T>T info(VkStructureType type){T value{};value.sType=type;return value;}
 void check(VkResult result){if(result!=VK_SUCCESS)throw std::runtime_error("menu presentation unavailable");}
-struct ImageLease {ModPresentLease ownership;VkFence own_fence{},present_fence{};bool borrowed=false,prefix_retry=false;};
+// draw_fence, drawn: draw-fence route only. The fence of a menu submission not
+// yet known finished, and whether the image carries a finished menu frame that
+// a retried Present still has to report.
+struct ImageLease {ModPresentLease ownership;VkFence own_fence{},present_fence{},draw_fence{};bool borrowed=false,prefix_retry=false,drawn=false;};
 struct Swapchain {
     SwapchainState source;HWND window=nullptr;std::array<ImageLease,16> images{};bool disabled=false,attached=false;std::uint64_t admission=0;std::uint32_t close_reasons=0;
     VkQueue queue{};std::uint32_t family=UINT32_MAX;std::unique_ptr<ModMenuGpu> gpu;
+    ModPresentWait wait;ModPresentCounts counts;std::uint64_t counted_since=0;
 };
+std::uint64_t elapsed_ns(std::chrono::steady_clock::time_point started)noexcept {
+    const auto spent=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count();
+    return spent>0?std::uint64_t(spent):0;
+}
 struct PresentChain {
     bool valid=true;const VkSwapchainPresentFenceInfoKHR* fence=nullptr;
 };
@@ -60,6 +69,7 @@ struct ModOverlay::Impl {
     bool enabled=false,expanded=false,uncertain=false;VkImageLayout layout{};std::mutex mutex;ModMenuPlacement placement;
     std::atomic<bool> fence_watch{false};
     std::atomic<bool> reporting_menu_open{false};
+    bool present_fences=true;std::uint32_t rejections=0;
     std::array<VkQueueFlags,64> families{};std::map<VkSwapchainKHR,std::unique_ptr<Swapchain>> swaps;
     template<class F>F fn(const char* name){return reinterpret_cast<F>(gdpa(device,name));}
     void refresh(ImageLease& image){
@@ -68,6 +78,38 @@ struct ModOverlay::Impl {
         if(result==VK_SUCCESS){image.ownership.fence_complete();image.present_fence=VK_NULL_HANDLE;image.borrowed=false;}
         else if(result==VK_ERROR_DEVICE_LOST)image.ownership.device_lost();
         else if(result!=VK_NOT_READY){image.ownership.uncertain();uncertain=true;}
+    }
+    // One present with the menu open: it gets a fresh wait budget and is counted.
+    void count_frame(Swapchain& state)noexcept {
+        if(!state.counts.frames)state.counted_since=GetTickCount64();
+        ++state.counts.frames;state.wait.frame();
+    }
+    // One line of counts when the menu closes, and at most one every five
+    // seconds while it stays open.
+    void report(Swapchain& state,bool closing)noexcept {
+        if(!state.counts.frames||(!closing&&GetTickCount64()-state.counted_since<5000))return;
+        const auto counts=state.counts;state.counts={};
+        log_event_lazy([&]{return counts.line();});
+    }
+    void settle(Swapchain& state,bool image,bool completed,std::uint64_t spent)noexcept {
+        const bool rested=state.wait.resting();
+        state.wait.waited(completed,spent);state.counts.waited(image,completed,spent);
+        if(!rested&&state.wait.resting())++state.counts.rests;
+    }
+    // This image's last present with the panel is not reported finished yet.
+    // Give it what is left of this present's wait budget instead of showing the
+    // frame without the panel. Results are handled as refresh handles them; a
+    // wait that runs out changes nothing, and the caller skips the frame.
+    void await(Swapchain& state,ImageLease& image){
+        const auto budget=state.wait.budget();
+        if(!budget||!image.ownership.waiting_present()||!image.present_fence)return;
+        const auto started=std::chrono::steady_clock::now();
+        const auto result=fn<PFN_vkWaitForFences>("vkWaitForFences")(device,1,&image.present_fence,VK_TRUE,budget);
+        const auto spent=elapsed_ns(started);
+        if(result==VK_SUCCESS){image.ownership.fence_complete();image.present_fence=VK_NULL_HANDLE;image.borrowed=false;}
+        else if(result==VK_ERROR_DEVICE_LOST)image.ownership.device_lost();
+        else if(result!=VK_TIMEOUT){image.ownership.uncertain();uncertain=true;}
+        if(result==VK_SUCCESS||result==VK_TIMEOUT)settle(state,true,result==VK_SUCCESS,spent);
     }
     void close(Swapchain& state,unsigned reason,const char* event)noexcept {
         reporting_menu_open.store(false,std::memory_order_relaxed);
@@ -87,6 +129,7 @@ struct ModOverlay::Impl {
         if(result==VK_ERROR_DEVICE_LOST)image.ownership.device_lost();else{check(result);image.ownership.drained();}
     }
     bool retire(Swapchain& state)noexcept {
+        report(state,true);
         if(state.gpu)state.gpu->report_invalidated();
         if(state.admission){if(mod_input_admission(state.window)==state.admission&&mod_input_open(state.window))log_event("mod-menu.close.retired");mod_input_retire(state.window,state.admission);}
         bool safe=true;
@@ -96,22 +139,57 @@ struct ModOverlay::Impl {
                     const auto result=fn<PFN_vkWaitForFences>("vkWaitForFences")(device,1,&image.present_fence,VK_TRUE,UINT64_MAX);
                     if(result==VK_SUCCESS)image.ownership.fence_complete();else if(result==VK_ERROR_DEVICE_LOST)image.ownership.device_lost();else image.ownership.uncertain();
                 }
-                if(image.ownership.retry_present()&&state.gpu){
+                if(image.ownership.retry_present()&&state.gpu&&present_fences){
                     // Present OOM did not enqueue its wait. Drain the UI's own
                     // signal before releasing it; no application wait repeats.
                     drain_unpresented(state,n);
                 }
+                if(image.ownership.retry_present()&&!present_fences){
+                    // A submission whose earlier wait failed. Nothing of it is
+                    // released unless this wait establishes that it finished.
+                    const auto result=image.draw_fence?fn<PFN_vkWaitForFences>("vkWaitForFences")(device,1,&image.draw_fence,VK_TRUE,UINT64_MAX):VK_ERROR_UNKNOWN;
+                    if(result==VK_SUCCESS)image.ownership.draw_complete();else if(result==VK_ERROR_DEVICE_LOST)image.ownership.device_lost();else image.ownership.uncertain();
+                }
                 safe&=image.ownership.safe_to_release();
             }
             if(!safe){uncertain=true;return false;}
-            if(state.gpu){state.gpu->presentation_complete();state.gpu.reset();}
+            // The draw-fence route never handed Present anything of the menu's,
+            // so there is no presentation to declare complete.
+            if(state.gpu){if(present_fences)state.gpu->presentation_complete();state.gpu.reset();}
             for(auto& image:state.images)if(image.own_fence){fn<PFN_vkDestroyFence>("vkDestroyFence")(device,image.own_fence,nullptr);image.own_fence=VK_NULL_HANDLE;}
             return true;
         }catch(...){uncertain=true;return false;}
     }
+    // Draw-fence route, for devices without present fences. The menu's
+    // submission has taken the application's waits and signals nothing for
+    // Present, so Present is forwarded, without waits, only once that submission
+    // is known finished. There is no deadline: with the waits consumed, the
+    // frame cannot be let go early. If the wait fails, Present is not called
+    // and its caller gets the failure; the lease stays submitted, so every later
+    // present of this image comes back here with the waits already removed and
+    // waits on the same fence again.
+    void finish_draw(Swapchain& state,ImageLease& image,ModOverlayPresentation& output)noexcept {
+        output.inserted=false;output.consumed=true;output.present.waitSemaphoreCount=0;output.present.pWaitSemaphores=nullptr;
+        const auto result=image.draw_fence?fn<PFN_vkWaitForFences>("vkWaitForFences")(device,1,&image.draw_fence,VK_TRUE,UINT64_MAX):VK_ERROR_UNKNOWN;
+        if(result!=VK_SUCCESS){output.stop=result<0?result:VK_ERROR_UNKNOWN;close(state,12,"mod-menu.close.draw-incomplete");return;}
+        image.ownership.draw_complete();image.draw_fence=VK_NULL_HANDLE;image.prefix_retry=image.drawn=true;output.drawn=true;output.stop=VK_SUCCESS;
+    }
+    // An image of this swapchain still holds the fence of a draw not known
+    // finished. That fence belongs to one of the renderer's slots, and the
+    // renderer resets a slot's fence when it uses the slot again.
+    bool unresolved_draw(const Swapchain& state)const noexcept {
+        for(const auto& image:state.images)if(image.draw_fence)return true;
+        return false;
+    }
+    // Why the menu cannot appear here: one line per reason for each device. It
+    // is the only evidence when F8 does nothing and no menu opens to report it.
+    void reject(unsigned reason,const char* event)noexcept {
+        const auto bit=std::uint32_t(1)<<reason;if(rejections&bit)return;
+        rejections|=bit;log_event(event);
+    }
 };
-ModOverlay::ModOverlay(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr gipa,PFN_vkGetDeviceProcAddr gdpa,PFN_vkSetDeviceLoaderData loader,bool enabled,VkImageLayout layout):impl(std::make_unique<Impl>()){
-    impl->instance=instance;impl->physical=physical;impl->device=device;impl->gipa=gipa;impl->gdpa=gdpa;impl->loader=loader;impl->enabled=enabled;impl->layout=layout;
+ModOverlay::ModOverlay(VkInstance instance,VkPhysicalDevice physical,VkDevice device,PFN_vkGetInstanceProcAddr gipa,PFN_vkGetDeviceProcAddr gdpa,PFN_vkSetDeviceLoaderData loader,bool enabled,VkImageLayout layout,bool present_fences):impl(std::make_unique<Impl>()){
+    impl->present_fences=present_fences;impl->instance=instance;impl->physical=physical;impl->device=device;impl->gipa=gipa;impl->gdpa=gdpa;impl->loader=loader;impl->enabled=enabled;impl->layout=layout;
     const auto get=reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(gipa(instance,"vkGetPhysicalDeviceQueueFamilyProperties"));uint32_t count=0;if(!get)return;
     get(physical,&count,nullptr);if(count>impl->families.size())return;std::array<VkQueueFamilyProperties,64> properties{};get(physical,&count,properties.data());
     for(unsigned n=0;n<count;++n)impl->families[n]=properties[n].queueFlags;
@@ -123,9 +201,18 @@ ModOverlay::~ModOverlay(){
     if(!safe||impl->uncertain)impl.release();
 }
 void ModOverlay::swapchain_created(const SwapchainState& source,HWND window,bool eligible)noexcept {
-    try{std::lock_guard<std::mutex> guard(impl->mutex);if(!impl->enabled||impl->uncertain||!window||impl->swaps.size()>=8||source.images.empty()||source.images.size()>16)return;
+    try{std::lock_guard<std::mutex> guard(impl->mutex);
+        if(!impl->enabled||impl->uncertain||!window||impl->swaps.size()>=8||source.images.empty()||source.images.size()>16){
+            if(!impl->enabled){}
+            else if(impl->uncertain)impl->reject(0,"mod-menu.rejected reason=overlay-uncertain");
+            else if(!window)impl->reject(8,"mod-menu.rejected reason=no-window");
+            else impl->reject(9,"mod-menu.rejected reason=swapchain-limits");
+            return;}
         const auto format=source.format;const bool color=format==VK_FORMAT_R8G8B8A8_UNORM||format==VK_FORMAT_R8G8B8A8_SRGB||format==VK_FORMAT_B8G8R8A8_UNORM||format==VK_FORMAT_B8G8R8A8_SRGB;
         if(!eligible||!color||!(source.usage&VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)||!source.extent.width||!source.extent.height){
+            if(!eligible)impl->reject(1,"mod-menu.rejected reason=swapchain-shape");
+            else if(!color)impl->reject(2,"mod-menu.rejected reason=swapchain-format");
+            else if(!(source.usage&VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))impl->reject(3,"mod-menu.rejected reason=swapchain-usage");
             const auto token=mod_input_admission(window);if(token)mod_input_retire(window,token);return;}
         auto state=std::make_unique<Swapchain>();state->source=source;state->window=window;impl->swaps.emplace(source.swapchain,std::move(state));
     }catch(...){log_event("mod-menu.swapchain-unavailable");}
@@ -160,16 +247,39 @@ void ModOverlay::before_present(VkQueue queue,std::uint32_t family,const VkPrese
         // A prior UI submission already consumed the application waits. Keep
         // an error result until every fallible retry preparation has succeeded.
         if(retry){output.stop=VK_ERROR_OUT_OF_HOST_MEMORY;output.consumed=true;output.present.waitSemaphoreCount=0;output.present.pWaitSemaphores=nullptr;}
-        if(image.prefix_retry&&!retry){output.present.waitSemaphoreCount=0;output.present.pWaitSemaphores=nullptr;output.consumed=true;return;}
+        if(image.prefix_retry&&!retry){output.present.waitSemaphoreCount=0;output.present.pWaitSemaphores=nullptr;output.consumed=true;output.drawn=image.drawn;return;}
+        // Draw-fence route: a submission not yet known finished. Nothing below
+        // applies to it; in particular it must never reach Present by another way.
+        if(retry&&!impl->present_fences){impl->finish_draw(state,image,output);return;}
         const auto chain=inspect_present(original);
-        if(!retry&&(!chain.valid||state.disabled||impl->uncertain||family>=impl->families.size()||!(impl->families[family]&VK_QUEUE_GRAPHICS_BIT)||!accessible)){impl->close(state,1,"mod-menu.close.ineligible-present");return;}
-        if(!retry&&!state.attached){state.attached=mod_input_attach(state.window,&state.admission);if(!state.attached){state.disabled=true;return;}}
+        // Without the feature a present fence in the application's chain is not
+        // valid usage, and this route has no use for one.
+        const bool stray_fence=!impl->present_fences&&chain.fence;
+        if(!retry&&(!chain.valid||stray_fence||state.disabled||impl->uncertain||family>=impl->families.size()||!(impl->families[family]&VK_QUEUE_GRAPHICS_BIT)||!accessible)){
+            if(!chain.valid||stray_fence)impl->reject(4,"mod-menu.rejected reason=present-chain");
+            else if(impl->uncertain)impl->reject(0,"mod-menu.rejected reason=overlay-uncertain");
+            else if(state.disabled){}
+            else if(family>=impl->families.size()||!(impl->families[family]&VK_QUEUE_GRAPHICS_BIT))impl->reject(5,"mod-menu.rejected reason=queue-family");
+            else impl->reject(6,"mod-menu.rejected reason=image-access");
+            impl->close(state,1,"mod-menu.close.ineligible-present");return;}
+        if(!retry&&!state.attached){state.attached=mod_input_attach(state.window,&state.admission);if(!state.attached){state.disabled=true;impl->reject(7,"mod-menu.rejected reason=input-attach");return;}}
         if(!retry&&mod_input_admission(state.window)!=state.admission)return;
         if(!retry&&state.gpu&&status.report)state.gpu->poll_report(*status.report);
-        if(!retry){const bool open=mod_input_open(state.window);impl->reporting_menu_open.store(open,std::memory_order_relaxed);if(!open)return;}
+        if(!retry){const bool open=mod_input_open(state.window);impl->reporting_menu_open.store(open,std::memory_order_relaxed);
+            if(!open){impl->report(state,true);return;}
+            // Draw-fence route: no new menu frame while an earlier one is
+            // unresolved. Drawing could bring its slot round again and reset the
+            // fence its image still has to wait on. The menu closes until that
+            // image's retry or retirement settles it; this present is left as
+            // the game sent it.
+            if(!impl->present_fences&&impl->unresolved_draw(state)){impl->close(state,13,"mod-menu.close.draw-unresolved");return;}
+            impl->report(state,false);impl->count_frame(state);}
         if(!retry&&state.queue&&state.queue!=queue){if(state.gpu)state.gpu->report_invalidated();impl->close(state,2,"mod-menu.close.queue-changed");return;}
         impl->refresh(image);
-        if(!retry&&!image.ownership.can_draw(true)){if(!image.ownership.waiting_present())impl->close(state,3,"mod-menu.close.image-unavailable");return;}
+        if(!retry)impl->await(state,image);
+        if(!retry&&!image.ownership.can_draw(true)){
+            if(!image.ownership.waiting_present())impl->close(state,3,"mod-menu.close.image-unavailable");else ++state.counts.skipped_image;
+            return;}
         VkFence fence=chain.fence?chain.fence->pFences[0]:VK_NULL_HANDLE;
         const bool owned=!fence;
         if(owned&&chain.fence&&original.pNext!=chain.fence){
@@ -179,14 +289,20 @@ void ModOverlay::before_present(VkQueue queue,std::uint32_t family,const VkPrese
         if(!state.gpu){
             input=mod_input_drain(state.window);have_input=true;if(!input.open)return;
             state.queue=queue;state.family=family;
-            for(unsigned n=0;n<state.source.images.size();++n){auto create=info<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);check(impl->fn<PFN_vkCreateFence>("vkCreateFence")(impl->device,&create,nullptr,&state.images[n].own_fence));}
+            // Present fences of our own exist only where Present accepts them.
+            for(unsigned n=0;impl->present_fences&&n<state.source.images.size();++n){auto create=info<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);check(impl->fn<PFN_vkCreateFence>("vkCreateFence")(impl->device,&create,nullptr,&state.images[n].own_fence));}
             const bool sampled_compute=(state.source.usage&VK_IMAGE_USAGE_SAMPLED_BIT)&&(impl->families[family]&VK_QUEUE_COMPUTE_BIT);
-            state.gpu=std::make_unique<ModMenuGpu>(impl->instance,impl->physical,impl->device,impl->gipa,impl->gdpa,impl->loader,queue,family,state.source.format,state.source.extent,state.source.images,impl->layout,input.dpi,sampled_compute);
+            state.gpu=std::make_unique<ModMenuGpu>(impl->instance,impl->physical,impl->device,impl->gipa,impl->gdpa,impl->loader,queue,family,state.source.format,state.source.extent,state.source.images,impl->layout,input.dpi,sampled_compute,impl->present_fences);
         }
-        if(!retry){const auto readiness=state.gpu->readiness();
-            if(readiness==ModMenuGpuReadiness::Busy)return;
+        if(!retry){auto readiness=state.gpu->readiness();
+            // The panel's next render slot is still in use by an earlier frame:
+            // the same bounded wait, from the same budget.
+            if(readiness==ModMenuGpuReadiness::Busy&&state.wait.budget()){
+                const auto started=std::chrono::steady_clock::now();readiness=state.gpu->readiness(state.wait.budget());
+                if(readiness!=ModMenuGpuReadiness::Failed)impl->settle(state,false,readiness==ModMenuGpuReadiness::Ready,elapsed_ns(started));}
+            if(readiness==ModMenuGpuReadiness::Busy){++state.counts.skipped_slot;return;}
             if(readiness==ModMenuGpuReadiness::Failed){impl->close(state,5,"mod-menu.close.renderer-failed");return;}}
-        if(owned){fence=image.own_fence;const auto result=impl->fn<PFN_vkResetFences>("vkResetFences")(impl->device,1,&fence);if(retry&&result!=VK_SUCCESS)output.stop=result;check(result);}
+        if(owned&&impl->present_fences){fence=image.own_fence;const auto result=impl->fn<PFN_vkResetFences>("vkResetFences")(impl->device,1,&fence);if(retry&&result!=VK_SUCCESS)output.stop=result;check(result);}
         if(!retry){
             if(!have_input)input=mod_input_drain(state.window);
             if(!input.open)return;
@@ -194,14 +310,19 @@ void ModOverlay::before_present(VkQueue queue,std::uint32_t family,const VkPrese
             const auto result=state.gpu->draw(index,output.present.waitSemaphoreCount,output.present.pWaitSemaphores,settings,status,impl->expanded,close,input,&impl->placement);
             if(result.changed)request_mod_settings(settings);
             if(close)impl->close(state,6,"mod-menu.close.menu-request");
-            if(result.avatar_action.kind!=AvatarActionKind::None)apply_avatar_action(result.avatar_action,reinterpret_cast<std::uintptr_t>(state.window));
-            if(result.report_action.kind!=DebugReportActionKind::None)debug_report_apply(result.report_action);
-            if(result.result==VK_NOT_READY&&!result.submitted)return;
+            if(result.avatar_action.kind!=AvatarActionKind::None
+            )apply_avatar_action(result.avatar_action,reinterpret_cast<std::uintptr_t>(state.window));
+            if(result.report_action.kind!=DebugReportActionKind::None
+            )debug_report_apply(result.report_action);
+            if(result.result==VK_NOT_READY&&!result.submitted){++state.counts.skipped_other;return;}
             const auto action=image.ownership.submit_result(result.result);
             if(action==ModPresentAction::Stop){output.stop=result.result;impl->uncertain=true;impl->close(state,7,"mod-menu.close.submit-failed");return;}
             if(!result.submitted){impl->close(state,8,"mod-menu.close.submit-unavailable");return;}
+            // Counted as drawn where the other route counts it: once submitted.
+            if(!impl->present_fences){++state.counts.drawn;image.draw_fence=result.fence;impl->finish_draw(state,image,output);return;}
         }
         // No allocation or other fallible operation follows successful submit.
+        if(!retry)++state.counts.drawn;
         image.present_fence=fence;image.borrowed=!owned;output.wait=state.gpu->completion(index);output.present_fence=fence;output.inserted=true;output.consumed=true;
         if(!owned)impl->fence_watch.store(true,std::memory_order_release);
         if(owned){output.private_fence=true;output.fence_info=info<VkSwapchainPresentFenceInfoKHR>(VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR);output.fence_info.swapchainCount=1;
@@ -218,7 +339,11 @@ void ModOverlay::presented(const ModOverlayPresentation& presentation,VkResult r
         auto& image=state.images[index];
         if(state.gpu&&(result==VK_ERROR_DEVICE_LOST||result==VK_ERROR_OUT_OF_DATE_KHR||result==VK_ERROR_SURFACE_LOST_KHR))state.gpu->report_invalidated();
         if(presentation.inserted){image.ownership.present_result(result);image.prefix_retry=false;if(state.gpu)state.gpu->report_presented(index,result);}
-        else{image.ownership.original_presented();image.prefix_retry=presentation.consumed&&(result==VK_ERROR_OUT_OF_HOST_MEMORY||result==VK_ERROR_OUT_OF_DEVICE_MEMORY);}
+        else{image.ownership.original_presented();image.prefix_retry=presentation.consumed&&(result==VK_ERROR_OUT_OF_HOST_MEMORY||result==VK_ERROR_OUT_OF_DEVICE_MEMORY);
+            // A finished menu frame reports its Present like an inserted one. The
+            // frame stays reportable until a Present of it is actually enqueued.
+            if(presentation.drawn&&state.gpu)state.gpu->report_presented(index,result);
+            if(!image.prefix_retry)image.drawn=false;}
         if(result<0)impl->close(state,10,"mod-menu.close.present-failed");
     }catch(...){}
 }

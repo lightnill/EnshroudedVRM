@@ -1,3 +1,4 @@
+#include "native_actor_basis.hlsli"
 // Original native-format output contract for the independent offscreen proof.
 // Row vectors below multiply column positions with dot(row, float4(position,1)).
 // Both passes use this same current raster transform and final clip-Y flip.
@@ -9,6 +10,18 @@
 #define EVRM_NATIVE_SURFACE 0
 #endif
 #include "native_material_radiance.hlsli"
+#ifndef EVRM_NATIVE_SURFACE_ID
+#define EVRM_NATIVE_SURFACE_ID 0
+#endif
+#ifndef EVRM_NATIVE_MTOON_FALLBACK
+#define EVRM_NATIVE_MTOON_FALLBACK 0
+#endif
+#if EVRM_NATIVE_MTOON_FALLBACK
+// The same coherent owned frame decision selects authored main/outline or
+// the supported ordinary material. Unknown/withdrawn decisions retain it.
+struct NativeMToonFallbackControl {uint4 facts;float4 time;};
+[[vk::binding(7,2)]] ConstantBuffer<NativeMToonFallbackControl> mtoonFallback;
+#endif
 struct NativeFrame {
     float4 currentRows[4]; float4 previousUvRows[4]; float4 normalRows[3];
     float4 screen; // inverse framebuffer size.xy, native jitter/bias UV.zw
@@ -72,6 +85,7 @@ struct VertexOut {
     [[vk::location(5)]] float2 rimUv : TEXCOORD4;
     [[vk::location(6)]] float3 view : TEXCOORD5;
     [[vk::location(7)]] nointerpolation float3 cameraUp : TEXCOORD6;
+    [[vk::location(8)]] nointerpolation uint sourceTriangle:TEXCOORD7;
 #endif
 };
 #if EVRM_NATIVE_VERTEX_PULL
@@ -93,7 +107,12 @@ VertexOut vs_native(VertexIn input) {
     const float4 p=float4(input.position,1);
     precise float4 raster=float4(dot(frame.currentRows[0],p),-dot(frame.currentRows[1],p),dot(frame.currentRows[2],p),dot(frame.currentRows[3],p));
     const bool active=(frame.control.x!=0)==(material.instance.w!=0);
-    o.position=active?raster:float4(2,2,0,1);
+#if EVRM_NATIVE_MTOON_FALLBACK
+    const bool selected=active&&mtoonFallback.facts.w!=1u;
+#else
+    const bool selected=active;
+#endif
+    o.position=selected?raster:float4(2,2,0,1);
     o.normal=float3(dot(frame.normalRows[0].xyz,input.normal),dot(frame.normalRows[1].xyz,input.normal),dot(frame.normalRows[2].xyz,input.normal));
     o.uv=input.uv;
 #if EVRM_NATIVE_SURFACE
@@ -102,11 +121,16 @@ VertexOut vs_native(VertexIn input) {
     o.view=-evrm_surface_relative_position(rotation,input.position,asfloat(frame.rootScale.w),relative);
     o.cameraUp=evrm_surface_camera_up(rotation,frame.currentRows[1],frame.currentRows[3]);
     o.tangent=0;o.normalUv=o.rimUv=0;
+#if EVRM_NATIVE_VERTEX_PULL
+    o.sourceTriangle=vertexId/3u;
+#else
+    o.sourceTriangle=0;
+#endif
     if((surfaceMaterial.flags.x&9u)!=0){
         const uint surfaceAt=nativeIndices.Load(vertexId*4u)*32u;
         o.normalUv=asfloat(surfaceVertices.Load2(surfaceAt));o.rimUv=asfloat(surfaceVertices.Load2(surfaceAt+8u));
         const float4 tangent=asfloat(surfaceVertices.Load4(surfaceAt+16u));
-        o.tangent=float4(mul(rotation,tangent.xyz),tangent.w);
+        o.tangent=evrm_actor_tangent(rotation,tangent);
     }
 #endif
     const float4 previous=float4(input.previousPosition,1);
@@ -117,7 +141,12 @@ VertexOut vs_native(VertexIn input) {
 float4 sample_base(VertexOut input) {
     // The same decision and alpha test guard both Visibility and GBuffer.
     const bool active=(frame.control.x!=0)==(material.instance.w!=0);
-    clip(active?1.f:-1.f);
+#if EVRM_NATIVE_MTOON_FALLBACK
+    const bool selected=active&&mtoonFallback.facts.w!=1u;
+#else
+    const bool selected=active;
+#endif
+    clip(selected?1.f:-1.f);
     const float4 base=baseTexture.Sample(baseSampler,input.uv)*material.base;
     if(material.alpha.y!=0)clip(base.a-material.alpha.x);
     return base;
@@ -142,7 +171,20 @@ uint pack_rgb9e5(float3 value) {
     return mantissa.x|(mantissa.y<<9)|(mantissa.z<<18)|(exponent<<27);
 }
 struct GBufferOut {float4 base:SV_Target0;float4 normal:SV_Target1;uint4 params:SV_Target2;uint emissive:SV_Target3;float2 motion:SV_Target4;float instance:SV_Target5;};
-GBufferOut ps_gbuffer(VertexOut input,bool frontFace:SV_IsFrontFace) {
+#if EVRM_NATIVE_SURFACE_ID
+#include "native_mtoon_visibility.hlsli"
+#include "native_mtoon_raster.hlsli"
+[[vk::binding(0,2)]] ConstantBuffer<NativeMToonRasterUniform> surfaceIdentityDraw;
+[[vk::binding(1,2)]] RWByteAddressBuffer surfaceIdentity;
+#endif
+#if EVRM_NATIVE_SURFACE_ID
+[earlydepthstencil]
+#endif
+GBufferOut ps_gbuffer(VertexOut input,bool frontFace:SV_IsFrontFace
+#if EVRM_NATIVE_SURFACE_ID
+    ,uint primitive:SV_PrimitiveID
+#endif
+) {
 #if EVRM_NATIVE_SURFACE
     float4 base=sample_base(input);
 #else
@@ -191,5 +233,14 @@ GBufferOut ps_gbuffer(VertexOut input,bool frontFace:SV_IsFrontFace) {
         o.normal.z=1.f;
         o.params.xy=uint2(0,0);
     }
+#if EVRM_NATIVE_SURFACE_ID
+    // Equal/read-only native depth and alpha rejection precede this store.
+    // Include every opaque avatar draw so later ordinary materials also replace
+    // a previous MToon surface identity at equal depth.
+    NativeMToonVisibilityUniform identityUniform={surfaceIdentityDraw.domain.x,surfaceIdentityDraw.domain.y,
+        surfaceIdentityDraw.domain.z,surfaceIdentityDraw.domain.w};
+    native_mtoon_record_surface(surfaceIdentity,identityUniform,input.position,primitive,frontFace,
+        frame.control.x!=0u&&material.instance.w!=0u);
+#endif
     return o;
 }

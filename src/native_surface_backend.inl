@@ -6,21 +6,27 @@
         std::shared_ptr<const vrm::Avatar> avatar;
         std::shared_ptr<const NativeSkinAsset> skin;
         NativeSurfaceSelection key;
+        std::shared_ptr<const NativeMToonRequest> mtoon_request;
     } surface_upload;
     struct SurfaceFailure {
         std::uint64_t assignment=0;
         std::weak_ptr<const vrm::Avatar> avatar;
         std::weak_ptr<const NativeSkinAsset> skin;
         NativeSurfaceSelection key;
+        NativeMToonSelection mtoon_selection;
     };
     std::map<std::string,SurfaceFailure> surface_failures;
     std::uint64_t surface_ticket=0;
+    static NativeMToonSelection mtoon_failure_selection(const std::shared_ptr<const NativeMToonRequest>& request){
+        return request?request->selection():NativeMToonSelection{};
+    }
     std::shared_ptr<NativeAvatarGpuAssets>* surface_target(const NativeAvatarPublication& p) {
         if(!players_managed)return p.subject.empty()&&assets&&assets->avatar()==p.asset?&assets:nullptr;
         const auto found=player_models.find(p.subject);
         return found!=player_models.end()&&player_current(p)&&found->second.assets&&found->second.assets->avatar()==p.asset?&found->second.assets:nullptr;
     }
     void refresh_surface_assets()noexcept {
+        struct MToonHint {Impl& owner;~MToonHint(){owner.mtoon_observe_requested=owner.mtoon_scene_requested();if(owner.mtoon_observe_requested){(void)owner.prepare_mtoon_shade_program();(void)owner.prepare_mtoon_forward_shade_program();(void)owner.prepare_mtoon_raster_program();(void)owner.prepare_mtoon_composite_program();}}} hint{*this};
         try{
             if(!latest||!queue||context.uncertain)return;
             std::vector<std::shared_ptr<const NativeAvatarPublication>> current;
@@ -45,19 +51,20 @@
                 const auto found=std::find_if(current.begin(),current.end(),[&](const auto& p){return p->subject==surface_upload.subject&&
                     p->assignment_generation==surface_upload.assignment&&p->asset==surface_upload.avatar&&
                     (p->skinning?p->skinning->asset:nullptr)==surface_upload.skin&&
-                    make_native_surface_selection(*p->asset,p->appearance.get())==surface_upload.key;});
+                    make_native_surface_selection(*p->asset,p->appearance.get())==surface_upload.key&&
+                    native_mtoon_request_matches(surface_upload.mtoon_request,p->asset,p->appearance.get());});
                 if(found==current.end()){
                     surface_stager->cancel();
                     if(surface_stager->update(queue,family,0,{})==NativeAvatarUploadState::Pending)return;
                     surface_upload={};
                 }else{
                     auto* target=surface_target(**found);if(!target)return;
-                    const auto state=surface_stager->update(queue,family,surface_upload.ticket,surface_upload.avatar,surface_upload.skin,surface_upload.key,*target);
+                    const auto state=surface_stager->update_mtoon(queue,family,surface_upload.ticket,surface_upload.avatar,surface_upload.skin,surface_upload.key,surface_upload.mtoon_request,*target);
                     if(state==NativeAvatarUploadState::Pending)return;
-                    if(state==NativeAvatarUploadState::Ready){auto ready=surface_stager->take_ready(surface_upload.ticket,surface_upload.avatar,surface_upload.key);
+                    if(state==NativeAvatarUploadState::Ready){auto ready=surface_stager->take_ready(surface_upload.ticket,surface_upload.avatar,surface_upload.key,surface_upload.mtoon_request);
                         if(ready)*target=std::move(ready);
                     }else if(state==NativeAvatarUploadState::Failed){
-                        surface_failures[surface_upload.subject]={surface_upload.assignment,surface_upload.avatar,surface_upload.skin,surface_upload.key};
+                        surface_failures[surface_upload.subject]={surface_upload.assignment,surface_upload.avatar,surface_upload.skin,surface_upload.key,mtoon_failure_selection(surface_upload.mtoon_request)};
                         try{report(std::string("Enhanced material upload unavailable; keeping current avatar: ")+surface_stager->error());}catch(...){}
                     }
                     surface_upload={};
@@ -70,28 +77,40 @@
                 auto failed=surface_failures.find(p->subject);
                 // Withdrawal must precede the already-ready fast path. A new
                 // assignment is an explicit retry even for the same model/key.
-                if(failed!=surface_failures.end()&&(failed->second.assignment!=p->assignment_generation||failed->second.avatar.lock()!=p->asset||failed->second.skin.lock()!=skin||!(failed->second.key==key))){
+                if(failed!=surface_failures.end()&&(failed->second.assignment!=p->assignment_generation||failed->second.avatar.lock()!=p->asset||failed->second.skin.lock()!=skin||!(failed->second.key==key)||
+                    !native_mtoon_selection_matches(failed->second.mtoon_selection,*p->asset,p->appearance.get()))){
                     withdraw_failure(failed);failed=surface_failures.end();
                 }
-                if((*target)->surface_selection()==key)continue;
+                if((*target)->surface_selection()==key&&native_mtoon_request_matches((*target)->mtoon_request(),p->asset,p->appearance.get()))continue;
                 if(failed!=surface_failures.end())continue;
                 bool reused=false;
                 for(const auto& other:current){auto* shared=surface_target(*other);
-                    if(shared&&*shared&&other->asset==p->asset&&(other->skinning?other->skinning->asset:nullptr)==skin&&(*shared)->surface_selection()==key){*target=*shared;reused=true;break;}}
+                    if(shared&&*shared&&other->asset==p->asset&&(other->skinning?other->skinning->asset:nullptr)==skin&&(*shared)->surface_selection()==key&&
+                        native_mtoon_request_matches((*shared)->mtoon_request(),p->asset,p->appearance.get())){*target=*shared;reused=true;break;}}
                 if(reused)continue;
                 if(surface_ticket==UINT64_MAX)return;
+                auto request=(*target)->mtoon_request();
+                if(!native_mtoon_request_matches(request,p->asset,p->appearance.get()))try{
+                    request=make_native_mtoon_request(p->asset,p->appearance.get(),limits.maxImageDimension2D);
+                }catch(...){
+                    NativeMToonSelection selection;selection.reserve(p->asset->materials.size());
+                    for(std::size_t i=0;i<p->asset->materials.size();++i)selection.push_back(native_mtoon_choice(avatar_material_preset(p->appearance.get(),i),avatar_material_outline_color(p->appearance.get(),i)));
+                    surface_failures[p->subject]={p->assignment_generation,p->asset,skin,key,std::move(selection)};
+                    try{report("MToon material preparation unavailable; keeping current avatar");}catch(...){}
+                    return;
+                }
                 ensure_asset_stager();
-                if(!surface_stager)surface_stager=std::make_unique<NativeAvatarAssetStager>(context.device,context.get,set_loader,context.memory,limits.maxImageDimension2D,skinning_gpu,&context.uncertain);
-                surface_upload={p->subject,p->assignment_generation,++surface_ticket,p->asset,skin,key};
-                const auto state=surface_stager->update(queue,family,surface_upload.ticket,p->asset,skin,key,*target);
-                if(state==NativeAvatarUploadState::Failed){surface_failures[p->subject]={p->assignment_generation,p->asset,skin,key};surface_upload={};}
+                if(!surface_stager)surface_stager=std::make_unique<NativeAvatarAssetStager>(context.device,context.get,set_loader,context.memory,limits.maxImageDimension2D,skinning_gpu,&context.uncertain,limits);
+                surface_upload={p->subject,p->assignment_generation,++surface_ticket,p->asset,skin,key,request};
+                const auto state=surface_stager->update_mtoon(queue,family,surface_upload.ticket,p->asset,skin,key,request,*target);
+                if(state==NativeAvatarUploadState::Failed){surface_failures[p->subject]={p->assignment_generation,p->asset,skin,key,mtoon_failure_selection(request)};surface_upload={};}
                 return;
             }
         }catch(...){/* Optional effects never revoke the current VRM. */}
     }
     VkDescriptorSetLayout make_surface_set(bool oit) {
         std::vector<VkDescriptorSetLayoutBinding> bindings;
-        for(unsigned i=0;i<19;++i){
+        for(unsigned i=0;i<(oit?21u:19u);++i){
             if(!oit&&i>=6&&i<=10)continue;
             VkDescriptorSetLayoutBinding b{};b.binding=i;b.descriptorCount=1;
             b.descriptorType=(i==0||i==3||i==6||i==7||i==12)?VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
@@ -113,7 +132,7 @@
     bool initialize_surface(bool menu,bool mixed)noexcept {
         try{
             if(surface_failed)return false;
-            if(!surface_shaders[3]){
+            if(!surface_layout){
                 surface_failed=true;
                 if(limits.maxPerStageDescriptorStorageBuffers<3||limits.maxDescriptorSetStorageBuffers<3||
                    limits.maxPerStageDescriptorUniformBuffers<3||limits.maxDescriptorSetUniformBuffers<3||
@@ -122,12 +141,12 @@
                     throw std::runtime_error("Enhanced material descriptor limits unavailable");
                 surface_set=make_surface_set(false);surface_layout=make_surface_layout(surface_set);
                 surface_shaders[0]=shader("avatar_native.surface.vert.spv");surface_shaders[1]=shader("avatar_native.surface.gbuffer.spv");
-                surface_shaders[3]=shader("native_prepare.surface.comp.spv");
+                if(!surface_shaders[3])surface_shaders[3]=shader("native_prepare.surface.comp.spv");
                 if(!draw_pipelines->install_surface_variant(surface_layout,surface_shaders[0],surface_shaders[1]))
                     throw std::runtime_error("Enhanced material graphics pipeline unavailable");
                 surface_failed=false;
             }
-            const bool world_ready=poll_prepare(NativePrepareWorker::Key::SurfaceWorld,surface_shaders[3],surface_prepare,surface_failed);
+            const bool world_ready=poll_prepare(NativePrepareWorker::Key::SurfaceWorld,surface_shaders[3],surface_prepare,surface_prepare_failed);
             bool menu_ready=true;
             if(menu){
                 if(!surface_shaders[4]&&!surface_menu_failed){
@@ -140,7 +159,7 @@
             if(mixed&&(!oit_pipelines||!oit_pipelines->surface_ready())){
                 if(surface_oit_failed)return false;
                 surface_oit_failed=true;
-                if(!oit_pipelines||limits.maxPerStageDescriptorUniformBuffers<5||limits.maxDescriptorSetUniformBuffers<5||
+                if(!oit_pipelines||limits.maxDescriptorSetStorageBuffers<5||limits.maxPerStageDescriptorStorageBuffers<3||limits.maxPerStageDescriptorUniformBuffers<5||limits.maxDescriptorSetUniformBuffers<5||
                    limits.maxPerStageDescriptorSampledImages<6||limits.maxDescriptorSetSampledImages<6||
                    limits.maxPerStageDescriptorSamplers<5||limits.maxDescriptorSetSamplers<5)
                     throw std::runtime_error("Enhanced transparent material descriptor limits unavailable");
@@ -161,19 +180,24 @@
         // Matcap/factor-only shaders do not read this valid placeholder.
         return vertex_binding(b);
     }
+    VkDescriptorBufferInfo mtoon_surface_vertex_binding(const Bundle& b)const {
+        if(!b.assets||!b.pose||!b.assets->mtoon()||!native_mtoon_request_matches(b.assets->mtoon_request(),b.pose->asset,b.pose->appearance.get()))return {};
+        if(b.skin)return b.skin->geometry()->surface_binding();
+        return b.surface_vertices?VkDescriptorBufferInfo{b.surface_vertices->handle,0,b.surface_vertices->size}:VkDescriptorBufferInfo{};
+    }
     void make_surface_uniforms(Bundle& b) {
         if(!b.surface.any())return;
         const auto alignment=std::max<VkDeviceSize>(16,limits.minUniformBufferOffsetAlignment);
         b.surface_stride=(sizeof(NativeSurfaceMaterial)+alignment-1)/alignment*alignment;
-        b.surface_materials=make_buffer(context,b.surface_stride*b.surface.features.size(),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        b.surface_materials=lease_buffer(context,b.surface_stride*b.surface.features.size(),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         for(std::size_t i=0;i<b.pose->asset->materials.size();++i){
-            const auto value=native_surface_material(b.pose->asset->materials[i],b.surface.features[i]);
+            auto value=native_surface_material(b.pose->asset->materials[i],b.surface.features[i]);
             std::memcpy(static_cast<unsigned char*>(b.surface_materials->mapped)+b.surface_stride*i,&value,sizeof value);
         }
         if(b.surface.needs_vertices()&&!b.pose->skinning){
             const auto& stream=b.pose->geometry->surface_vertices;
             if(stream.size()!=b.pose->geometry->vertices.size())throw std::runtime_error("Enhanced CPU pose stream unavailable");
-            b.surface_vertices=make_buffer(context,stream.size()*sizeof(vrm::SurfaceVertex),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            b.surface_vertices=lease_buffer(context,stream.size()*sizeof(vrm::SurfaceVertex),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             if(b.surface_vertices->size>limits.maxStorageBufferRange)throw std::runtime_error("Enhanced CPU pose stream exceeds device range");
             std::memcpy(b.surface_vertices->mapped,stream.data(),b.surface_vertices->size);
         }
@@ -184,14 +208,16 @@
         if(!count||count!=b.surface.features.size()||!b.surface_materials)throw std::runtime_error("Enhanced material descriptor shape");
         if(!b.surface_pool){
             const std::array<VkDescriptorPoolSize,4> sizes={{{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,8*count},
-                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6*count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,10*count},{VK_DESCRIPTOR_TYPE_SAMPLER,9*count}}};
+                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,8*count},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,10*count},{VK_DESCRIPTOR_TYPE_SAMPLER,9*count}}};
             VkDescriptorPoolCreateInfo pool{};pool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.maxSets=2*count;
             pool.poolSizeCount=static_cast<std::uint32_t>(sizes.size());pool.pPoolSizes=sizes.data();
             checked(F(vkCreateDescriptorPool)(context.device,&pool,nullptr,&b.surface_pool),"Enhanced material descriptor pool");
         }
-        const auto vertex=surface_vertex_binding(b);if(!vertex.buffer||!vertex.range||vertex.range==VK_WHOLE_SIZE)throw std::runtime_error("Enhanced surface binding unavailable");
+        auto vertex=surface_vertex_binding(b);if(!vertex.buffer&&!b.surface.needs_vertices())vertex=vertex_binding(b);if(!vertex.buffer||!vertex.range||vertex.range==VK_WHOLE_SIZE)throw std::runtime_error("Enhanced surface binding unavailable");
         for(std::size_t i=0;i<out.size();++i){
             if(!b.surface.features[i])continue;
+            if(oit&&(b.surface.features[i]&surface_mtoon_forward)){auto* uniform=reinterpret_cast<NativeSurfaceMaterial*>(static_cast<unsigned char*>(b.surface_materials->mapped)+b.surface_stride*i);
+                uniform->flags[2]=(b.surface.features[i]&surface_mtoon_forward)&&b.mtoon_forward_capture.buffer?b.mtoon_forward_actor:0u;}
             const auto layout=oit?surface_oit_set:surface_set;
             VkDescriptorSetAllocateInfo allocation{};allocation.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             allocation.descriptorPool=b.surface_pool;allocation.descriptorSetCount=1;allocation.pSetLayouts=&layout;
@@ -211,6 +237,9 @@
             // private immutable set retained by this same command bundle.
             F(vkUpdateDescriptorSets)(context.device,0,nullptr,copy_count,copies.data());
             F(vkUpdateDescriptorSets)(context.device,static_cast<std::uint32_t>(writes.size()),writes.data(),0,nullptr);
+            if(oit){const VkDescriptorBufferInfo fallback=vertex;const VkDescriptorBufferInfo forward[]{b.mtoon_forward_capture.buffer?b.mtoon_forward_capture:fallback,b.mtoon_forward_packets.buffer?b.mtoon_forward_packets:fallback};
+                std::array<VkWriteDescriptorSet,2> extra{};for(unsigned k=0;k<2;++k){auto& w=extra[k];w.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;w.dstSet=out[i];w.dstBinding=19+k;w.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;w.descriptorCount=1;w.pBufferInfo=&forward[k];}
+                F(vkUpdateDescriptorSets)(context.device,2,extra.data(),0,nullptr);}
         }
         return out;
     }
@@ -228,15 +257,34 @@
     }
 
     void make_skin_frame(Bundle& b){
-        if(!b.pose->skinning)return;
+        b.outline_rig.reset();if(!b.pose->skinning)return;
         const auto frame=[&](bool surface){return skinning_gpu->frame(b.assets->skin(),*b.pose->skinning,{b.frame->handle,0,b.frame->size},b.previous?b.previous->geometry:nullptr,b.pose->mouth_weights,surface);};
-        if(b.surface.needs_tangents()){
-            try{b.skin=frame(true);return;}catch(...){
+        bool enhanced=false;
+        const bool mtoon_normals=b.assets->mtoon()&&native_mtoon_request_matches(b.assets->mtoon_request(),b.pose->asset,b.pose->appearance.get())&&
+            native_mtoon_request_needs_tangents(b.assets->mtoon_request());
+        if(b.surface.needs_tangents()||mtoon_normals){
+            try{b.skin=frame(true);enhanced=true;}catch(...){
                 // Construction has recorded no commands. Preserve all ordinary
                 // ownership/permit state; the Basic attempt rechecks quarantine.
-                b.surface=make_native_surface_selection(*b.pose->asset,&fast_surface_appearance());
-                b.surface_materials.reset();b.surface_vertices.reset();
+                // A MToon-only failure must not revoke unrelated mask/factor
+                // materials. An absent posed stream leaves that mapped MToon
+                // material unavailable; the ordinary frame still records.
+                if(b.surface.needs_tangents()){
+                    b.surface=make_native_surface_selection(*b.pose->asset,&fast_surface_appearance());
+                    b.surface_materials.reset();b.surface_vertices.reset();
+                }
             }
         }
-        b.skin=frame(false);
+        if(!enhanced)b.skin=frame(false);
+        // Optional exact legacy world-width sources. The small lease reuses the
+        // already allocated immutable vertices and current mesh batches; it
+        // grants no scene/draw authority and never retains a predecessor.
+        if(b.menu_preview||!b.assets->mtoon())return;
+        const auto& request=b.assets->mtoon_request();
+        if(!request||!native_mtoon_request_matches(request,b.pose->asset,b.pose->appearance.get()))return;
+        for(const auto& material:request->plan().materials){const auto& m=material.uniform;
+            if(material.status==MToonResourceStatus::prepared_cpu&&material.outline&&m.modes[1]==0u&&m.modes[2]<=1u&&m.flags[0]==1u&&m.outline_settings[0]>0.f){
+                b.outline_rig=skinning_gpu->outline_rig(b.skin);break;
+            }
+        }
     }
